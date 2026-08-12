@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#12151c" />
+  <meta name="description" content="Wdeck - client web per lo Stream Deck software" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Wdeck</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./app.css" />
+</head>
+<body>
+  <!-- schermata di accesso: token o PIN -->
+  <section id="gate" class="gate" hidden>
+    <div class="gate-card">
+      <h1>Wdeck</h1>
+      <p class="gate-sub">Collega questo dispositivo all'host.</p>
+
+      <label class="field">
+        <span>Indirizzo host</span>
+        <input id="gate-host" type="text" inputmode="url" autocomplete="off" placeholder="http://192.168.1.10:8899" />
+      </label>
+
+      <label class="field">
+        <span>PIN di pairing</span>
+        <input id="gate-pin" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="es. 246810" />
+      </label>
+
+      <button id="gate-pair" class="btn primary" type="button">Associa con PIN</button>
+
+      <details class="gate-advanced">
+        <summary>Ho gia' un token</summary>
+        <label class="field">
+          <span>Token</span>
+          <input id="gate-token" type="text" autocomplete="off" placeholder="token dell'host" />
+        </label>
+        <button id="gate-token-save" class="btn" type="button">Usa questo token</button>
+      </details>
+
+      <p id="gate-error" class="gate-error" role="alert"></p>
+    </div>
+  </section>
+
+  <!-- applicazione -->
+  <main id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="topbar-left">
+        <span id="status-dot" class="dot" data-state="offline" title="stato connessione"></span>
+        <strong id="deck-name">Wdeck</strong>
+        <span id="dry-badge" class="badge warn" hidden>DRY-RUN</span>
+      </div>
+      <nav class="topbar-right">
+        <select id="profile-select" class="select" aria-label="Profilo"></select>
+        <button id="btn-simulate" class="icon-btn" type="button" title="Simula le azioni (dry-run lato client)" aria-pressed="false">SIM</button>
+        <button id="btn-fullscreen" class="icon-btn" type="button" title="Schermo intero">&#9974;</button>
+        <button id="btn-reload" class="icon-btn" type="button" title="Ricarica deck.json sull'host">&#8635;</button>
+        <button id="btn-logout" class="icon-btn" type="button" title="Dimentica il token">&#9099;</button>
+      </nav>
+    </header>
+
+    <div id="pages" class="pages" role="tablist"></div>
+
+    <section id="grid" class="grid" aria-label="Griglia bottoni"></section>
+
+    <footer class="statusbar">
+      <span id="status-text">non connesso</span>
+      <span id="last-action" class="last-action"></span>
+    </footer>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
