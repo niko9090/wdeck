@@ -1,0 +1,365 @@
+# Protocollo Wdeck
+
+Definizione unica: [`shared/protocol.mjs`](../shared/protocol.mjs).
+Gemello C per i microcontrollori: [`firmware/esp32/include/wdeck_protocol.h`](../firmware/esp32/include/wdeck_protocol.h).
+I due file sono confrontati automaticamente da `npm run test:esp32`.
+
+Esistono due dialetti:
+
+| | **full** | **lite** |
+|---|---|---|
+| destinatari | client web PWA, script, integrazioni | ESP32 e microcontrollori |
+| formato | JSON leggibile, campi estesi | JSON con chiavi di 1 carattere |
+| versione | `PROTOCOL_VERSION` = 1 | `LITE_PROTOCOL_VERSION` = 1 |
+| trasporto | REST + WebSocket `/ws` | REST + WebSocket `/ws/lite` |
+| autenticazione | token (query, header o messaggio `auth`) | token obbligatorio nell'handshake |
+
+---
+
+## 1. Autenticazione
+
+Il token e' definito in `settings.security.token` (o generato all'avvio se assente).
+Puo' essere trasmesso in tre modi, equivalenti:
+
+| modo | esempio |
+|---|---|
+| querystring | `GET /api/deck?token=abc123` |
+| header dedicato | `x-wdeck-token: abc123` |
+| header standard | `Authorization: Bearer abc123` |
+
+Se l'header e la querystring sono entrambi presenti, vince l'header.
+Il confronto e' a tempo costante (`crypto.timingSafeEqual`).
+
+Chi non ha il token puo' ottenerlo con il **pairing tramite PIN**:
+
+```http
+POST /api/pair
+Content-Type: application/json
+
+{ "pin": "246810" }
+```
+
+```json
+{ "ok": true, "token": "abc123..." }
+```
+
+Il PIN e' in `settings.security.pin`; se vuoto, il pairing e' disabilitato e
+`POST /api/pair` risponde `401`.
+
+---
+
+## 2. Endpoint REST (dialetto full)
+
+Tutti gli endpoint restituiscono JSON. In caso di errore il formato e' sempre:
+
+```json
+{ "ok": false, "error": { "code": "unauthorized", "message": "token mancante o non valido" } }
+```
+
+Codici possibili: `unauthorized`, `bad_request`, `not_found`, `forbidden`,
+`action_failed`, `unsupported_action`, `rate_limited`, `internal`.
+
+### `GET /api/health`
+
+Pubblico (nessun token). Serve alla scoperta dell'host e alla diagnostica.
+
+```json
+{
+  "ok": true,
+  "name": "Wdeck Host",
+  "deckName": "Wdeck",
+  "version": "0.1.0",
+  "protocol": 1,
+  "liteProtocol": 1,
+  "platform": "win32",
+  "requiresToken": true,
+  "pinPairing": true,
+  "dryRun": false,
+  "uptimeMs": 51234
+}
+```
+
+### `POST /api/pair`
+
+Pubblico. Scambia un PIN valido con il token (vedi sezione 1).
+
+### `GET /api/deck`
+
+Layout completo. **Non contiene mai** token, PIN o whitelist: i dati sensibili
+sono rimossi da `publicDeck()`.
+
+```json
+{
+  "ok": true,
+  "protocol": 1,
+  "deck": {
+    "version": 1,
+    "name": "Wdeck",
+    "defaultProfile": "default",
+    "ui": { "theme": "dark", "accent": "#4c8dff", "showLabels": true },
+    "profiles": [
+      {
+        "id": "default",
+        "name": "Scrivania",
+        "defaultPage": "main",
+        "pages": [
+          {
+            "id": "main",
+            "name": "Principale",
+            "rows": 3,
+            "cols": 5,
+            "buttons": [
+              {
+                "id": "media-playpause",
+                "label": "Play/Pausa",
+                "row": 0, "col": 1,
+                "icon": "play",
+                "color": "#1f6feb",
+                "textColor": null,
+                "action": { "type": "media", "params": { "key": "playpause" } },
+                "holdAction": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "state": { "...": "vedi /api/state" }
+}
+```
+
+### `GET /api/state`
+
+```json
+{
+  "ok": true,
+  "state": {
+    "activeProfile": "default",
+    "activePage": "main",
+    "dryRun": false,
+    "clients": 2,
+    "pressCount": 17,
+    "lastAction": { "buttonId": "mute", "type": "media", "ok": true, "dryRun": false, "detail": "...", "error": null, "at": 1765432100000 },
+    "uptimeMs": 51234,
+    "deckName": "Wdeck",
+    "platform": "win32"
+  }
+}
+```
+
+### `GET /api/actions`
+
+Elenco del registro azioni (utile per costruire editor di configurazione).
+
+```json
+{ "ok": true, "actions": [ { "type": "media", "title": "Tasti multimediali", "description": "...", "platforms": ["win32"], "paramsHelp": { "key": "playpause | next | ..." }, "stub": false } ] }
+```
+
+### `POST /api/press`
+
+```json
+{ "buttonId": "media-playpause", "profileId": "default", "pageId": "main", "hold": false, "dryRun": false }
+```
+
+Solo `buttonId` e' obbligatorio. `profileId`/`pageId` restringono la ricerca
+(utile se si vuole essere certi del contesto). `hold: true` usa `holdAction`
+quando definita.
+
+> **Regola di sicurezza**: `dryRun` puo' solo rendere l'esecuzione *piu'*
+> prudente. Se l'host e' in dry-run, nessun client puo' disattivarlo.
+
+Risposta:
+
+```json
+{
+  "ok": true,
+  "result": {
+    "ok": true,
+    "buttonId": "media-playpause",
+    "profileId": "default",
+    "pageId": "main",
+    "label": "Play/Pausa",
+    "type": "media",
+    "description": "tasto media \"playpause\"",
+    "dryRun": true,
+    "detail": "invierebbe VK 0xb3 (playpause)",
+    "result": { "ok": true, "simulated": true, "script": "..." },
+    "error": null,
+    "durationMs": 3,
+    "source": "rest"
+  }
+}
+```
+
+Codici HTTP: `200` eseguito, `400` parametri non validi, `401` senza token,
+`403` bloccato dalla whitelist, `404` bottone inesistente, `501` azione non
+supportata sulla piattaforma, `500` errore interno.
+
+### `POST /api/reload`
+
+Rilegge `deck.json` da disco. Se il file non e' valido la configurazione
+precedente resta attiva e la risposta e' `400` con l'elenco degli errori.
+
+---
+
+## 3. WebSocket full - `/ws`
+
+Il token puo' essere passato nell'handshake (`/ws?token=...`) oppure inviato
+come primo messaggio. Senza autenticazione entro **8 secondi** la connessione
+viene chiusa con codice `1008`.
+
+### Messaggi host -> client
+
+| `type` | contenuto | quando |
+|---|---|---|
+| `hello` | `protocol`, `name`, `requiresToken`, `authenticated` | subito dopo la connessione |
+| `auth-ok` | `protocol` | autenticazione riuscita |
+| `deck` | `deck`, `state` | dopo `auth-ok` e a ogni ricarica di `deck.json` |
+| `state` | `state` | a ogni variazione (pressioni, client, dry-run) |
+| `navigate` | `activeProfile`, `activePage` | cambio pagina/profilo |
+| `ack` | `requestId`, `ok`, `result` | risposta a `press` / `navigate` / `reload` |
+| `event` | `event: "press"`, `data` | notifica broadcast di una pressione |
+| `error` | `code`, `message`, `requestId?` | errore applicativo |
+| `pong` | `requestId`, `ts` | risposta a `ping` |
+
+### Messaggi client -> host
+
+| `type` | campi | note |
+|---|---|---|
+| `auth` | `token` | obbligatorio se il token non e' nell'URL |
+| `press` | `buttonId`, `profileId?`, `pageId?`, `hold?`, `dryRun?`, `requestId?` | risponde con `ack` |
+| `navigate` | `profile?`, `page?`, `requestId?` | risponde con `ack` |
+| `reload` | `requestId?` | ricarica `deck.json` |
+| `ping` | `requestId?` | risponde con `pong` |
+
+Esempio di sessione completa:
+
+```
+client -> ws://192.168.1.10:8899/ws
+host   <- {"type":"hello","protocol":1,"name":"Wdeck Host","requiresToken":true,"authenticated":false}
+client -> {"type":"auth","token":"abc123"}
+host   <- {"type":"auth-ok","protocol":1}
+host   <- {"type":"deck","deck":{...},"state":{...}}
+host   <- {"type":"state","state":{...}}
+client -> {"type":"press","buttonId":"mute","requestId":"r1"}
+host   <- {"type":"ack","requestId":"r1","ok":true,"result":{...}}
+host   <- {"type":"event","event":"press","data":{...}}
+```
+
+Il server invia un `ping` di controllo ogni 30 secondi; i client che non
+rispondono con `pong` vengono chiusi.
+
+---
+
+## 4. Protocollo lite (ESP32)
+
+Pensato per dispositivi con poca RAM: chiavi JSON di **un solo carattere**,
+nessun dato superfluo, layout di una pagina tipicamente sotto 1 KB.
+
+### Nomi di campo
+
+| campo logico | chiave | tipo | note |
+|---|---|---|---|
+| version | `v` | intero | versione del protocollo lite |
+| profile | `f` | stringa | id profilo |
+| page | `p` | stringa | id pagina |
+| rows | `r` | intero | righe della griglia |
+| cols | `c` | intero | colonne della griglia |
+| buttons | `b` | array | bottoni della pagina |
+| id | `i` | stringa | id bottone |
+| label | `l` | stringa | etichetta |
+| col | `x` | intero | colonna del bottone |
+| row | `y` | intero | riga del bottone |
+| color | `g` | stringa | `#rrggbb`, opzionale |
+| icon | `n` | stringa | nome icona, opzionale |
+| type | `t` | stringa | tipo azione oppure tipo messaggio |
+| ok | `k` | 0/1 | esito |
+| error | `e` | stringa | codice errore |
+| message | `m` | stringa | messaggio leggibile |
+| timestamp | `s` | intero | millisecondi dell'host |
+| pages | `q` | array | id delle pagine del profilo |
+| dryRun | `d` | 0/1 | host in dry-run |
+
+### Tipi di messaggio (campo `t`)
+
+| significato | valore | direzione |
+|---|---|---|
+| hello | `h` | host -> device |
+| auth | `u` | riservato (token gia' nell'URL) |
+| authOk | `k` | riservato |
+| state | `s` | host -> device |
+| press | `p` | device -> host |
+| ack | `a` | host -> device |
+| error | `e` | host -> device |
+| ping | `i` | device -> host |
+| pong | `o` | host -> device |
+| navigate | `n` | host -> device |
+
+### `GET /api/lite/deck`
+
+Parametri opzionali: `profile`, `page` (default: quelli attivi sull'host).
+
+```json
+{
+  "v": 1, "f": "default", "p": "main", "r": 3, "c": 5, "d": 0,
+  "q": ["main", "utility"],
+  "b": [
+    { "i": "media-prev", "l": "Prev", "x": 0, "y": 0, "g": "#2d3b55", "n": "prev", "t": "media" },
+    { "i": "media-playpause", "l": "Play/Pausa", "x": 1, "y": 0, "g": "#1f6feb", "n": "play", "t": "media" }
+  ]
+}
+```
+
+I **parametri** delle azioni non vengono mai inviati al dispositivo: il device
+conosce solo id, posizione e aspetto.
+
+### `GET /api/lite/state`
+
+```json
+{ "v": 1, "f": "default", "p": "main", "d": 0, "s": 1765432100000 }
+```
+
+### `POST /api/lite/press`
+
+Richiesta `{ "i": "media-playpause" }` -> risposta:
+
+```json
+{ "v": 1, "i": "media-playpause", "k": 1, "m": "inviato tasto media \"playpause\"", "d": 0 }
+```
+
+### WebSocket lite - `/ws/lite`
+
+Il token e' **obbligatorio nell'handshake**: `ws://host:8899/ws/lite?token=abc123`.
+Senza token l'upgrade viene rifiutato con `HTTP 401` (nessuna finestra di grazia:
+un microcontrollore non deve gestire stati intermedi).
+
+```
+device -> ws://192.168.1.10:8899/ws/lite?token=abc123
+host   <- {"t":"h","v":1,"f":"default","p":"main","d":0}
+host   <- {"t":"s","v":1,"f":"default","p":"main","d":0,"s":1765432100000}
+device -> {"t":"p","i":"mute"}
+host   <- {"t":"a","i":"mute","k":1,"m":"inviato tasto media \"mute\""}
+host   <- {"t":"n","f":"default","p":"utility"}      (cambio pagina: riscaricare il layout)
+device -> {"t":"i"}
+host   <- {"t":"o","s":1765432100000}
+```
+
+### Come implementare un nuovo dispositivo
+
+1. `GET /api/lite/deck?token=...` -> disegnare la griglia `r` x `c` usando `x`/`y`.
+2. Aprire `/ws/lite?token=...` e restare in ascolto.
+3. Su tocco inviare `{"t":"p","i":"<id>"}` e mostrare l'esito dell'`ack` (`k`).
+4. Su `{"t":"n",...}` riscaricare il layout della nuova pagina.
+5. Inviare `{"t":"i"}` ogni ~20 s per tenere viva la connessione.
+
+---
+
+## 5. Compatibilita' e versioning
+
+- `v` / `protocol` sono numeri interi: un client deve rifiutarsi di funzionare
+  se riceve una versione maggiore di quella che conosce;
+- l'aggiunta di **nuovi campi opzionali** non incrementa la versione;
+- la modifica o rimozione di campi esistenti **incrementa** la versione;
+- il firmware ESP32 controlla `v` all'avvio e mostra "protocollo incompatibile"
+  sul display se non coincide.
