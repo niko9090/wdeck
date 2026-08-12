@@ -1,0 +1,34 @@
+{
+  "name": "wdeck",
+  "version": "0.1.0",
+  "description": "Wdeck - Stream Deck software multi-piattaforma: host Node.js + client web PWA + firmware ESP32",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "bin": {
+    "wdeck": "./bin/wdeck.mjs"
+  },
+  "scripts": {
+    "start": "node bin/wdeck.mjs",
+    "dev": "node bin/wdeck.mjs --dry-run",
+    "build": "node scripts/build-web.mjs",
+    "test": "node --test test/*.test.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "test:esp32": "node scripts/test-esp32.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
+    "verify": "npm test && npm run smoke && npm run build && npm run test:esp32 && npm run check:docs"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "keywords": [
+    "streamdeck",
+    "macro",
+    "esp32",
+    "pwa",
+    "websocket",
+    "automation"
+  ]
+}

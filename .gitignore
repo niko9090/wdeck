@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.tmp/
+*.log
+.DS_Store
+Thumbs.db
+# runtime state generato dall'host
+.wdeck-runtime.json
+# PlatformIO
+firmware/esp32/.pio/
+firmware/esp32/.vscode/

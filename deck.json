@@ -1,0 +1,337 @@
+{
+  "$schema": "./schema/deck.schema.json",
+  "version": 1,
+  "name": "Wdeck",
+  "defaultProfile": "default",
+  "settings": {
+    "server": {
+      "host": "0.0.0.0",
+      "port": 8899,
+      "publicName": "Wdeck Host"
+    },
+    "security": {
+      "requireToken": true,
+      "token": "CHANGE-ME-wdeck-dev-token",
+      "pin": "246810",
+      "dryRun": false,
+      "allowUrlSchemes": ["http", "https", "mailto", "ms-settings"],
+      "allowedExtensions": [".exe", ".com", ".bat", ".cmd", ".ps1", ".py", ".lnk"],
+      "allowExec": [
+        "C:\\Windows\\System32\\notepad.exe",
+        "C:\\Windows\\System32\\calc.exe",
+        "C:\\Windows\\explorer.exe",
+        "scripts/examples/*"
+      ],
+      "maxSequenceSteps": 32
+    },
+    "ui": {
+      "theme": "dark",
+      "accent": "#4c8dff",
+      "showLabels": true
+    }
+  },
+  "profiles": [
+    {
+      "id": "default",
+      "name": "Scrivania",
+      "defaultPage": "main",
+      "pages": [
+        {
+          "id": "main",
+          "name": "Principale",
+          "rows": 3,
+          "cols": 5,
+          "buttons": [
+            {
+              "id": "media-prev",
+              "label": "Prev",
+              "row": 0,
+              "col": 0,
+              "icon": "prev",
+              "color": "#2d3b55",
+              "action": { "type": "media", "params": { "key": "prev" } }
+            },
+            {
+              "id": "media-playpause",
+              "label": "Play/Pausa",
+              "row": 0,
+              "col": 1,
+              "icon": "play",
+              "color": "#1f6feb",
+              "action": { "type": "media", "params": { "key": "playpause" } }
+            },
+            {
+              "id": "media-next",
+              "label": "Next",
+              "row": 0,
+              "col": 2,
+              "icon": "next",
+              "color": "#2d3b55",
+              "action": { "type": "media", "params": { "key": "next" } }
+            },
+            {
+              "id": "vol-down",
+              "label": "Vol -",
+              "row": 0,
+              "col": 3,
+              "icon": "volume-down",
+              "color": "#2d3b55",
+              "action": { "type": "media", "params": { "key": "volumedown", "repeat": 2 } }
+            },
+            {
+              "id": "vol-up",
+              "label": "Vol +",
+              "row": 0,
+              "col": 4,
+              "icon": "volume-up",
+              "color": "#2d3b55",
+              "action": { "type": "media", "params": { "key": "volumeup", "repeat": 2 } }
+            },
+            {
+              "id": "mute",
+              "label": "Muto",
+              "row": 1,
+              "col": 0,
+              "icon": "mute",
+              "color": "#8a3b3b",
+              "action": { "type": "media", "params": { "key": "mute" } }
+            },
+            {
+              "id": "notepad",
+              "label": "Blocco note",
+              "row": 1,
+              "col": 1,
+              "icon": "text",
+              "color": "#3b6e4f",
+              "action": {
+                "type": "launch",
+                "params": { "path": "C:\\Windows\\System32\\notepad.exe" }
+              }
+            },
+            {
+              "id": "open-docs",
+              "label": "Docs",
+              "row": 1,
+              "col": 2,
+              "icon": "globe",
+              "color": "#3b5a6e",
+              "action": {
+                "type": "url",
+                "params": { "url": "https://github.com/" }
+              }
+            },
+            {
+              "id": "hello-script",
+              "label": "Script demo",
+              "row": 1,
+              "col": 3,
+              "icon": "terminal",
+              "color": "#5b4b8a",
+              "action": {
+                "type": "script",
+                "params": { "path": "scripts/examples/hello.ps1", "args": ["Wdeck"] }
+              }
+            },
+            {
+              "id": "type-email",
+              "label": "Firma",
+              "row": 1,
+              "col": 4,
+              "icon": "keyboard",
+              "color": "#6e5a3b",
+              "action": {
+                "type": "text",
+                "params": { "text": "Cordiali saluti,\nWdeck" }
+              }
+            },
+            {
+              "id": "hotkey-copy",
+              "label": "Copia",
+              "row": 2,
+              "col": 0,
+              "icon": "layers",
+              "color": "#2d3b55",
+              "action": { "type": "hotkey", "params": { "keys": "ctrl+c" } }
+            },
+            {
+              "id": "combo-focus",
+              "label": "Modalita' focus",
+              "row": 2,
+              "col": 1,
+              "icon": "rocket",
+              "color": "#8a5a2b",
+              "action": {
+                "type": "sequence",
+                "params": {
+                  "steps": [
+                    { "type": "media", "params": { "key": "playpause" } },
+                    { "type": "delay", "params": { "ms": 250 } },
+                    { "type": "hotkey", "params": { "keys": "win+d" } }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "webhook-demo",
+              "label": "Webhook",
+              "row": 2,
+              "col": 2,
+              "icon": "globe",
+              "color": "#3b6e6e",
+              "action": {
+                "type": "http",
+                "params": { "url": "http://127.0.0.1:9/ping", "method": "POST", "body": "{\"from\":\"wdeck\"}" }
+              }
+            },
+            {
+              "id": "goto-stream",
+              "label": "Pagina 2",
+              "row": 2,
+              "col": 3,
+              "icon": "next",
+              "color": "#444c5c",
+              "action": {
+                "type": "navigate",
+                "params": { "page": "utility" }
+              }
+            },
+            {
+              "id": "obs-stub",
+              "label": "OBS (stub)",
+              "row": 2,
+              "col": 4,
+              "icon": "camera",
+              "color": "#5c4444",
+              "action": {
+                "type": "stub",
+                "params": { "note": "Integrazione OBS WebSocket non ancora implementata" }
+              }
+            }
+          ]
+        },
+        {
+          "id": "utility",
+          "name": "Utility",
+          "rows": 2,
+          "cols": 4,
+          "buttons": [
+            {
+              "id": "lock-station",
+              "label": "Blocca PC",
+              "row": 0,
+              "col": 0,
+              "icon": "power",
+              "color": "#8a3b3b",
+              "action": { "type": "hotkey", "params": { "keys": "win+l" } }
+            },
+            {
+              "id": "screenshot",
+              "label": "Screenshot",
+              "row": 0,
+              "col": 1,
+              "icon": "camera",
+              "color": "#3b5a6e",
+              "action": { "type": "hotkey", "params": { "keys": "win+shift+s" } }
+            },
+            {
+              "id": "explorer",
+              "label": "Esplora file",
+              "row": 0,
+              "col": 2,
+              "icon": "folder",
+              "color": "#6e5a3b",
+              "action": {
+                "type": "launch",
+                "params": { "path": "C:\\Windows\\explorer.exe", "args": ["C:\\"] }
+              }
+            },
+            {
+              "id": "back-main",
+              "label": "Indietro",
+              "row": 0,
+              "col": 3,
+              "icon": "prev",
+              "color": "#444c5c",
+              "action": { "type": "navigate", "params": { "page": "main" } }
+            },
+            {
+              "id": "profile-stream",
+              "label": "Profilo streaming",
+              "row": 1,
+              "col": 0,
+              "icon": "star",
+              "color": "#5b4b8a",
+              "action": {
+                "type": "navigate",
+                "params": { "profile": "streaming", "page": "live" }
+              }
+            },
+            {
+              "id": "noop-demo",
+              "label": "Nessuna azione",
+              "row": 1,
+              "col": 3,
+              "icon": "gear",
+              "color": "#3a3f4b",
+              "action": { "type": "noop", "params": {} }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "streaming",
+      "name": "Streaming",
+      "defaultPage": "live",
+      "pages": [
+        {
+          "id": "live",
+          "name": "Live",
+          "rows": 2,
+          "cols": 3,
+          "buttons": [
+            {
+              "id": "mic-toggle",
+              "label": "Mic",
+              "row": 0,
+              "col": 0,
+              "icon": "mic",
+              "color": "#8a3b3b",
+              "action": { "type": "hotkey", "params": { "keys": "ctrl+shift+m" } }
+            },
+            {
+              "id": "scene-1",
+              "label": "Scena 1",
+              "row": 0,
+              "col": 1,
+              "icon": "layers",
+              "color": "#3b6e4f",
+              "action": { "type": "hotkey", "params": { "keys": "ctrl+alt+1" } }
+            },
+            {
+              "id": "scene-2",
+              "label": "Scena 2",
+              "row": 0,
+              "col": 2,
+              "icon": "layers",
+              "color": "#3b6e4f",
+              "action": { "type": "hotkey", "params": { "keys": "ctrl+alt+2" } }
+            },
+            {
+              "id": "back-default",
+              "label": "Scrivania",
+              "row": 1,
+              "col": 0,
+              "icon": "prev",
+              "color": "#444c5c",
+              "action": {
+                "type": "navigate",
+                "params": { "profile": "default", "page": "main" }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
