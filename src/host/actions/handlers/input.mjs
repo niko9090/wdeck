@@ -1,0 +1,86 @@
+/** Azioni di input sintetico: tasti media, hotkey, digitazione testo. */
+
+import { parseHotkey, resolveMediaKey, MEDIA_KEYS } from '../../platform/keys.mjs';
+import { buildKeyScript, buildTypeTextScript, runPowerShell } from '../../platform/windows.mjs';
+
+export const mediaAction = {
+  type: 'media',
+  title: 'Tasti multimediali',
+  description: 'Invia un tasto multimediale di sistema (play/pausa, brano precedente/successivo, volume, muto).',
+  platforms: ['win32'],
+  paramsHelp: { key: Object.keys(MEDIA_KEYS).join(' | '), repeat: 'intero 1..20 (default 1)' },
+  validate(params) {
+    resolveMediaKey(params?.key);
+    const repeat = params?.repeat;
+    if (repeat !== undefined && (!Number.isInteger(repeat) || repeat < 1 || repeat > 20)) {
+      throw new Error('parametro "repeat" non valido: atteso intero fra 1 e 20');
+    }
+  },
+  describe: (params) => `tasto media "${params?.key}"${params?.repeat > 1 ? ` x${params.repeat}` : ''}`,
+  async run(params, ctx) {
+    const keyCode = resolveMediaKey(params.key);
+    const script = buildKeyScript([], keyCode, { repeat: params.repeat ?? 1 });
+    if (ctx.dryRun) {
+      return { ok: true, simulated: true, detail: `invierebbe VK 0x${keyCode.toString(16)} (${params.key})`, script };
+    }
+    const res = await runPowerShell(script, { timeoutMs: 8000 });
+    if (res.code !== 0) throw new Error(`PowerShell ha restituito ${res.code}: ${res.stderr || 'errore sconosciuto'}`);
+    return { ok: true, detail: `inviato tasto media "${params.key}"` };
+  }
+};
+
+export const hotkeyAction = {
+  type: 'hotkey',
+  title: 'Hotkey',
+  description: 'Invia una combinazione di tasti, ad esempio "ctrl+shift+m" oppure "win+d".',
+  platforms: ['win32'],
+  paramsHelp: { keys: 'es. "ctrl+alt+del", "win+l", "f5"', repeat: 'intero 1..20 (default 1)' },
+  validate(params) {
+    parseHotkey(params?.keys);
+    const repeat = params?.repeat;
+    if (repeat !== undefined && (!Number.isInteger(repeat) || repeat < 1 || repeat > 20)) {
+      throw new Error('parametro "repeat" non valido: atteso intero fra 1 e 20');
+    }
+  },
+  describe: (params) => `hotkey "${params?.keys}"`,
+  async run(params, ctx) {
+    const hotkey = parseHotkey(params.keys);
+    const script = buildKeyScript(hotkey.modifierCodes, hotkey.keyCode, { repeat: params.repeat ?? 1 });
+    if (ctx.dryRun) {
+      return {
+        ok: true,
+        simulated: true,
+        detail: `invierebbe ${[...hotkey.modifiers, hotkey.key].join('+')}`,
+        script
+      };
+    }
+    const res = await runPowerShell(script, { timeoutMs: 8000 });
+    if (res.code !== 0) throw new Error(`PowerShell ha restituito ${res.code}: ${res.stderr || 'errore sconosciuto'}`);
+    return { ok: true, detail: `inviata hotkey "${params.keys}"` };
+  }
+};
+
+export const textAction = {
+  type: 'text',
+  title: 'Digitazione testo',
+  description: 'Digita un testo nella finestra attiva tramite SendKeys.',
+  platforms: ['win32'],
+  paramsHelp: { text: 'testo da digitare (max 2000 caratteri)' },
+  validate(params) {
+    const text = params?.text;
+    if (typeof text !== 'string' || text.length === 0) throw new Error('parametro "text" mancante');
+    if (text.length > 2000) throw new Error('parametro "text" troppo lungo (max 2000 caratteri)');
+  },
+  describe: (params) => `digita "${String(params?.text ?? '').slice(0, 40).replace(/\n/g, '\\n')}${String(params?.text ?? '').length > 40 ? '...' : ''}"`,
+  async run(params, ctx) {
+    const script = buildTypeTextScript(params.text);
+    if (ctx.dryRun) {
+      return { ok: true, simulated: true, detail: `digiterebbe ${params.text.length} caratteri`, script };
+    }
+    const res = await runPowerShell(script, { timeoutMs: 10000 });
+    if (res.code !== 0) throw new Error(`PowerShell ha restituito ${res.code}: ${res.stderr || 'errore sconosciuto'}`);
+    return { ok: true, detail: `digitati ${params.text.length} caratteri` };
+  }
+};
+
+export default [mediaAction, hotkeyAction, textAction];
