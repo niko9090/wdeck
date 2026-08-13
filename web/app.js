@@ -6,7 +6,7 @@
  */
 
 import { ENDPOINTS, MSG } from '/shared/protocol.mjs';
-import { CUSTOM_PREFIX, ICONS, iconMarkup, iconSvg, isCustomIcon } from './icons.js';
+import { CUSTOM_PREFIX, ICONS, iconMarkup, iconSvg } from './icons.js';
 
 const STORAGE = {
   hosts: 'wdeck.hosts',
