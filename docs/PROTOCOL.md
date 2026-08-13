@@ -58,6 +58,22 @@ Content-Type: application/json
 `name` e `days` sono opzionali. **Il token si vede una volta sola**: dopo la
 risposta, di lui resta soltanto l'impronta.
 
+Un pairing riuscito **scrive su disco**: aggiunge la voce del dispositivo a
+`settings.security.devices` dentro `deck.json`, lo stesso file che contiene i
+profili. Non c'e' un archivio separato delle credenziali, quindi un accoppiamento
+di prova lascia una traccia permanente nel file di configurazione: se `deck.json`
+sta in un repository, quella traccia finisce in un commit. Il token vero non c'e'
+— solo `hash`, l'impronta SHA-256, dalla quale non si risale alla credenziale —
+ma il dispositivo resta valido finche' non lo si revoca:
+
+```bash
+node bin/wdeck.mjs --list-devices
+node bin/wdeck.mjs --revoke-device d-1a2b3c4d5e
+```
+
+Il pairing e' l'unica operazione che tocca `deck.json` da sola: il semplice
+avvio dell'host, comprese le letture di stato, non riscrive il file.
+
 Il PIN e' in `settings.security.pin`; se vuoto, il pairing e' disabilitato e
 `POST /api/pair` risponde `401`. I tentativi sono limitati (vedi sezione 2).
 

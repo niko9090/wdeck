@@ -441,6 +441,33 @@ protezioni non sono un dettaglio.
 - **Bind**: `127.0.0.1` per l'uso solo locale, `0.0.0.0` per la LAN.
 - Il layout inviato ai client **non contiene mai** token, PIN o whitelist.
 
+### Il pairing scrive in `deck.json`
+
+Vale la pena saperlo prima di tenere `deck.json` sotto controllo di versione:
+**ogni accoppiamento riuscito modifica il file di configurazione**, aggiungendo
+una voce a `settings.security.devices`. Non e' un file separato.
+
+```json
+{ "id": "d-1a2b3c4d5e", "name": "Telefono di Nicola",
+  "hash": "793cbd7e...", "createdAt": 1786655324210, "expiresAt": null }
+```
+
+Il token vero **non c'e'**: resta solo la sua impronta SHA-256, che serve a
+riconoscerlo ma non permette di ricostruirlo. Anche committando il file per
+sbaglio non si consegna una credenziale valida — ma si consegna comunque
+l'elenco dei dispositivi accoppiati, e i token di prova restano validi finche'
+non li si revoca. Le voci nate da un collaudo si tolgono cosi':
+
+```bash
+node bin/wdeck.mjs --list-devices              # quali ci sono
+node bin/wdeck.mjs --revoke-device d-1a2b3c4d5e # via quella
+node bin/wdeck.mjs --prune-devices              # via tutte le scadute
+```
+
+Chi vuole che il proprio `deck.json` non finisca mai in un commit lo tenga fuori
+dal repository: l'host accetta `--config <percorso>`, e l'installer lo mette
+gia' in `%LOCALAPPDATA%\Wdeck\deck.json`, fuori dalla cartella del progetto.
+
 Gestione da riga di comando (non avvia l'host, lavora su `deck.json`):
 
 ```bash
