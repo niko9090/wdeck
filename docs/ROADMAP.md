@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.10`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.3.0`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -134,6 +134,11 @@ esegue anche i file `.sh`.
 
 ### Client web PWA
 
+- **Italiano e inglese** (`settings.ui.language`: `it`, `en`, `auto`), con le
+  due lingue tenute allineate da un test: una chiave presente in una sola
+  comparirebbe nella lingua sbagliata senza che nessuno se ne accorga.
+- **Tema chiaro** vero: `ui.theme: "light"` lo impone, `"auto"` lo segue dal
+  sistema. Entrambi cambiabili da Impostazioni.
 - Griglia responsive con proporzioni corrette su telefono, tablet e desktop.
 - Profili (menu a tendina) e pagine (tab), sincronizzati fra i client.
 - Icone vettoriali (22 glifi), colori per bottone, etichette opzionali.
@@ -161,7 +166,7 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 411 |
+| `npm test` | file di test unitari/integrazione | 432 |
 | `npm run smoke` | end-to-end su host reale | 49 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
@@ -180,8 +185,7 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 | azione `stub` | conferma la pressione e restituisce la nota configurata | resta come segnaposto per chi vuole disegnare un deck prima di scrivere l'azione vera: non esegue nulla, e ora nessuna integrazione inclusa la usa piu' |
 | firmware ESP32 | codice completo e conforme al protocollo, verificato dai test | **non e' mai stato compilato ne' provato su hardware reale**: i pin dichiarati vanno verificati sulla scheda in uso |
 | icone su ESP32 | il campo `n` viene scaricato ma ignorato | il display mostra solo l'etichetta testuale; servono glifi bitmap o LVGL |
-| `holdAction` | supportata da host e client web | non supportata dall'ESP32; nessuna interfaccia per configurarla, va scritta a mano in `deck.json` |
-| tema chiaro | CSS presente, attivo con `ui.theme: "auto"` + preferenza di sistema | `ui.theme: "light"` non forza ancora il tema chiaro |
+| `holdAction` | configurabile dall'editor, supportata da host e client web | non supportata dall'ESP32: il firmware non distingue un tocco lungo da uno breve |
 | `ui.showLabels` | rispettato dal client web | ignorato dall'ESP32 |
 
 ---
@@ -214,7 +218,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
   vivo.
 - L'aggiornamento viene segnalato ma non applicato: il download e la
   sostituzione dei file restano a carico dell'utente.
-- Nessuna localizzazione: interfaccia e messaggi solo in italiano.
 - Nessun bundling/minificazione del JavaScript della PWA (viene servito come
   moduli ES; solo il CSS e' minificato).
 

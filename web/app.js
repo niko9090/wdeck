@@ -7,6 +7,7 @@
 
 import { ENDPOINTS, MSG } from '/shared/protocol.mjs';
 import { CUSTOM_PREFIX, ICONS, iconMarkup, iconSvg } from './icons.js';
+import { language, setLanguage, t } from './i18n.js';
 
 const STORAGE = {
   hosts: 'wdeck.hosts',
@@ -206,7 +207,7 @@ function renderHosts() {
   ui.hosts.innerHTML = state.hosts
     .map((h) => `<button class="host-tab" type="button" role="tab" data-host="${h.id}" aria-selected="${h.id === state.activeHostId}">`
       + `<span class="host-dot"${h.id === state.activeHostId && state.connected ? ' data-on="1"' : ''}></span>${escapeHtml(h.name)}</button>`)
-    .join('') + '<button class="host-tab add" type="button" data-host-add="1" title="Aggiungi un computer">+</button>';
+    .join('') + `<button class="host-tab add" type="button" data-host-add="1" title="${t('top.addComputer')}">+</button>`;
 }
 
 // ---------------------------------------------------------------- gate
@@ -240,7 +241,7 @@ async function pairWithPin() {
   const pin = ui.gatePin.value.trim();
   ui.gateError.textContent = '';
   if (!pin) {
-    ui.gateError.textContent = 'Inserisci il PIN mostrato dall\'host.';
+    ui.gateError.textContent = t('gate.pinMissing');
     return;
   }
   try {
@@ -253,12 +254,12 @@ async function pairWithPin() {
     });
     const data = await res.json();
     if (!res.ok || !data.token) {
-      ui.gateError.textContent = data?.error?.message ?? 'Pairing rifiutato.';
+      ui.gateError.textContent = data?.error?.message ?? t('gate.rejected');
       return;
     }
     await finishPairing(base, data.token);
   } catch (err) {
-    ui.gateError.textContent = `Host non raggiungibile: ${err.message}`;
+    ui.gateError.textContent = t('gate.unreachable', { message: err.message });
   }
 }
 
@@ -283,7 +284,7 @@ function saveManualToken() {
   const base = ui.gateHost.value.trim().replace(/\/+$/, '') || location.origin;
   const manual = ui.gateToken.value.trim();
   if (!manual) {
-    ui.gateError.textContent = 'Inserisci un token.';
+    ui.gateError.textContent = t('gate.tokenMissing');
     return;
   }
   finishPairing(base, manual);
@@ -307,7 +308,7 @@ function connect() {
   if (state.socket) {
     try { state.socket.close(); } catch { /* ignora */ }
   }
-  setStatus('connecting', 'connessione in corso...');
+  setStatus('connecting', t('status.connecting'));
 
   const socket = new WebSocket(wsUrl());
   state.socket = socket;
@@ -329,14 +330,14 @@ function connect() {
   socket.addEventListener('close', () => {
     if (socket !== state.socket) return;
     state.connected = false;
-    setStatus('offline', 'connessione persa');
+    setStatus('offline', t('status.lost'));
     renderHosts();
     const delay = Math.min(1000 * 2 ** state.retry, 15000);
     state.retry += 1;
     setTimeout(() => { if (token() && socket === state.socket) connect(); }, delay);
   });
 
-  socket.addEventListener('error', () => setStatus('offline', 'errore di connessione'));
+  socket.addEventListener('error', () => setStatus('offline', t('status.error')));
 }
 
 function handleMessage(msg) {
@@ -348,7 +349,7 @@ function handleMessage(msg) {
     case MSG.authOk:
       state.connected = true;
       state.retry = 0;
-      setStatus('online', 'connesso');
+      setStatus('online', t('status.online'));
       renderHosts();
       checkUpdate();
       break;
@@ -392,9 +393,9 @@ function handleMessage(msg) {
 
     case MSG.error:
       if (msg.code === 'unauthorized') {
-        showGate('Token non valido o scaduto. Esegui di nuovo il pairing.');
+        showGate(t('gate.expired'));
       } else {
-        toast(msg.message ?? 'errore', 'err');
+        toast(msg.message ?? t('action.error'), 'err');
       }
       break;
 
@@ -405,7 +406,7 @@ function handleMessage(msg) {
 
 function send(message) {
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
-    toast('Non connesso all\'host', 'err');
+    toast(t('status.notConnected'), 'err');
     return false;
   }
   state.socket.send(JSON.stringify(message));
@@ -421,10 +422,39 @@ function applyState(hostState) {
   ui.dryBadge.hidden = !hostState.dryRun;
 }
 
+/**
+ * Applica tema, accento e lingua dichiarati dall'host.
+ *
+ * `light` impone il tema chiaro, `auto` lo segue solo se il sistema lo chiede,
+ * `dark` (o niente) lascia quello scuro. Prima esisteva solo `auto`, quindi
+ * chi scriveva `"theme": "light"` non otteneva nulla.
+ */
 function applyTheme(uiConfig) {
   if (!uiConfig) return;
   if (uiConfig.accent) document.documentElement.style.setProperty('--accent', uiConfig.accent);
-  document.documentElement.classList.toggle('theme-auto', uiConfig.theme === 'auto');
+  const root = document.documentElement;
+  root.classList.toggle('theme-auto', uiConfig.theme === 'auto');
+  root.classList.toggle('theme-light', uiConfig.theme === 'light');
+
+  const scelta = setLanguage(uiConfig.language ?? 'auto');
+  if (document.documentElement.lang !== scelta) {
+    document.documentElement.lang = scelta;
+    applyStaticTexts();
+  }
+}
+
+/** Traduce le parti dell'interfaccia scritte direttamente in index.html. */
+function applyStaticTexts() {
+  for (const node of document.querySelectorAll('[data-i18n]')) {
+    node.textContent = t(node.dataset.i18n);
+  }
+  for (const node of document.querySelectorAll('[data-i18n-title]')) {
+    node.title = t(node.dataset.i18nTitle);
+  }
+  for (const node of document.querySelectorAll('[data-i18n-label]')) {
+    node.setAttribute('aria-label', t(node.dataset.i18nLabel));
+  }
+  ui.statusText.textContent = state.connected ? t('status.online') : t('status.offline');
 }
 
 function currentProfile() {
@@ -453,7 +483,7 @@ function renderProfiles() {
     .join('')
     // In modifica il menu dei profili diventa anche la via per crearli e
     // rinominarli: non serve un altro bottone nella barra, gia' affollata.
-    + (state.editing ? '<option value="__gestisci__">Gestisci profili...</option>' : '');
+    + (state.editing ? `<option value="__gestisci__">${t('profile.manage')}</option>` : '');
 }
 
 function renderPages() {
@@ -546,9 +576,9 @@ function renderStatus() {
   if (!state.hostState) return;
   ui.dryBadge.hidden = !state.hostState.dryRun;
   const parts = [
-    state.connected ? 'connesso' : 'non connesso',
-    `${state.hostState.clients} client`,
-    `${state.hostState.pressCount} pressioni`
+    state.connected ? t('status.online') : t('status.offline'),
+    t('status.clients', { n: state.hostState.clients }),
+    t('status.presses', { n: state.hostState.pressCount })
   ];
   ui.statusText.textContent = parts.join(' - ');
   if (state.hostState.lastAction) renderLastAction(state.hostState.lastAction);
@@ -649,7 +679,7 @@ function finishPress(pending, ok, result) {
   setTimeout(() => element.classList.remove('ok', 'err'), 700);
 
   if (!ok) {
-    toast(result?.error?.message ?? 'azione fallita', 'err');
+    toast(result?.error?.message ?? t('action.failed'), 'err');
     return;
   }
 
@@ -658,7 +688,7 @@ function finishPress(pending, ok, result) {
   const inner = result?.result ?? {};
   const output = String(inner.stdout ?? '').trim();
   if (output) toast(output.slice(0, 300), 'ok');
-  else if (result?.dryRun) toast(`simulato: ${result.description ?? ''}`, '');
+  else if (result?.dryRun) toast(t('action.simulated', { description: result.description ?? '' }), '');
   else if (inner.detail) toast(inner.detail, 'ok');
 
   // Gli handler di livello rispondono con il valore reale: allinea lo slider.
@@ -682,12 +712,15 @@ function updateSliderVisual(element, value) {
 function confirmPress(button) {
   return new Promise((resolve) => {
     openSheet({
-      title: 'Confermi?',
-      body: `<p class="sheet-text">Stai per eseguire <strong>${escapeHtml(button.label || button.id)}</strong> `
-        + `(azione <code>${escapeHtml(button.action.type)}</code>) sul computer <strong>${escapeHtml(activeHost()?.name ?? '')}</strong>.</p>`,
+      title: t('sheet.confirmTitle'),
+      body: `<p class="sheet-text">${t('sheet.confirmBody', {
+        label: escapeHtml(button.label || button.id),
+        type: escapeHtml(button.action.type),
+        host: escapeHtml(activeHost()?.name ?? '')
+      })}</p>`,
       actions: [
-        { label: 'Annulla', kind: 'ghost', onClick: () => { closeSheet(); resolve(false); } },
-        { label: 'Esegui', kind: 'danger', onClick: () => { closeSheet(); resolve(true); } }
+        { label: t('sheet.cancel'), kind: 'ghost', onClick: () => { closeSheet(); resolve(false); } },
+        { label: t('sheet.run'), kind: 'danger', onClick: () => { closeSheet(); resolve(true); } }
       ],
       onClose: () => resolve(false)
     });
@@ -727,7 +760,7 @@ async function loadActions() {
   if (state.actionGroups) return state.actionGroups;
   const res = await api(ENDPOINTS.actions);
   if (!res.ok) {
-    toast('Impossibile leggere le azioni disponibili', 'err');
+    toast(t('action.noActions'), 'err');
     return [];
   }
   state.actionGroups = res.data.groups ?? [];
@@ -791,14 +824,14 @@ function iconPickerHtml(selected, customIcons) {
 
   return `
     <div class="icon-picker" id="ed-icons">
-      ${choice('', '<span class="icon-auto">auto</span>', 'icona predefinita dell\'azione')}
+      ${choice('', `<span class="icon-auto">${t('edit.iconAuto')}</span>`, t('edit.iconDefault'))}
       ${builtin}
       ${custom}
     </div>
     <div class="icon-upload">
-      <label class="btn ghost small" for="ed-icon-file">Carica un'icona...</label>
+      <label class="btn ghost small" for="ed-icon-file">${t('edit.iconUpload')}</label>
       <input id="ed-icon-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden />
-      <span class="sheet-hint" id="ed-icon-msg">PNG, JPEG, WebP, GIF o SVG, massimo 192 KB.</span>
+      <span class="sheet-hint" id="ed-icon-msg">${t('edit.iconFormats')}</span>
     </div>`;
 }
 
@@ -826,7 +859,7 @@ function bindIconPicker({ onPick }) {
     event.target.value = '';
     if (!file) return;
     const message = el('ed-icon-msg');
-    message.textContent = 'caricamento...';
+    message.textContent = t('edit.iconUploading');
 
     try {
       const content = await new Promise((resolve, reject) => {
@@ -841,7 +874,7 @@ function bindIconPicker({ onPick }) {
       );
       const res = await api(ENDPOINTS.icons, { method: 'POST', body: { name, content } });
       if (!res.ok) {
-        message.textContent = res.data?.error?.message ?? 'caricamento rifiutato';
+        message.textContent = res.data?.error?.message ?? t('edit.rejected');
         return;
       }
 
@@ -856,9 +889,9 @@ function bindIconPicker({ onPick }) {
       button.innerHTML = `<img src="${customIconUrl(saved)}" alt="" />`;
       picker.appendChild(button);
       select(button);
-      message.textContent = `"${saved}" caricata.`;
+      message.textContent = t('edit.iconUploaded', { name: saved });
     } catch (err) {
-      message.textContent = `caricamento fallito: ${err.message}`;
+      message.textContent = t('edit.iconFailed', { message: err.message });
     }
   });
 }
@@ -891,35 +924,55 @@ async function editButton(buttonId, cell) {
 
   const allActions = groups.flatMap((g) => g.actions);
 
+  // Le azioni della pressione prolungata sono le stesse, piu' la voce "nessuna":
+  // configurarla richiedeva finora di scrivere holdAction a mano in deck.json.
+  const holdOptions = `<option value="">${escapeHtml(t('edit.holdNone'))}</option>`
+    + groups.map((g) => `<optgroup label="${escapeHtml(g.label)}">`
+      + g.actions.map((a) => `<option value="${a.type}"${a.type === draft.holdAction?.type ? ' selected' : ''}>${escapeHtml(a.title)}</option>`).join('')
+      + '</optgroup>').join('');
+
   openSheet({
-    title: existing ? 'Modifica controllo' : 'Nuovo controllo',
+    title: t(existing ? 'edit.editControl' : 'edit.newControl'),
     body: `
-      <label class="field"><span>Etichetta</span><input id="ed-label" type="text" maxlength="48" value="${escapeHtml(draft.label)}" /></label>
-      <label class="field"><span>Azione</span><select id="ed-type" class="select wide">${options}</select></label>
+      <label class="field"><span>${t('edit.label')}</span><input id="ed-label" type="text" maxlength="48" value="${escapeHtml(draft.label)}" /></label>
+      <label class="field"><span>${t('edit.action')}</span><select id="ed-type" class="select wide">${options}</select></label>
       <p id="ed-desc" class="sheet-hint"></p>
-      <label class="field"><span>Parametri (JSON)</span><textarea id="ed-params" rows="5" spellcheck="false">${escapeHtml(JSON.stringify(draft.action.params ?? {}, null, 2))}</textarea></label>
+      <label class="field"><span>${t('edit.params')}</span><textarea id="ed-params" rows="5" spellcheck="false">${escapeHtml(JSON.stringify(draft.action.params ?? {}, null, 2))}</textarea></label>
       <p id="ed-help" class="sheet-hint"></p>
 
-      <h3 class="sheet-section">Icona</h3>
+      <h3 class="sheet-section">${t('edit.icon')}</h3>
       ${iconPickerHtml(draft.icon, customIcons)}
 
+      <h3 class="sheet-section">${t('edit.hold')}</h3>
+      <p class="sheet-hint">${t('edit.holdHint')}</p>
+      <label class="field"><span>${t('edit.action')}</span><select id="ed-hold-type" class="select wide">${holdOptions}</select></label>
+      <label class="field" id="ed-hold-params-field"><span>${t('edit.holdParams')}</span><textarea id="ed-hold-params" rows="3" spellcheck="false">${escapeHtml(JSON.stringify(draft.holdAction?.params ?? {}, null, 2))}</textarea></label>
+
       <div class="field-row">
-        <label class="field"><span>Tipo</span><select id="ed-kind" class="select">
-          <option value="button"${draft.kind !== 'slider' ? ' selected' : ''}>Pulsante</option>
-          <option value="slider"${draft.kind === 'slider' ? ' selected' : ''}>Cursore</option>
+        <label class="field"><span>${t('edit.kind')}</span><select id="ed-kind" class="select">
+          <option value="button"${draft.kind !== 'slider' ? ' selected' : ''}>${t('edit.kindButton')}</option>
+          <option value="slider"${draft.kind === 'slider' ? ' selected' : ''}>${t('edit.kindSlider')}</option>
         </select></label>
-        <label class="field"><span>Colore</span><input id="ed-color" type="color" value="${draft.color ?? '#2d3b55'}" /></label>
-        <label class="field"><span>Larghezza</span><input id="ed-span" type="number" min="1" max="12" value="${draft.span ?? 1}" /></label>
+        <label class="field"><span>${t('edit.color')}</span><input id="ed-color" type="color" value="${draft.color ?? '#2d3b55'}" /></label>
+        <label class="field"><span>${t('edit.width')}</span><input id="ed-span" type="number" min="1" max="12" value="${draft.span ?? 1}" /></label>
       </div>
-      <label class="field checkbox"><input id="ed-confirm" type="checkbox"${draft.confirm ? ' checked' : ''} /><span>Chiedi conferma prima di eseguire</span></label>
-      <label class="field checkbox"><input id="ed-status" type="checkbox"${draft.status === false ? '' : ' checked'} /><span>Mostra lo stato reale letto dal computer</span></label>
+      <label class="field checkbox"><input id="ed-confirm" type="checkbox"${draft.confirm ? ' checked' : ''} /><span>${t('edit.confirm')}</span></label>
+      <label class="field checkbox"><input id="ed-status" type="checkbox"${draft.status === false ? '' : ' checked'} /><span>${t('edit.showStatus')}</span></label>
     `,
     actions: [
-      ...(existing ? [{ label: 'Elimina', kind: 'danger', onClick: () => removeButton(existing.id) }] : []),
-      { label: 'Annulla', kind: 'ghost', onClick: () => closeSheet() },
-      { label: 'Salva', kind: 'primary', onClick: () => saveButtonDraft(draft, existing) }
+      ...(existing ? [{ label: t('sheet.delete'), kind: 'danger', onClick: () => removeButton(existing.id) }] : []),
+      { label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() },
+      { label: t('sheet.save'), kind: 'primary', onClick: () => saveButtonDraft(draft, existing) }
     ]
   });
+
+  // I parametri della pressione prolungata servono solo se c'e' un'azione.
+  const holdSelect = el('ed-hold-type');
+  const aggiornaHold = () => {
+    el('ed-hold-params-field').hidden = holdSelect.value === '';
+  };
+  holdSelect.addEventListener('change', aggiornaHold);
+  aggiornaHold();
 
   bindIconPicker({ onPick: (value) => { draft.icon = value; } });
 
@@ -929,7 +982,7 @@ async function editButton(buttonId, cell) {
     el('ed-desc').textContent = spec?.description ?? '';
     el('ed-help').innerHTML = spec && Object.keys(spec.paramsHelp ?? {}).length
       ? Object.entries(spec.paramsHelp).map(([k, v]) => `<code>${escapeHtml(k)}</code>: ${escapeHtml(v)}`).join('<br />')
-      : 'Questa azione non richiede parametri.';
+      : t('edit.noParams');
     if (spec?.control === 'slider') el('ed-kind').value = 'slider';
 
     // Spuntare "mostra lo stato" su un'azione che non sa dichiararlo non
@@ -947,8 +1000,19 @@ async function saveButtonDraft(draft, existing) {
   try {
     params = JSON.parse(el('ed-params').value || '{}');
   } catch (err) {
-    toast(`Parametri non validi: ${err.message}`, 'err');
+    toast(t('edit.paramsInvalid', { message: err.message }), 'err');
     return;
+  }
+
+  const holdType = el('ed-hold-type').value;
+  let holdAction = null;
+  if (holdType !== '') {
+    try {
+      holdAction = { type: holdType, params: JSON.parse(el('ed-hold-params').value || '{}') };
+    } catch (err) {
+      toast(t('edit.holdParamsInvalid', { message: err.message }), 'err');
+      return;
+    }
   }
 
   const kind = el('ed-kind').value;
@@ -961,6 +1025,7 @@ async function saveButtonDraft(draft, existing) {
     span: Math.max(1, Number(el('ed-span').value) || 1),
     confirm: el('ed-confirm').checked,
     status: el('ed-status').checked,
+    holdAction,
     action: { type: el('ed-type').value, params }
   };
   if (kind === 'slider') {
@@ -978,14 +1043,14 @@ async function saveButtonDraft(draft, existing) {
   } else {
     page.buttons.push(next);
   }
-  await persistDeck(deck, `"${next.label}" salvato`);
+  await persistDeck(deck, t('edit.saved', { label: next.label }));
 }
 
 async function removeButton(buttonId) {
   const deck = cloneDeck();
   const page = findPage(findProfile(deck, state.profileId), currentPage().id);
   page.buttons = page.buttons.filter((b) => b.id !== buttonId);
-  await persistDeck(deck, 'controllo eliminato');
+  await persistDeck(deck, t('edit.removed'));
 }
 
 /**
@@ -1005,7 +1070,7 @@ async function moveButton(buttonId, target) {
   if (button.row === target.row && button.col === target.col) return false;
   button.row = target.row;
   button.col = target.col;
-  return persistDeck(deck, 'controllo spostato', { quiet: true });
+  return persistDeck(deck, t('edit.moved'), { quiet: true });
 }
 
 // ------------------------------------------------- pagine
@@ -1019,25 +1084,25 @@ function editPage(pageId) {
   const isDefault = profile.defaultPage === page.id;
 
   openSheet({
-    title: `Pagina "${page.name}"`,
+    title: t('page.title', { name: page.name }),
     body: `
-      <label class="field"><span>Nome</span><input id="pg-name" type="text" maxlength="64" value="${escapeHtml(page.name)}" /></label>
+      <label class="field"><span>${t('page.name')}</span><input id="pg-name" type="text" maxlength="64" value="${escapeHtml(page.name)}" /></label>
       <div class="field-row">
-        <label class="field"><span>Righe</span><input id="pg-rows" type="number" min="1" max="8" value="${page.rows}" /></label>
-        <label class="field"><span>Colonne</span><input id="pg-cols" type="number" min="1" max="12" value="${page.cols}" /></label>
+        <label class="field"><span>${t('page.rows')}</span><input id="pg-rows" type="number" min="1" max="8" value="${page.rows}" /></label>
+        <label class="field"><span>${t('page.cols')}</span><input id="pg-cols" type="number" min="1" max="12" value="${page.cols}" /></label>
       </div>
-      <p class="sheet-hint">Rimpicciolire la griglia si puo' solo se nessun controllo resta fuori: altrimenti l'host rifiuta il salvataggio e dice quale.</p>
+      <p class="sheet-hint">${t('page.resizeHint')}</p>
       <div class="field-row">
-        <button class="btn ghost" type="button" id="pg-left"${index === 0 ? ' disabled' : ''}>&larr; Sposta</button>
-        <button class="btn ghost" type="button" id="pg-right"${index === profile.pages.length - 1 ? ' disabled' : ''}>Sposta &rarr;</button>
+        <button class="btn ghost" type="button" id="pg-left"${index === 0 ? ' disabled' : ''}>${t('page.moveLeft')}</button>
+        <button class="btn ghost" type="button" id="pg-right"${index === profile.pages.length - 1 ? ' disabled' : ''}>${t('page.moveRight')}</button>
       </div>
-      <label class="field checkbox"><input id="pg-default" type="checkbox"${isDefault ? ' checked disabled' : ''} /><span>Pagina iniziale del profilo</span></label>
-      ${isLast ? '<p class="sheet-hint">E\' l\'unica pagina del profilo: per toglierla, elimina il profilo.</p>' : ''}
+      <label class="field checkbox"><input id="pg-default" type="checkbox"${isDefault ? ' checked disabled' : ''} /><span>${t('page.default')}</span></label>
+      ${isLast ? `<p class="sheet-hint">${t('page.onlyOne')}</p>` : ''}
     `,
     actions: [
-      ...(isLast ? [] : [{ label: 'Elimina', kind: 'danger', onClick: () => removePage(page.id) }]),
-      { label: 'Annulla', kind: 'ghost', onClick: () => closeSheet() },
-      { label: 'Salva', kind: 'primary', onClick: () => savePage(page.id) }
+      ...(isLast ? [] : [{ label: t('sheet.delete'), kind: 'danger', onClick: () => removePage(page.id) }]),
+      { label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() },
+      { label: t('sheet.save'), kind: 'primary', onClick: () => savePage(page.id) }
     ]
   });
 
@@ -1053,7 +1118,7 @@ async function savePage(pageId) {
   page.rows = Math.max(1, Math.min(8, Number(el('pg-rows').value) || page.rows));
   page.cols = Math.max(1, Math.min(12, Number(el('pg-cols').value) || page.cols));
   if (el('pg-default').checked) profile.defaultPage = page.id;
-  await persistDeck(deck, `pagina "${page.name}" salvata`);
+  await persistDeck(deck, t('page.saved', { name: page.name }));
 }
 
 async function addPage() {
@@ -1068,19 +1133,19 @@ async function addPage() {
     cols: model?.cols ?? 5,
     buttons: []
   });
-  if (await persistDeck(deck, 'pagina aggiunta')) goToPage(id);
+  if (await persistDeck(deck, t('page.added'))) goToPage(id);
 }
 
 async function removePage(pageId) {
   const deck = cloneDeck();
   const profile = findProfile(deck, state.profileId);
   if (profile.pages.length <= 1) {
-    toast('Un profilo deve avere almeno una pagina', 'err');
+    toast(t('page.needsOne'), 'err');
     return;
   }
   profile.pages = profile.pages.filter((p) => p.id !== pageId);
   if (profile.defaultPage === pageId) profile.defaultPage = profile.pages[0].id;
-  if (await persistDeck(deck, 'pagina eliminata')) goToPage(profile.pages[0].id);
+  if (await persistDeck(deck, t('page.removed'))) goToPage(profile.pages[0].id);
 }
 
 async function movePage(pageId, delta) {
@@ -1091,7 +1156,7 @@ async function movePage(pageId, delta) {
   if (index === -1 || target < 0 || target >= profile.pages.length) return;
   const [page] = profile.pages.splice(index, 1);
   profile.pages.splice(target, 0, page);
-  await persistDeck(deck, 'pagine riordinate');
+  await persistDeck(deck, t('page.reordered'));
 }
 
 // ------------------------------------------------- profili
@@ -1101,23 +1166,23 @@ function editProfiles() {
   const deck = state.deck;
   const rows = deck.profiles.map((p) => `
     <div class="host-row">
-      <span>${escapeHtml(p.name)}<small>${p.pages.length} pagine${p.id === deck.defaultProfile ? ' - iniziale' : ''}</small></span>
+      <span>${escapeHtml(p.name)}<small>${t('profile.pages', { n: p.pages.length })}${p.id === deck.defaultProfile ? ` - ${t('profile.isDefault')}` : ''}</small></span>
       <span class="row-actions">
-        ${p.id === deck.defaultProfile ? '' : `<button class="btn ghost small" type="button" data-profile-default="${p.id}">Iniziale</button>`}
-        <button class="btn ghost small" type="button" data-profile-rename="${p.id}">Rinomina</button>
-        ${deck.profiles.length > 1 ? `<button class="btn ghost small danger" type="button" data-profile-remove="${p.id}">Elimina</button>` : ''}
+        ${p.id === deck.defaultProfile ? '' : `<button class="btn ghost small" type="button" data-profile-default="${p.id}">${t('profile.setDefault')}</button>`}
+        <button class="btn ghost small" type="button" data-profile-rename="${p.id}">${t('profile.rename')}</button>
+        ${deck.profiles.length > 1 ? `<button class="btn ghost small danger" type="button" data-profile-remove="${p.id}">${t('sheet.delete')}</button>` : ''}
       </span>
     </div>`).join('');
 
   openSheet({
-    title: 'Profili',
+    title: t('profile.title'),
     body: `
       <div class="host-list">${rows}</div>
-      <label class="field"><span>Nome del nuovo profilo</span><input id="pr-name" type="text" maxlength="64" placeholder="es. Streaming" /></label>
-      <button class="btn" type="button" id="pr-add">Aggiungi profilo</button>
-      <p class="sheet-hint">Un profilo nuovo nasce con una pagina vuota della stessa dimensione di quella attuale.</p>
+      <label class="field"><span>${t('profile.newName')}</span><input id="pr-name" type="text" maxlength="64" placeholder="Streaming" /></label>
+      <button class="btn" type="button" id="pr-add">${t('profile.add')}</button>
+      <p class="sheet-hint">${t('profile.addHint')}</p>
     `,
-    actions: [{ label: 'Chiudi', kind: 'ghost', onClick: () => closeSheet() }]
+    actions: [{ label: t('sheet.close'), kind: 'ghost', onClick: () => closeSheet() }]
   });
 
   el('pr-add').addEventListener('click', () => addProfile(el('pr-name').value));
@@ -1143,41 +1208,41 @@ async function addProfile(rawName) {
     defaultPage: 'home',
     pages: [{ id: 'home', name: 'Principale', rows: model?.rows ?? 3, cols: model?.cols ?? 5, buttons: [] }]
   });
-  if (await persistDeck(deck, `profilo "${name}" creato`)) switchProfile(id);
+  if (await persistDeck(deck, t('profile.created', { name }))) switchProfile(id);
 }
 
 async function removeProfile(profileId) {
   const deck = cloneDeck();
   if (deck.profiles.length <= 1) {
-    toast('Deve restare almeno un profilo', 'err');
+    toast(t('profile.needsOne'), 'err');
     return;
   }
   deck.profiles = deck.profiles.filter((p) => p.id !== profileId);
   if (deck.defaultProfile === profileId) deck.defaultProfile = deck.profiles[0].id;
-  const saved = await persistDeck(deck, 'profilo eliminato');
+  const saved = await persistDeck(deck, t('profile.removed'));
   if (saved && state.profileId === profileId) switchProfile(deck.profiles[0].id);
 }
 
 async function setDefaultProfile(profileId) {
   const deck = cloneDeck();
   deck.defaultProfile = profileId;
-  await persistDeck(deck, 'profilo iniziale aggiornato');
+  await persistDeck(deck, t('profile.defaultUpdated'));
 }
 
 function renameProfile(profileId) {
   const profile = findProfile(state.deck, profileId);
   openSheet({
-    title: `Rinomina "${profile.name}"`,
-    body: `<label class="field"><span>Nome</span><input id="pr-rename" type="text" maxlength="64" value="${escapeHtml(profile.name)}" /></label>`,
+    title: t('profile.renameTitle', { name: profile.name }),
+    body: `<label class="field"><span>${t('page.name')}</span><input id="pr-rename" type="text" maxlength="64" value="${escapeHtml(profile.name)}" /></label>`,
     actions: [
-      { label: 'Annulla', kind: 'ghost', onClick: () => editProfiles() },
+      { label: t('sheet.cancel'), kind: 'ghost', onClick: () => editProfiles() },
       {
-        label: 'Salva',
+        label: t('sheet.save'),
         kind: 'primary',
         onClick: async () => {
           const deck = cloneDeck();
           findProfile(deck, profileId).name = el('pr-rename').value.trim() || profileId;
-          await persistDeck(deck, 'profilo rinominato');
+          await persistDeck(deck, t('profile.renamed'));
         }
       }
     ]
@@ -1198,7 +1263,7 @@ async function persistDeck(deck, successMessage, { quiet = false } = {}) {
   const res = await api(ENDPOINTS.save, { method: 'POST', body: { deck } });
   if (!res.ok) {
     const detail = (res.data.errors ?? []).slice(0, 3).map((e) => `${e.path}: ${e.message}`).join(' | ');
-    toast(detail || res.data?.error?.message || 'salvataggio rifiutato', 'err');
+    toast(detail || res.data?.error?.message || t('edit.rejected'), 'err');
     return false;
   }
   if (!quiet) closeSheet();
@@ -1213,53 +1278,69 @@ async function openSettings() {
   const settings = res.data?.settings ?? {};
   const update = state.update;
 
-  openSheet({
-    title: 'Impostazioni',
-    body: `
-      <h3 class="sheet-section">Accesso</h3>
-      <label class="field"><span>PIN di pairing (4-12 cifre)</span>
-        <input id="set-pin" type="text" inputmode="numeric" maxlength="12" placeholder="${settings.security?.pinConfigured ? `configurato (${settings.security.pinLength} cifre)` : 'nessun PIN'}" />
-      </label>
-      <p class="sheet-hint">Lascia vuoto per non cambiarlo. Il PIN serve solo ad associare nuovi dispositivi: quelli gia' associati restano collegati.</p>
+  const temaAttuale = state.deck?.ui?.theme ?? 'dark';
+  const linguaAttuale = state.deck?.ui?.language ?? 'auto';
+  const opzione = (value, selected, label) => `<option value="${value}"${value === selected ? ' selected' : ''}>${label}</option>`;
 
-      <h3 class="sheet-section">Computer collegati</h3>
+  openSheet({
+    title: t('settings.title'),
+    body: `
+      <h3 class="sheet-section">${t('settings.access')}</h3>
+      <label class="field"><span>${t('settings.pin')}</span>
+        <input id="set-pin" type="text" inputmode="numeric" maxlength="12" placeholder="${settings.security?.pinConfigured ? t('settings.pinConfigured', { n: settings.security.pinLength }) : t('settings.pinNone')}" />
+      </label>
+      <p class="sheet-hint">${t('settings.pinHint')}</p>
+
+      <h3 class="sheet-section">${t('settings.appearance')}</h3>
+      <div class="field-row">
+        <label class="field"><span>${t('settings.theme')}</span><select id="set-theme" class="select">
+          ${opzione('dark', temaAttuale, t('settings.themeDark'))}
+          ${opzione('light', temaAttuale, t('settings.themeLight'))}
+          ${opzione('auto', temaAttuale, t('settings.themeAuto'))}
+        </select></label>
+        <label class="field"><span>${t('settings.language')}</span><select id="set-language" class="select">
+          ${opzione('auto', linguaAttuale, t('settings.languageAuto'))}
+          ${opzione('it', linguaAttuale, 'Italiano')}
+          ${opzione('en', linguaAttuale, 'English')}
+        </select></label>
+      </div>
+
+      <h3 class="sheet-section">${t('settings.computers')}</h3>
       <div class="host-list">${state.hosts.map((h) => `
         <div class="host-row">
           <span>${escapeHtml(h.name)}<small>${escapeHtml(h.base)}</small></span>
-          <button class="btn ghost small" type="button" data-forget="${h.id}">Rimuovi</button>
-        </div>`).join('') || '<p class="sheet-hint">Nessun computer salvato.</p>'}
+          <button class="btn ghost small" type="button" data-forget="${h.id}">${t('settings.remove')}</button>
+        </div>`).join('') || `<p class="sheet-hint">${t('settings.noComputers')}</p>`}
       </div>
-      <button class="btn" type="button" id="set-add-host">Aggiungi un altro computer</button>
+      <button class="btn" type="button" id="set-add-host">${t('settings.addComputer')}</button>
 
-      <h3 class="sheet-section">Collega un altro dispositivo</h3>
-      <p class="sheet-hint">Inquadra il codice con l'altro telefono: si apre gia' collegato, con un token
-        dedicato che puoi revocare da solo. Il codice vale finche' non ne generi un altro.</p>
-      <div class="qr-box" id="set-qr"><button class="btn" type="button" id="set-qr-show">Mostra il codice QR</button></div>
+      <h3 class="sheet-section">${t('settings.pairTitle')}</h3>
+      <p class="sheet-hint">${t('settings.pairHint')}</p>
+      <div class="qr-box" id="set-qr"><button class="btn" type="button" id="set-qr-show">${t('settings.showQr')}</button></div>
 
-      <h3 class="sheet-section">Dispositivi accoppiati su questo host</h3>
-      <div class="host-list" id="set-devices"><p class="sheet-hint">caricamento...</p></div>
-      <p class="sheet-hint">Ogni accoppiamento con PIN crea un token dedicato: revocarne uno non scollega gli altri.</p>
+      <h3 class="sheet-section">${t('settings.devices')}</h3>
+      <div class="host-list" id="set-devices"><p class="sheet-hint">${t('settings.qrGenerating')}</p></div>
+      <p class="sheet-hint">${t('settings.devicesHint')}</p>
 
-      <h3 class="sheet-section">Token principale</h3>
-      <p class="sheet-hint">Rigenerarlo scollega chi lo usa (compresi gli URL con <code>?token=</code>).
-        Questo dispositivo verra' aggiornato da solo. I dispositivi accoppiati restano validi.</p>
-      <button class="btn ghost" type="button" id="set-rotate">Rigenera il token principale</button>
+      <h3 class="sheet-section">${t('settings.token')}</h3>
+      <p class="sheet-hint">${t('settings.tokenHint')}</p>
+      <button class="btn ghost" type="button" id="set-rotate">${t('settings.rotate')}</button>
 
-      <h3 class="sheet-section">Aggiornamenti</h3>
+      <h3 class="sheet-section">${t('settings.updates')}</h3>
       <p class="sheet-hint" id="set-update">${update?.available
-    ? `Disponibile la versione ${escapeHtml(update.latest?.version ?? '')} (in uso la ${escapeHtml(update.current ?? '')}).`
-    : `Versione in uso: ${escapeHtml(update?.current ?? '-')}. Nessun aggiornamento disponibile.`}</p>
-      <button class="btn" type="button" id="set-check-update">Controlla ora</button>
+    ? t('settings.updateAvailable', { version: escapeHtml(update.latest?.version ?? ''), current: escapeHtml(update.current ?? '') })
+    : t('settings.updateNone', { current: escapeHtml(update?.current ?? '-') })}</p>
+      <button class="btn" type="button" id="set-check-update">${t('settings.checkNow')}</button>
     `,
     actions: [
-      { label: 'Chiudi', kind: 'ghost', onClick: () => closeSheet() },
-      { label: 'Salva', kind: 'primary', onClick: saveSettings }
+      { label: t('sheet.close'), kind: 'ghost', onClick: () => closeSheet() },
+      { label: t('sheet.save'), kind: 'primary', onClick: saveSettings }
     ]
   });
 
   el('set-add-host').addEventListener('click', () => {
     closeSheet();
-    showGate('Inserisci indirizzo e PIN del computer da aggiungere.');
+    showGate(t('gate.addHost'));
   });
   el('set-check-update').addEventListener('click', () => checkUpdate({ force: true }));
   el('set-rotate').addEventListener('click', rotateHostToken);
@@ -1279,15 +1360,15 @@ async function openSettings() {
  */
 async function showPairingQr() {
   const box = el('set-qr');
-  box.innerHTML = '<p class="sheet-hint">generazione in corso...</p>';
+  box.innerHTML = `<p class="sheet-hint">${t('settings.qrGenerating')}</p>`;
   const res = await api(`${ENDPOINTS.pairQr}?name=${encodeURIComponent('accoppiato con QR')}`);
   if (!res.ok) {
-    box.innerHTML = `<p class="sheet-hint">${escapeHtml(res.data?.error?.message ?? 'codice non disponibile')}</p>`;
+    box.innerHTML = `<p class="sheet-hint">${escapeHtml(res.data?.error?.message ?? t('settings.qrUnavailable'))}</p>`;
     return;
   }
   box.innerHTML = `<div class="qr">${res.data.svg}</div>`
     + `<p class="sheet-hint">${escapeHtml(res.data.url.replace(/token=[^&]+/, 'token=...'))}</p>`
-    + (res.data.mdns ? `<p class="sheet-hint">Oppure apri <code>${escapeHtml(res.data.mdns)}</code></p>` : '');
+    + (res.data.mdns ? `<p class="sheet-hint">${t('settings.qrOr', { url: `<code>${escapeHtml(res.data.mdns)}</code>` })}</p>` : '');
   renderDevices();
 }
 
@@ -1297,22 +1378,22 @@ async function renderDevices() {
   if (!box) return;
   const res = await api(ENDPOINTS.devices);
   if (!res.ok) {
-    box.innerHTML = '<p class="sheet-hint">Elenco non disponibile.</p>';
+    box.innerHTML = `<p class="sheet-hint">${t('settings.devicesUnavailable')}</p>`;
     return;
   }
 
   const devices = res.data.devices ?? [];
   if (devices.length === 0) {
-    box.innerHTML = '<p class="sheet-hint">Nessun dispositivo accoppiato.</p>';
+    box.innerHTML = `<p class="sheet-hint">${t('settings.devicesNone')}</p>`;
     return;
   }
 
   box.innerHTML = devices.map((d) => {
-    const scadenza = d.expiresAt ? new Date(d.expiresAt).toLocaleDateString() : 'nessuna scadenza';
-    const nota = d.id === res.data.current ? ' - questo dispositivo' : '';
+    const scadenza = d.expiresAt ? new Date(d.expiresAt).toLocaleDateString(language()) : t('settings.noExpiry');
+    const nota = d.id === res.data.current ? ` - ${t('settings.thisDevice')}` : '';
     return `<div class="host-row">
-      <span>${escapeHtml(d.name)}<small>${d.expired ? 'scaduto' : scadenza}${nota}</small></span>
-      <button class="btn ghost small danger" type="button" data-revoke="${d.id}">Revoca</button>
+      <span>${escapeHtml(d.name)}<small>${d.expired ? t('settings.expired') : scadenza}${nota}</small></span>
+      <button class="btn ghost small danger" type="button" data-revoke="${d.id}">${t('settings.revoke')}</button>
     </div>`;
   }).join('');
 
@@ -1324,10 +1405,10 @@ async function renderDevices() {
 async function revokeDevice(id) {
   const res = await api(`${ENDPOINTS.devices}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) {
-    toast(res.data?.error?.message ?? 'revoca rifiutata', 'err');
+    toast(res.data?.error?.message ?? t('settings.revokeRejected'), 'err');
     return;
   }
-  toast('Dispositivo revocato', 'ok');
+  toast(t('settings.revoked'), 'ok');
   renderDevices();
 }
 
@@ -1335,7 +1416,7 @@ async function revokeDevice(id) {
 async function rotateHostToken() {
   const res = await api(ENDPOINTS.tokenRotate, { method: 'POST', body: {} });
   if (!res.ok) {
-    toast(res.data?.error?.message ?? 'rotazione rifiutata', 'err');
+    toast(res.data?.error?.message ?? t('settings.rotateRejected'), 'err');
     return;
   }
   // Se questo client stava usando proprio il token principale, deve adottare
@@ -1345,22 +1426,33 @@ async function rotateHostToken() {
     host.token = res.data.token;
     saveHosts();
   }
-  toast('Token principale rigenerato', 'ok');
+  toast(t('settings.rotated'), 'ok');
 }
 
 async function saveSettings() {
   const pin = el('set-pin').value.trim();
-  if (!pin) {
+  const patch = {};
+  if (pin) patch.pin = pin;
+
+  const ui = {};
+  const tema = el('set-theme').value;
+  const lingua = el('set-language').value;
+  if (tema !== (state.deck?.ui?.theme ?? 'dark')) ui.theme = tema;
+  if (lingua !== (state.deck?.ui?.language ?? 'auto')) ui.language = lingua;
+  if (Object.keys(ui).length > 0) patch.ui = ui;
+
+  if (Object.keys(patch).length === 0) {
     closeSheet();
     return;
   }
-  const res = await api(ENDPOINTS.settings, { method: 'POST', body: { pin } });
+
+  const res = await api(ENDPOINTS.settings, { method: 'POST', body: patch });
   if (!res.ok) {
-    toast(res.data?.error?.message ?? 'impostazioni rifiutate', 'err');
+    toast(res.data?.error?.message ?? t('settings.rejected'), 'err');
     return;
   }
   closeSheet();
-  toast('PIN aggiornato', 'ok');
+  toast(t(pin && !patch.ui ? 'settings.pinUpdated' : 'settings.saved'), 'ok');
 }
 
 function forgetHost(id) {
@@ -1370,7 +1462,7 @@ function forgetHost(id) {
   if (id === state.activeHostId) {
     state.activeHostId = state.hosts[0]?.id ?? null;
     if (state.activeHostId) switchHost(state.activeHostId);
-    else showGate('Nessun computer collegato.');
+    else showGate(t('gate.noHost'));
   }
   renderHosts();
 }
@@ -1381,15 +1473,15 @@ async function checkUpdate({ force = false } = {}) {
   const res = await api(`${ENDPOINTS.update}${force ? '?check=1' : ''}`);
   if (!res.ok) return;
   showUpdate(res.data.update);
-  if (force && !res.data.update?.available) toast('Nessun aggiornamento disponibile', 'ok');
+  if (force && !res.data.update?.available) toast(t('settings.noUpdate'), 'ok');
 }
 
 function showUpdate(status) {
   state.update = status;
   ui.update.hidden = !status?.available;
   if (status?.available) {
-    ui.update.textContent = `v${status.latest.version} disponibile`;
-    ui.update.title = `Sei alla versione ${status.current}. Tocca per aprire la pagina del rilascio.`;
+    ui.update.textContent = `v${status.latest.version}`;
+    ui.update.title = t('settings.updateAvailable', { version: status.latest.version, current: status.current });
   }
 }
 
@@ -1402,7 +1494,7 @@ function bindEvents() {
   ui.hosts.addEventListener('click', (event) => {
     const add = event.target.closest('[data-host-add]');
     if (add) {
-      showGate('Inserisci indirizzo e PIN del computer da aggiungere.');
+      showGate(t('gate.addHost'));
       return;
     }
     const tab = event.target.closest('.host-tab');
@@ -1443,20 +1535,18 @@ function bindEvents() {
     renderProfiles();
     renderPages();
     renderGrid();
-    toast(state.editing
-      ? 'Modifica attiva: tocca un controllo per cambiarlo, trascinalo per spostarlo, tocca una cella vuota per aggiungerne uno'
-      : 'Modifica disattivata');
+    toast(t(state.editing ? 'edit.on' : 'edit.off'));
   });
 
   ui.btnSimulate.addEventListener('click', () => {
     state.simulate = !state.simulate;
     ui.btnSimulate.setAttribute('aria-pressed', String(state.simulate));
-    toast(state.simulate ? 'Modalita\' simulazione attiva' : 'Modalita\' simulazione disattivata');
+    toast(t(state.simulate ? 'sim.on' : 'sim.off'));
   });
 
   ui.btnFullscreen.addEventListener('click', async () => {
     if (document.fullscreenElement) await document.exitFullscreen();
-    else await document.documentElement.requestFullscreen().catch(() => toast('Schermo intero non disponibile', 'err'));
+    else await document.documentElement.requestFullscreen().catch(() => toast(t('fullscreen.unavailable'), 'err'));
   });
 
   ui.btnSettings.addEventListener('click', openSettings);
@@ -1733,7 +1823,12 @@ function bindSheet() {
 // ---------------------------------------------------------------- avvio
 
 function boot() {
+  // Prima di tutto la lingua: il gate compare anche senza essersi collegati,
+  // e resterebbe in italiano fino al primo deck ricevuto.
+  setLanguage('auto');
+  document.documentElement.lang = language();
   bindEvents();
+  applyStaticTexts();
   loadHosts();
 
   // Un token nell'URL (link stampato dall'host) vale come pairing immediato.

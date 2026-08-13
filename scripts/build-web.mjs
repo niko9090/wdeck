@@ -29,6 +29,7 @@ const REQUIRED = [
   'app.css',
   'app.js',
   'icons.js',
+  'i18n.js',
   'sw.js',
   'manifest.webmanifest',
   'icons/icon-192.png',

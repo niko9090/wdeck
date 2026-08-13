@@ -38,7 +38,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
       auth: { windowMs: 300000, max: 10 }
     }
   },
-  ui: { theme: 'dark', accent: '#4c8dff', showLabels: true },
+  ui: { theme: 'dark', accent: '#4c8dff', showLabels: true, language: 'auto' },
   status: { enabled: true, intervalMs: 8000 },
   discovery: { enabled: true },
   tray: { enabled: true },
@@ -292,6 +292,9 @@ function validateSettings(ctx, settings) {
       }
       if (ui.accent !== undefined) checkString(ctx, 'settings.ui.accent', ui.accent, { pattern: HEX_COLOR_RE, label: 'colore hex' });
       checkBool(ctx, 'settings.ui.showLabels', ui.showLabels);
+      if (ui.language !== undefined && !['it', 'en', 'auto'].includes(ui.language)) {
+        ctx.err('settings.ui.language', 'valore ammesso: it | en | auto');
+      }
     }
   }
 }

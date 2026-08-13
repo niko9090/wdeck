@@ -3,6 +3,33 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.3.0] - 2026-08-13
+
+### Aggiunto
+
+- **Italiano e inglese.** L'interfaccia si traduce da `settings.ui.language`
+  (`it`, `en`, `auto` per seguire il browser) e dal pannello Impostazioni. Le
+  due lingue sono tenute allineate da un test: una chiave presente in una sola
+  comparirebbe nella lingua sbagliata senza che nessuno se ne accorga.
+- **Pressione prolungata configurabile dall'editor.** `holdAction` esisteva da
+  sempre ma andava scritta a mano in `deck.json`; ora ha la sua sezione, con
+  l'azione e i suoi parametri. E' comoda per mettere l'opposto sullo stesso
+  tasto - accendi e spegni - senza occupare due celle.
+- Tema e lingua si cambiano da *Impostazioni -> Aspetto*, senza toccare il file.
+
+### Corretto
+
+- **`ui.theme: "light"` non forzava il tema chiaro.** Il CSS aveva la tavolozza
+  chiara solo dentro `prefers-color-scheme`, quindi valeva unicamente con
+  `"auto"` e con un sistema impostato su chiaro. Ora `light` la impone e `auto`
+  la segue, come dicevano entrambi di fare.
+
+### Note
+
+Sull'ESP32 la pressione prolungata resta non supportata: il firmware non
+distingue un tocco lungo da uno breve, e aggiungerlo richiederebbe di provarlo
+su hardware vero.
+
 ## [0.2.10] - 2026-08-13
 
 ### Aggiunto

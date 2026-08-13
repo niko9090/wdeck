@@ -60,7 +60,7 @@ funzionano su quale sistema, e cosa serve installare, e' nella tabella
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.2.10 - deck "Wdeck"
+  Wdeck host v0.3.0 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
   azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
@@ -103,7 +103,7 @@ accesso a: apri il deck, copia gli indirizzi per il telefono, ricarica
 | tocco su un bottone | esegue l'azione, con risposta immediata |
 | **scorrimento orizzontale** | pagina precedente / successiva |
 | trascinamento su un cursore | volume o luminosita' al valore scelto |
-| tocco prolungato | esegue `holdAction`, se il bottone ne ha una |
+| tocco prolungato | esegue `holdAction`, se il controllo ne ha una |
 | matita in alto a destra | modalita' modifica: vedi sotto |
 | ingranaggio | PIN, computer collegati, aggiornamenti |
 
@@ -169,7 +169,7 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (411 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (432 verifiche) |
 | `npm run smoke` | smoke test end-to-end su un host reale (49 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
@@ -218,7 +218,7 @@ Struttura: **deck -> profili -> pagine -> bottoni -> azione**.
       "allowedExtensions": [".exe", ".ps1", ".bat"],
       "allowExec": ["C:\\Windows\\System32\\notepad.exe", "scripts/examples/*"]
     },
-    "ui": { "theme": "dark", "accent": "#4c8dff", "showLabels": true }
+    "ui": { "theme": "dark", "accent": "#4c8dff", "showLabels": true, "language": "auto" }
   },
   "profiles": [
     {
@@ -355,6 +355,27 @@ mentre c'e' almeno un client collegato; le letture uguali sono messe in comune
 messo in pausa per un minuto invece di essere interrogato di continuo.
 In **dry-run non viene letto nulla**: la promessa di non toccare il PC vale
 anche per le letture.
+
+### Aspetto e lingua
+
+`settings.ui.theme` accetta `dark`, `light` e `auto` (segue il sistema);
+`settings.ui.language` accetta `it`, `en` e `auto` (segue il browser).
+Entrambi si cambiano anche da *Impostazioni -> Aspetto*, senza toccare il file.
+
+### Pressione prolungata
+
+Un controllo puo' avere una **seconda azione**, eseguita tenendolo premuto per
+mezzo secondo: si configura dall'editor, nella sezione *Pressione prolungata*.
+E' comoda per mettere l'opposto sullo stesso tasto - accendi e spegni, muto e
+volume al massimo - senza occupare due celle.
+
+```json
+{
+  "id": "luce", "label": "Luce", "row": 0, "col": 0,
+  "action":     { "type": "hue", "params": { "id": 1, "on": "toggle" } },
+  "holdAction": { "type": "hue", "params": { "id": 1, "on": false } }
+}
+```
 
 ### Conferma per le azioni pericolose
 

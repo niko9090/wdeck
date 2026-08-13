@@ -583,6 +583,20 @@ body {
   .grid { max-width: 1300px; margin: 0 auto; width: 100%; }
 }
 
+/* ---------------- tema chiaro ----------------
+   Due strade, stessa tavolozza: "light" lo impone, "auto" lo segue solo se il
+   sistema lo chiede. Prima esisteva solo la seconda, quindi
+   ui.theme: "light" non aveva alcun effetto. */
+
+:root.theme-light {
+  --bg: #f2f4f8;
+  --bg-elev: #ffffff;
+  --bg-btn: #ffffff;
+  --border: #d7dde7;
+  --text: #16202c;
+  --text-dim: #5d6b7d;
+}
+
 @media (prefers-color-scheme: light) {
   :root.theme-auto {
     --bg: #f2f4f8;
@@ -592,4 +606,16 @@ body {
     --text: #16202c;
     --text-dim: #5d6b7d;
   }
+}
+
+/* Sul chiaro il campo di testo scuro resterebbe scuro, e i tag bianchi
+   sparirebbero sul fondo bianco. */
+:root.theme-light .field input,
+:root.theme-light .field textarea { background: #f7f9fc; }
+:root.theme-light .deck-btn .type-tag { color: rgba(0, 0, 0, 0.35); }
+
+@media (prefers-color-scheme: light) {
+  :root.theme-auto .field input,
+  :root.theme-auto .field textarea { background: #f7f9fc; }
+  :root.theme-auto .deck-btn .type-tag { color: rgba(0, 0, 0, 0.35); }
 }
