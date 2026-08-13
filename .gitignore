@@ -8,6 +8,8 @@ Thumbs.db
 .wdeck-runtime.json
 # backup automatici creati dall'editor visuale
 .wdeck-backup/
+# icone caricate dall'utente accanto a deck.json
+/icons/
 # archivi di distribuzione
 release/
 # PlatformIO

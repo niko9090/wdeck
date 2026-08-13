@@ -46,8 +46,14 @@ export const ICON_BY_ACTION = {
   stub: 'gear'
 };
 
+/** Prefisso delle icone caricate dall'utente (vedi src/host/icons.mjs). */
+export const CUSTOM_PREFIX = 'custom:';
+
+/** true se il nome punta a un'icona caricata dall'utente. */
+export const isCustomIcon = (name) => typeof name === 'string' && name.startsWith(CUSTOM_PREFIX);
+
 /**
- * Restituisce il markup SVG completo di un'icona.
+ * Restituisce il markup SVG completo di un'icona inclusa.
  * @param {string|null} name
  * @param {string} [actionType]
  */
@@ -55,4 +61,18 @@ export function iconSvg(name, actionType) {
   const key = (name && ICONS[name]) ? name : (ICON_BY_ACTION[actionType] ?? 'default');
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[key] ?? ICONS.default}</svg>`;
+}
+
+/**
+ * Markup dell'icona di un controllo: glifo incluso oppure file caricato.
+ * @param {string|null} name valore del campo `icon` di deck.json
+ * @param {string} [actionType]
+ * @param {(name: string) => string} [customUrl] risolve "custom:x" nel suo URL
+ */
+export function iconMarkup(name, actionType, customUrl) {
+  if (isCustomIcon(name) && typeof customUrl === 'function') {
+    const src = customUrl(name.slice(CUSTOM_PREFIX.length));
+    return `<img class="icon-img" src="${src}" alt="" aria-hidden="true" loading="lazy" />`;
+  }
+  return iconSvg(name, actionType);
 }

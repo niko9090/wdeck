@@ -60,7 +60,7 @@ funzionano su quale sistema, e cosa serve installare, e' nella tabella
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.2.3 - deck "Wdeck"
+  Wdeck host v0.2.4 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
   azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
@@ -93,8 +93,41 @@ accesso a: apri il deck, copia gli indirizzi per il telefono, ricarica
 | **scorrimento orizzontale** | pagina precedente / successiva |
 | trascinamento su un cursore | volume o luminosita' al valore scelto |
 | tocco prolungato | esegue `holdAction`, se il bottone ne ha una |
-| matita in alto a destra | modalita' modifica: tocca un controllo per cambiarlo, una cella vuota per aggiungerne uno |
+| matita in alto a destra | modalita' modifica: vedi sotto |
 | ingranaggio | PIN, computer collegati, aggiornamenti |
+
+### L'editor visuale
+
+La matita in alto a destra accende la modalita' modifica. Da li' si fa tutto
+senza toccare `deck.json`:
+
+| gesto | effetto |
+|---|---|
+| tocco su un controllo | ne apre le impostazioni: azione, parametri, icona, colore, larghezza |
+| **trascinamento di un controllo** | lo sposta in un'altra cella |
+| tocco su una cella vuota | aggiunge un controllo li' |
+| **+** in fondo alle schede | aggiunge una pagina |
+| matita su una scheda | nome, righe, colonne, ordine, eliminazione della pagina |
+| menu dei profili -> *Gestisci profili* | crea, rinomina, elimina, sceglie il profilo iniziale |
+
+Ogni salvataggio passa dalla **validazione dell'host**, che e' l'unico a vedere
+la configurazione intera: se una modifica lascerebbe un profilo senza pagine, un
+controllo fuori dalla griglia, due controlli sulla stessa cella o un `navigate`
+senza destinazione, il salvataggio viene rifiutato e il messaggio dice quale.
+La versione precedente resta in `.wdeck-backup/`.
+
+### Icone personalizzate
+
+Nell'editor, sotto *Icona*, ci sono i glifi inclusi e il bottone **Carica
+un'icona**: PNG, JPEG, WebP, GIF o SVG, fino a 192 KB, fino a 64 in tutto.
+I file finiscono in `icons/` **accanto** a `deck.json` (non dentro: un file di
+configurazione pieno di base64 non sarebbe piu' modificabile a mano) e si usano
+scrivendo `"icon": "custom:mio-logo"`.
+
+Il formato viene riconosciuto **dai byte**, non da quanto dichiara il browser.
+Gli SVG vengono ripuliti al caricamento da script, gestori di evento, URL
+`javascript:` e riferimenti esterni; se resta qualcosa di eseguibile il file
+viene rifiutato.
 
 ### Piu' computer
 
@@ -125,7 +158,7 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (215 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (259 verifiche) |
 | `npm run smoke` | smoke test end-to-end su un host reale (41 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |

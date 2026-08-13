@@ -5,8 +5,19 @@
 
 import { ENDPOINTS, ERROR_CODES, PROTOCOL_VERSION, LITE_PROTOCOL_VERSION, LITE_FIELDS, toLitePage } from '../../../shared/protocol.mjs';
 import { CATEGORIES } from '../actions/registry.mjs';
+import {
+  ICON_TYPES as ICON_FORMATS,
+  MAX_ICONS as MAX_ICON_COUNT,
+  MAX_ICON_BYTES as MAX_ICON_BYTES_PER_FILE
+} from '../icons.mjs';
 
 const MAX_BODY = 64 * 1024;
+
+/**
+ * Limite piu' alto per il caricamento delle icone: un PNG da 192 KB diventa
+ * circa 256 KB una volta codificato in base64.
+ */
+const MAX_ICON_BODY = 384 * 1024;
 
 /** Invia una risposta JSON. */
 export function sendJson(res, status, payload) {
@@ -29,13 +40,13 @@ export function sendError(res, status, code, message) {
  * @param {import('node:http').IncomingMessage} req
  * @returns {Promise<object>}
  */
-export function readJsonBody(req) {
+export function readJsonBody(req, { limit = MAX_BODY } = {}) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
         reject(Object.assign(new Error('corpo della richiesta troppo grande'), { status: 413 }));
         req.destroy();
         return;
@@ -207,6 +218,74 @@ export function createApiRouter(host) {
         return;
       }
       sendJson(res, 200, { ok: true, changed: result.changed });
+    },
+
+    // ---------------- icone personalizzate ----------------
+
+    [`GET ${ENDPOINTS.icons}`]: (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const deck = configStore.get();
+      sendJson(res, 200, {
+        ok: true,
+        icons: host.icons.list().map((icon) => ({
+          ...icon,
+          usedBy: host.icons.usedBy(deck, icon.name)
+        })),
+        limits: { maxBytes: MAX_ICON_BYTES_PER_FILE, maxCount: MAX_ICON_COUNT, formats: ICON_FORMATS }
+      });
+    },
+
+    [`POST ${ENDPOINTS.icons}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const body = await readJsonBody(req, { limit: MAX_ICON_BODY });
+      try {
+        const saved = host.icons.save({ name: body.name, content: body.content });
+        sendJson(res, 200, { ok: true, icon: saved });
+      } catch (err) {
+        sendError(res, 400, ERROR_CODES.badRequest, err.message);
+      }
+    },
+
+    [`DELETE ${ENDPOINTS.icons}`]: (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      const name = url.searchParams.get('name');
+      const usedBy = host.icons.usedBy(configStore.get(), name);
+      if (usedBy.length > 0 && url.searchParams.get('force') !== '1') {
+        sendJson(res, 409, {
+          ok: false,
+          error: {
+            code: ERROR_CODES.badRequest,
+            message: `l'icona "${name}" e' usata da ${usedBy.length} controllo/i: ripeti con force=1 per eliminarla comunque`
+          },
+          usedBy
+        });
+        return;
+      }
+      if (!host.icons.remove(name)) {
+        sendError(res, 404, ERROR_CODES.notFound, `icona sconosciuta: "${name}"`);
+        return;
+      }
+      sendJson(res, 200, { ok: true, removed: name, usedBy });
+    },
+
+    [`GET ${ENDPOINTS.iconFile}`]: (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      const icon = host.icons.read(url.searchParams.get('name'));
+      if (!icon) {
+        sendError(res, 404, ERROR_CODES.notFound, 'icona non trovata');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': icon.contentType,
+        'Content-Length': icon.buffer.length,
+        // Un'icona caricata dall'utente puo' essere sostituita in qualunque
+        // momento con lo stesso nome: la cache va rivalidata.
+        'Cache-Control': 'no-cache',
+        // Difesa in profondita' sugli SVG, che sono gia' ripuliti al caricamento.
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+        'X-Content-Type-Options': 'nosniff'
+      });
+      res.end(icon.buffer);
     },
 
     [`GET ${ENDPOINTS.update}`]: async (req, res, url) => {

@@ -290,6 +290,78 @@ body {
   outline-offset: -3px;
 }
 
+/* trascinamento di un controllo in un'altra cella */
+.grid.editing .deck-btn.dragging,
+.grid.editing .deck-slider.dragging {
+  opacity: 0.55;
+  transform: scale(0.92);
+  z-index: 2;
+}
+
+.grid.editing .deck-btn.empty.drop-target {
+  opacity: 1;
+  border-style: solid;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* scheda "+" e matita sulle schede pagina, solo in modifica */
+.page-tab .page-edit {
+  margin-left: 6px;
+  opacity: 0.65;
+  font-size: 0.9em;
+}
+.page-tab .page-edit:hover { opacity: 1; }
+.page-tab.add { font-weight: 700; }
+
+/* ---------------- scelta dell'icona nell'editor ---------------- */
+
+.icon-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 6px;
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.icon-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 6px;
+  color: var(--text);
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.icon-choice svg,
+.icon-choice img { width: 100%; height: 100%; object-fit: contain; }
+.icon-choice .icon-auto { font-size: 10px; color: var(--text-dim); }
+.icon-choice.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+.icon-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* icona caricata dall'utente: stessa misura del glifo che sostituisce */
+.deck-btn .icon-img { width: clamp(20px, 4.5vmin, 42px); height: clamp(20px, 4.5vmin, 42px); object-fit: contain; }
+.deck-slider .icon-img { width: clamp(18px, 3.4vmin, 30px); height: clamp(18px, 3.4vmin, 30px); flex: 0 0 auto; object-fit: contain; }
+
+.field.disabled { opacity: 0.5; }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn.ghost.small.danger { color: var(--err); }
+
 /* ---------------- cursori (volume, luminosita') ---------------- */
 
 .deck-slider {

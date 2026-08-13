@@ -243,10 +243,21 @@ Salva una configurazione modificata dall'editor visuale.
 { "deck": { "version": 1, "profiles": [ ... ] } }
 ```
 
-Il corpo viene fuso con la configurazione su disco, validato per intero e
-scritto in modo atomico; la versione precedente resta in `.wdeck-backup/`.
+Il corpo viene fuso con **il file cosi' com'e' su disco** - non con il deck in
+memoria - poi validato per intero e scritto in modo atomico; la versione
+precedente resta in `.wdeck-backup/`. La distinzione conta: il deck in memoria
+porta con se' gli override di `--port`, `--token` e delle variabili `WDECK_*`,
+e salvarlo li renderebbe permanenti.
+
 Il blocco `settings.security` **non e' modificabile da qui**: token, PIN e
-whitelist non transitano mai per il client. Con una configurazione non valida
+whitelist non transitano mai per il client.
+
+Da questo endpoint passano tutte le modifiche dell'editor visuale: bottoni e
+cursori, creazione ed eliminazione di pagine e profili, spostamento dei
+controlli, dimensione della griglia. Non ci sono endpoint separati perche' non
+servono: la validazione e' la stessa per tutti, ed e' quella che impedisce di
+lasciare un profilo senza pagine, un `navigate` senza destinazione o due
+controlli sulla stessa cella. Con una configurazione non valida
 risponde `400` con `errors[]` (`path` e `message` per ogni problema) e il file
 su disco non viene toccato.
 
@@ -271,6 +282,51 @@ Il PIN accetta da 4 a 12 cifre, oppure la stringa vuota per disattivare il
 pairing. I dispositivi gia' associati restano collegati: cambia solo cio' che
 serve per associarne di nuovi. Il token non si cambia da qui, perche'
 scollegherebbe ogni client.
+
+### `GET /api/icons`
+
+Icone personalizzate caricate dall'utente. Stanno in `icons/` **accanto** a
+`deck.json`, non dentro: una manciata di PNG in base64 renderebbe il file di
+configurazione illeggibile e impossibile da modificare a mano.
+
+```json
+{
+  "ok": true,
+  "icons": [
+    { "name": "mio-logo", "ext": "png", "contentType": "image/png", "bytes": 4210, "ref": "custom:mio-logo", "usedBy": ["btn-stream"] }
+  ],
+  "limits": { "maxBytes": 196608, "maxCount": 64, "formats": { "png": "image/png", "...": "..." } }
+}
+```
+
+Un controllo la usa scrivendo `"icon": "custom:mio-logo"`.
+
+### `POST /api/icons`
+
+```json
+{ "name": "mio-logo", "content": "data:image/png;base64,iVBORw0KGgo..." }
+```
+
+Il nome e' uno slug (`^[a-z0-9][a-z0-9-]{0,31}$`); `content` accetta un data URL
+o base64 grezzo. Il **formato viene riconosciuto dai byte**, non da quanto
+dichiara il client: sono ammessi PNG, JPEG, WebP, GIF e SVG, fino a 192 KB
+ciascuna e 64 in tutto.
+
+Gli SVG passano da una pulizia che rimuove `<script>`, `<foreignObject>`, i
+gestori di evento `on*`, gli URL `javascript:` e i riferimenti esterni; se dopo
+la pulizia resta qualcosa di eseguibile, il caricamento e' rifiutato.
+
+### `DELETE /api/icons?name=<slug>`
+
+Elimina un'icona. Se e' ancora usata da qualche controllo risponde `409` con
+l'elenco `usedBy`; ripetere con `&force=1` per eliminarla comunque.
+
+### `GET /api/icons/file?name=<slug>`
+
+Il file dell'icona. Richiede il token, che qui puo' stare solo in querystring
+perche' un tag `<img>` non puo' portare header. Servito con
+`X-Content-Type-Options: nosniff` e una `Content-Security-Policy` restrittiva:
+difesa in profondita' sugli SVG, che sono gia' ripuliti al caricamento.
 
 ### `GET /api/update`
 

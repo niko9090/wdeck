@@ -36,6 +36,8 @@ export const ENDPOINTS = {
   save: '/api/deck/save',
   settings: '/api/settings',
   update: '/api/update',
+  icons: '/api/icons',
+  iconFile: '/api/icons/file',
   ws: '/ws',
   // --- lite API (ESP32) ---
   liteDeck: '/api/lite/deck',

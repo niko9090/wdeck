@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.3`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.4`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -76,6 +76,20 @@ esegue anche i file `.sh`.
   attiva, solo con client collegati, con letture messe in comune e pausa di un
   minuto sui servizi che non rispondono. In dry-run non si legge nulla.
 
+### Editor visuale
+
+- Modifica completa dal client, senza toccare `deck.json`: controlli (azione,
+  parametri, icona, colore, larghezza), **creazione ed eliminazione di pagine e
+  profili**, rinomina, riordino, dimensione della griglia, profilo e pagina
+  iniziali, **spostamento dei controlli per trascinamento**.
+- **Icone personalizzate** caricate dall'utente (PNG, JPEG, WebP, GIF, SVG):
+  stanno in `icons/` accanto a `deck.json` e si usano come `custom:nome`. Il
+  formato e' riconosciuto dai byte e gli SVG sono ripuliti da script, gestori di
+  evento e riferimenti esterni.
+- Tutto passa da `POST /api/deck/save`, quindi dalla stessa validazione: una
+  modifica che romperebbe la configurazione viene rifiutata con la ragione, e la
+  versione precedente resta in `.wdeck-backup/`.
+
 ### Client web PWA
 
 - Griglia responsive con proporzioni corrette su telefono, tablet e desktop.
@@ -105,7 +119,7 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 215 |
+| `npm test` | file di test unitari/integrazione | 259 |
 | `npm run smoke` | end-to-end su host reale | 41 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
@@ -161,11 +175,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 
 ### Funzionalita'
 
-- L'editor visuale copre bottoni e cursori di una pagina, ma non ancora la
-  creazione di pagine e profili, ne' lo spostamento per trascinamento: per
-  quelli serve ancora modificare `deck.json`
-  (con l'aiuto di [`schema/deck.schema.json`](../schema/deck.schema.json)).
-- Nessun caricamento di icone personalizzate (PNG/SVG dell'utente).
 - Luminosita': su un PC con HDR attivo e monitor che rifiutano DDC/CI nessuno
   dei tre metodi funziona, e l'azione fallisce con un messaggio esplicito.
   Servirebbe un overlay di attenuazione, che e' un processo in piu' da tenere
@@ -196,8 +205,7 @@ In ordine di rapporto valore/costo, da decidere insieme:
 2. ~~**Feedback di stato sui bottoni** (toggle muto, scena OBS attiva).~~
    **fatto in 0.2.2.**
 3. ~~**Adattatore Linux/macOS** per hotkey e tasti media.~~ **fatto in 0.2.3.**
-4. **Editor grafico del deck** nella PWA, sfruttando `GET /api/actions` che gia'
-   descrive ogni azione e i suoi parametri.
+4. ~~**Editor grafico del deck** completo nella PWA.~~ **fatto in 0.2.4.**
 5. **Token per dispositivo + revoca**, con QR code per il pairing.
 6. **HTTPS/WSS** con certificato autofirmato generato all'avvio.
 7. **Integrazione OBS** al posto dell'azione `stub`.

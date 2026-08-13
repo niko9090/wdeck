@@ -226,7 +226,14 @@ function validateButton(ctx, path, button, page, seen, actionTypes) {
   checkString(ctx, `${path}.label`, button.label, { max: LIMITS.maxLabel });
   checkInt(ctx, `${path}.row`, button.row, { required: true, min: 0, max: LIMITS.maxRows - 1 });
   checkInt(ctx, `${path}.col`, button.col, { required: true, min: 0, max: LIMITS.maxCols - 1 });
-  if (button.icon !== undefined) checkString(ctx, `${path}.icon`, button.icon, { pattern: /^[a-z0-9][a-z0-9-]{0,23}$/, label: 'nome icona' });
+  // Un'icona e' un glifo incluso ("play") oppure un file caricato
+  // dall'utente ("custom:mio-logo", vedi src/host/icons.mjs).
+  if (button.icon !== undefined) {
+    checkString(ctx, `${path}.icon`, button.icon, {
+      pattern: /^(?:[a-z0-9][a-z0-9-]{0,23}|custom:[a-z0-9][a-z0-9-]{0,31})$/,
+      label: 'nome icona oppure "custom:nome"'
+    });
+  }
 
   if (button.kind !== undefined && !CONTROL_KINDS.includes(button.kind)) {
     ctx.err(`${path}.kind`, `valore ammesso: ${CONTROL_KINDS.join(' | ')}`);

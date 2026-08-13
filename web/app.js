@@ -6,7 +6,7 @@
  */
 
 import { ENDPOINTS, MSG } from '/shared/protocol.mjs';
-import { iconSvg } from './icons.js';
+import { CUSTOM_PREFIX, ICONS, iconMarkup, iconSvg, isCustomIcon } from './icons.js';
 
 const STORAGE = {
   hosts: 'wdeck.hosts',
@@ -68,6 +68,8 @@ const state = {
   pending: new Map(),
   /** azioni disponibili sull'host, caricate alla prima apertura dell'editor */
   actionGroups: null,
+  /** icone caricate dall'utente su questo host, lette all'apertura dell'editor */
+  customIcons: null,
   /** ultimo livello noto di ogni slider, per non farlo saltare al re-render */
   levels: new Map(),
   /** stato reale dei controlli letto dall'host: id -> {on, level, text} */
@@ -80,6 +82,16 @@ const state = {
 const activeHost = () => state.hosts.find((h) => h.id === state.activeHostId) ?? null;
 const baseUrl = () => activeHost()?.base ?? location.origin;
 const token = () => activeHost()?.token ?? null;
+
+/**
+ * URL di un'icona caricata dall'utente.
+ * Il token viaggia in querystring perche' un tag <img> non puo' portare header.
+ */
+const customIconUrl = (name) => `${baseUrl()}${ENDPOINTS.iconFile}?name=${encodeURIComponent(name)}`
+  + `&token=${encodeURIComponent(token() ?? '')}`;
+
+/** Markup dell'icona di un controllo, glifo incluso o file caricato. */
+const controlIcon = (button) => iconMarkup(button.icon, button.action?.type, customIconUrl);
 
 // ---------------------------------------------------------------- utilita'
 
@@ -176,6 +188,7 @@ function switchHost(id) {
   state.levels.clear();
   state.statuses = {};
   state.actionGroups = null;
+  state.customIcons = null;
   saveHosts();
   renderHosts();
   ui.grid.innerHTML = '';
@@ -418,15 +431,20 @@ function renderProfiles() {
   const profile = currentProfile();
   ui.profileSelect.innerHTML = state.deck.profiles
     .map((p) => `<option value="${p.id}"${p.id === profile.id ? ' selected' : ''}>${escapeHtml(p.name)}</option>`)
-    .join('');
+    .join('')
+    // In modifica il menu dei profili diventa anche la via per crearli e
+    // rinominarli: non serve un altro bottone nella barra, gia' affollata.
+    + (state.editing ? '<option value="__gestisci__">Gestisci profili...</option>' : '');
 }
 
 function renderPages() {
   const profile = currentProfile();
   const page = currentPage();
   ui.pages.innerHTML = profile.pages
-    .map((p) => `<button class="page-tab" role="tab" data-page="${p.id}" aria-selected="${p.id === page.id}">${escapeHtml(p.name)}</button>`)
-    .join('');
+    .map((p) => `<button class="page-tab" role="tab" data-page="${p.id}" aria-selected="${p.id === page.id}">`
+      + `${escapeHtml(p.name)}${state.editing ? '<span class="page-edit" title="Modifica la pagina">&#9998;</span>' : ''}</button>`)
+    .join('')
+    + (state.editing ? '<button class="page-tab add" type="button" data-page-add="1" title="Aggiungi una pagina">+</button>' : '');
 }
 
 /**
@@ -480,7 +498,7 @@ function buttonHtml(button) {
   ].filter(Boolean).join(';');
   return `<button class="deck-btn" type="button" data-id="${button.id}" style="${style}" title="${escapeHtml(button.label || button.id)}">`
     + `<span class="type-tag">${escapeHtml(button.action.type)}</span>`
-    + iconSvg(button.icon, button.action.type)
+    + controlIcon(button)
     + (state.deck.ui?.showLabels === false ? '' : `<span class="label">${escapeHtml(button.label)}</span>`)
     + (button.confirm ? '<span class="confirm-tag" title="chiede conferma">!</span>' : '')
     + '</button>';
@@ -499,7 +517,7 @@ function sliderHtml(button) {
     + ` role="slider" tabindex="0" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}" aria-label="${escapeHtml(button.label || button.id)}">`
     + `<div class="slider-fill" style="width:${percent}%"></div>`
     + '<div class="slider-content">'
-    + iconSvg(button.icon, button.action.type)
+    + controlIcon(button)
     + `<span class="slider-label">${escapeHtml(button.label)}</span>`
     + `<span class="slider-value">${value}</span>`
     + '</div></div>';
@@ -697,9 +715,138 @@ async function loadActions() {
   return state.actionGroups;
 }
 
+/** Elenco delle icone caricate dall'utente su questo host. */
+async function loadCustomIcons({ force = false } = {}) {
+  if (state.customIcons && !force) return state.customIcons;
+  const res = await api(ENDPOINTS.icons);
+  state.customIcons = res.ok ? (res.data.icons ?? []) : [];
+  return state.customIcons;
+}
+
+/** Copia di lavoro del deck: l'editor non modifica mai quella ricevuta. */
+const cloneDeck = () => JSON.parse(JSON.stringify(state.deck));
+
+const findProfile = (deck, id) => deck.profiles.find((p) => p.id === id);
+const findPage = (profile, id) => profile?.pages.find((p) => p.id === id);
+
+/** Genera uno slug valido a partire da un testo libero. */
+function slugify(text, fallback = 'nuovo') {
+  const slug = String(text ?? '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  return /^[a-z0-9]/.test(slug) ? slug : `${fallback}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** Rende unico uno slug rispetto a quelli gia' in uso. */
+function uniqueSlug(base, taken) {
+  if (!taken.includes(base)) return base;
+  for (let i = 2; i < 100; i += 1) {
+    const candidate = `${base}-${i}`.slice(0, 32);
+    if (!taken.includes(candidate)) return candidate;
+  }
+  return `${base}-${Math.random().toString(36).slice(2, 6)}`.slice(0, 32);
+}
+
+/** Tutti gli id di bottone del deck: servono a non crearne di duplicati. */
+function allButtonIds(deck) {
+  return deck.profiles.flatMap((p) => p.pages.flatMap((g) => g.buttons.map((b) => b.id)));
+}
+
+// ------------------------------------------------- scelta dell'icona
+
+/** Griglia di scelta dell'icona: glifi inclusi, icone caricate, caricamento. */
+function iconPickerHtml(selected, customIcons) {
+  const choice = (value, inner, title) => '<button type="button" class="icon-choice'
+    + `${value === (selected ?? '') ? ' selected' : ''}" data-icon="${escapeHtml(value)}" title="${escapeHtml(title)}">${inner}</button>`;
+
+  const builtin = Object.keys(ICONS)
+    .map((name) => choice(name, iconSvg(name), name))
+    .join('');
+  const custom = customIcons
+    .map((icon) => choice(`${CUSTOM_PREFIX}${icon.name}`,
+      `<img src="${customIconUrl(icon.name)}" alt="" />`, icon.name))
+    .join('');
+
+  return `
+    <div class="icon-picker" id="ed-icons">
+      ${choice('', '<span class="icon-auto">auto</span>', 'icona predefinita dell\'azione')}
+      ${builtin}
+      ${custom}
+    </div>
+    <div class="icon-upload">
+      <label class="btn ghost small" for="ed-icon-file">Carica un'icona...</label>
+      <input id="ed-icon-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden />
+      <span class="sheet-hint" id="ed-icon-msg">PNG, JPEG, WebP, GIF o SVG, massimo 192 KB.</span>
+    </div>`;
+}
+
+/**
+ * Collega la griglia delle icone: selezione e caricamento di un file.
+ * @param {{onPick: (value: string|null) => void}} handlers
+ */
+function bindIconPicker({ onPick }) {
+  const picker = el('ed-icons');
+  if (!picker) return;
+
+  const select = (element) => {
+    for (const other of picker.querySelectorAll('.icon-choice')) other.classList.remove('selected');
+    element.classList.add('selected');
+    onPick(element.dataset.icon || null);
+  };
+
+  picker.addEventListener('click', (event) => {
+    const choice = event.target.closest('.icon-choice');
+    if (choice) select(choice);
+  });
+
+  el('ed-icon-file')?.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const message = el('ed-icon-msg');
+    message.textContent = 'caricamento...';
+
+    try {
+      const content = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('file illeggibile'));
+        reader.readAsDataURL(file);
+      });
+      const name = uniqueSlug(
+        slugify(file.name.replace(/\.[^.]+$/, ''), 'icona'),
+        (await loadCustomIcons()).map((i) => i.name)
+      );
+      const res = await api(ENDPOINTS.icons, { method: 'POST', body: { name, content } });
+      if (!res.ok) {
+        message.textContent = res.data?.error?.message ?? 'caricamento rifiutato';
+        return;
+      }
+
+      // La lista va riletta: l'icona nuova deve comparire subito nella griglia.
+      const saved = res.data.icon.name;
+      await loadCustomIcons({ force: true });
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'icon-choice';
+      button.dataset.icon = `${CUSTOM_PREFIX}${saved}`;
+      button.title = saved;
+      button.innerHTML = `<img src="${customIconUrl(saved)}" alt="" />`;
+      picker.appendChild(button);
+      select(button);
+      message.textContent = `"${saved}" caricata.`;
+    } catch (err) {
+      message.textContent = `caricamento fallito: ${err.message}`;
+    }
+  });
+}
+
 /** Apre l'editor di un bottone esistente o di una cella vuota. */
 async function editButton(buttonId, cell) {
-  const groups = await loadActions();
+  const [groups, customIcons] = await Promise.all([loadActions(), loadCustomIcons()]);
   const page = currentPage();
   const existing = page.buttons.find((b) => b.id === buttonId) ?? null;
   const [row, col] = cell ? cell.split(':').map(Number) : [existing.row, existing.col];
@@ -707,7 +854,7 @@ async function editButton(buttonId, cell) {
   const draft = existing
     ? JSON.parse(JSON.stringify(existing))
     : {
-      id: `btn-${Math.random().toString(36).slice(2, 8)}`,
+      id: uniqueSlug(`btn-${Math.random().toString(36).slice(2, 8)}`, allButtonIds(state.deck)),
       label: 'Nuovo',
       row,
       col,
@@ -733,6 +880,10 @@ async function editButton(buttonId, cell) {
       <p id="ed-desc" class="sheet-hint"></p>
       <label class="field"><span>Parametri (JSON)</span><textarea id="ed-params" rows="5" spellcheck="false">${escapeHtml(JSON.stringify(draft.action.params ?? {}, null, 2))}</textarea></label>
       <p id="ed-help" class="sheet-hint"></p>
+
+      <h3 class="sheet-section">Icona</h3>
+      ${iconPickerHtml(draft.icon, customIcons)}
+
       <div class="field-row">
         <label class="field"><span>Tipo</span><select id="ed-kind" class="select">
           <option value="button"${draft.kind !== 'slider' ? ' selected' : ''}>Pulsante</option>
@@ -742,6 +893,7 @@ async function editButton(buttonId, cell) {
         <label class="field"><span>Larghezza</span><input id="ed-span" type="number" min="1" max="12" value="${draft.span ?? 1}" /></label>
       </div>
       <label class="field checkbox"><input id="ed-confirm" type="checkbox"${draft.confirm ? ' checked' : ''} /><span>Chiedi conferma prima di eseguire</span></label>
+      <label class="field checkbox"><input id="ed-status" type="checkbox"${draft.status === false ? '' : ' checked'} /><span>Mostra lo stato reale letto dal computer</span></label>
     `,
     actions: [
       ...(existing ? [{ label: 'Elimina', kind: 'danger', onClick: () => removeButton(existing.id) }] : []),
@@ -749,6 +901,8 @@ async function editButton(buttonId, cell) {
       { label: 'Salva', kind: 'primary', onClick: () => saveButtonDraft(draft, existing) }
     ]
   });
+
+  bindIconPicker({ onPick: (value) => { draft.icon = value; } });
 
   const typeSelect = el('ed-type');
   const describe = () => {
@@ -758,6 +912,12 @@ async function editButton(buttonId, cell) {
       ? Object.entries(spec.paramsHelp).map(([k, v]) => `<code>${escapeHtml(k)}</code>: ${escapeHtml(v)}`).join('<br />')
       : 'Questa azione non richiede parametri.';
     if (spec?.control === 'slider') el('ed-kind').value = 'slider';
+
+    // Spuntare "mostra lo stato" su un'azione che non sa dichiararlo non
+    // farebbe nulla: meglio disattivare la casella che lasciarla senza effetto.
+    const statusBox = el('ed-status');
+    statusBox.disabled = spec ? spec.reportsState !== true : false;
+    statusBox.closest('.field').classList.toggle('disabled', statusBox.disabled);
   };
   typeSelect.addEventListener('change', describe);
   describe();
@@ -777,9 +937,11 @@ async function saveButtonDraft(draft, existing) {
     ...draft,
     label: el('ed-label').value.trim(),
     kind,
+    icon: draft.icon || null,
     color: el('ed-color').value,
     span: Math.max(1, Number(el('ed-span').value) || 1),
     confirm: el('ed-confirm').checked,
+    status: el('ed-status').checked,
     action: { type: el('ed-type').value, params }
   };
   if (kind === 'slider') {
@@ -789,8 +951,8 @@ async function saveButtonDraft(draft, existing) {
     if (!draft.span) next.span = Math.max(2, next.span);
   }
 
-  const deck = JSON.parse(JSON.stringify(state.deck));
-  const page = deck.profiles.find((p) => p.id === state.profileId).pages.find((p) => p.id === currentPage().id);
+  const deck = cloneDeck();
+  const page = findPage(findProfile(deck, state.profileId), currentPage().id);
   if (existing) {
     const index = page.buttons.findIndex((b) => b.id === existing.id);
     page.buttons[index] = next;
@@ -801,21 +963,226 @@ async function saveButtonDraft(draft, existing) {
 }
 
 async function removeButton(buttonId) {
-  const deck = JSON.parse(JSON.stringify(state.deck));
-  const page = deck.profiles.find((p) => p.id === state.profileId).pages.find((p) => p.id === currentPage().id);
+  const deck = cloneDeck();
+  const page = findPage(findProfile(deck, state.profileId), currentPage().id);
   page.buttons = page.buttons.filter((b) => b.id !== buttonId);
   await persistDeck(deck, 'controllo eliminato');
 }
 
+/**
+ * Sposta un controllo in un'altra cella della stessa pagina.
+ *
+ * Non si controlla qui se la cella e' libera: la sovrapposizione la rileva
+ * l'host, che e' l'unico a vedere la configurazione intera, e la risposta
+ * arriva come messaggio di errore.
+ * @param {string} buttonId
+ * @param {{row: number, col: number}} target
+ */
+async function moveButton(buttonId, target) {
+  const deck = cloneDeck();
+  const page = findPage(findProfile(deck, state.profileId), currentPage().id);
+  const button = page.buttons.find((b) => b.id === buttonId);
+  if (!button) return false;
+  if (button.row === target.row && button.col === target.col) return false;
+  button.row = target.row;
+  button.col = target.col;
+  return persistDeck(deck, 'controllo spostato', { quiet: true });
+}
+
+// ------------------------------------------------- pagine
+
+/** Pannello di gestione di una pagina. */
+function editPage(pageId) {
+  const profile = currentProfile();
+  const page = findPage(profile, pageId) ?? currentPage();
+  const isLast = profile.pages.length <= 1;
+  const index = profile.pages.findIndex((p) => p.id === page.id);
+  const isDefault = profile.defaultPage === page.id;
+
+  openSheet({
+    title: `Pagina "${page.name}"`,
+    body: `
+      <label class="field"><span>Nome</span><input id="pg-name" type="text" maxlength="64" value="${escapeHtml(page.name)}" /></label>
+      <div class="field-row">
+        <label class="field"><span>Righe</span><input id="pg-rows" type="number" min="1" max="8" value="${page.rows}" /></label>
+        <label class="field"><span>Colonne</span><input id="pg-cols" type="number" min="1" max="12" value="${page.cols}" /></label>
+      </div>
+      <p class="sheet-hint">Rimpicciolire la griglia si puo' solo se nessun controllo resta fuori: altrimenti l'host rifiuta il salvataggio e dice quale.</p>
+      <div class="field-row">
+        <button class="btn ghost" type="button" id="pg-left"${index === 0 ? ' disabled' : ''}>&larr; Sposta</button>
+        <button class="btn ghost" type="button" id="pg-right"${index === profile.pages.length - 1 ? ' disabled' : ''}>Sposta &rarr;</button>
+      </div>
+      <label class="field checkbox"><input id="pg-default" type="checkbox"${isDefault ? ' checked disabled' : ''} /><span>Pagina iniziale del profilo</span></label>
+      ${isLast ? '<p class="sheet-hint">E\' l\'unica pagina del profilo: per toglierla, elimina il profilo.</p>' : ''}
+    `,
+    actions: [
+      ...(isLast ? [] : [{ label: 'Elimina', kind: 'danger', onClick: () => removePage(page.id) }]),
+      { label: 'Annulla', kind: 'ghost', onClick: () => closeSheet() },
+      { label: 'Salva', kind: 'primary', onClick: () => savePage(page.id) }
+    ]
+  });
+
+  el('pg-left').addEventListener('click', () => movePage(page.id, -1));
+  el('pg-right').addEventListener('click', () => movePage(page.id, 1));
+}
+
+async function savePage(pageId) {
+  const deck = cloneDeck();
+  const profile = findProfile(deck, state.profileId);
+  const page = findPage(profile, pageId);
+  page.name = el('pg-name').value.trim() || page.id;
+  page.rows = Math.max(1, Math.min(8, Number(el('pg-rows').value) || page.rows));
+  page.cols = Math.max(1, Math.min(12, Number(el('pg-cols').value) || page.cols));
+  if (el('pg-default').checked) profile.defaultPage = page.id;
+  await persistDeck(deck, `pagina "${page.name}" salvata`);
+}
+
+async function addPage() {
+  const deck = cloneDeck();
+  const profile = findProfile(deck, state.profileId);
+  const model = findPage(profile, state.pageId) ?? profile.pages[0];
+  const id = uniqueSlug('pagina', profile.pages.map((p) => p.id));
+  profile.pages.push({
+    id,
+    name: `Pagina ${profile.pages.length + 1}`,
+    rows: model?.rows ?? 3,
+    cols: model?.cols ?? 5,
+    buttons: []
+  });
+  if (await persistDeck(deck, 'pagina aggiunta')) goToPage(id);
+}
+
+async function removePage(pageId) {
+  const deck = cloneDeck();
+  const profile = findProfile(deck, state.profileId);
+  if (profile.pages.length <= 1) {
+    toast('Un profilo deve avere almeno una pagina', 'err');
+    return;
+  }
+  profile.pages = profile.pages.filter((p) => p.id !== pageId);
+  if (profile.defaultPage === pageId) profile.defaultPage = profile.pages[0].id;
+  if (await persistDeck(deck, 'pagina eliminata')) goToPage(profile.pages[0].id);
+}
+
+async function movePage(pageId, delta) {
+  const deck = cloneDeck();
+  const profile = findProfile(deck, state.profileId);
+  const index = profile.pages.findIndex((p) => p.id === pageId);
+  const target = index + delta;
+  if (index === -1 || target < 0 || target >= profile.pages.length) return;
+  const [page] = profile.pages.splice(index, 1);
+  profile.pages.splice(target, 0, page);
+  await persistDeck(deck, 'pagine riordinate');
+}
+
+// ------------------------------------------------- profili
+
+/** Pannello di gestione dei profili. */
+function editProfiles() {
+  const deck = state.deck;
+  const rows = deck.profiles.map((p) => `
+    <div class="host-row">
+      <span>${escapeHtml(p.name)}<small>${p.pages.length} pagine${p.id === deck.defaultProfile ? ' - iniziale' : ''}</small></span>
+      <span class="row-actions">
+        ${p.id === deck.defaultProfile ? '' : `<button class="btn ghost small" type="button" data-profile-default="${p.id}">Iniziale</button>`}
+        <button class="btn ghost small" type="button" data-profile-rename="${p.id}">Rinomina</button>
+        ${deck.profiles.length > 1 ? `<button class="btn ghost small danger" type="button" data-profile-remove="${p.id}">Elimina</button>` : ''}
+      </span>
+    </div>`).join('');
+
+  openSheet({
+    title: 'Profili',
+    body: `
+      <div class="host-list">${rows}</div>
+      <label class="field"><span>Nome del nuovo profilo</span><input id="pr-name" type="text" maxlength="64" placeholder="es. Streaming" /></label>
+      <button class="btn" type="button" id="pr-add">Aggiungi profilo</button>
+      <p class="sheet-hint">Un profilo nuovo nasce con una pagina vuota della stessa dimensione di quella attuale.</p>
+    `,
+    actions: [{ label: 'Chiudi', kind: 'ghost', onClick: () => closeSheet() }]
+  });
+
+  el('pr-add').addEventListener('click', () => addProfile(el('pr-name').value));
+  for (const button of ui.sheetBody.querySelectorAll('[data-profile-remove]')) {
+    button.addEventListener('click', () => removeProfile(button.dataset.profileRemove));
+  }
+  for (const button of ui.sheetBody.querySelectorAll('[data-profile-default]')) {
+    button.addEventListener('click', () => setDefaultProfile(button.dataset.profileDefault));
+  }
+  for (const button of ui.sheetBody.querySelectorAll('[data-profile-rename]')) {
+    button.addEventListener('click', () => renameProfile(button.dataset.profileRename));
+  }
+}
+
+async function addProfile(rawName) {
+  const deck = cloneDeck();
+  const name = String(rawName ?? '').trim() || `Profilo ${deck.profiles.length + 1}`;
+  const id = uniqueSlug(slugify(name, 'profilo'), deck.profiles.map((p) => p.id));
+  const model = currentPage();
+  deck.profiles.push({
+    id,
+    name,
+    defaultPage: 'home',
+    pages: [{ id: 'home', name: 'Principale', rows: model?.rows ?? 3, cols: model?.cols ?? 5, buttons: [] }]
+  });
+  if (await persistDeck(deck, `profilo "${name}" creato`)) switchProfile(id);
+}
+
+async function removeProfile(profileId) {
+  const deck = cloneDeck();
+  if (deck.profiles.length <= 1) {
+    toast('Deve restare almeno un profilo', 'err');
+    return;
+  }
+  deck.profiles = deck.profiles.filter((p) => p.id !== profileId);
+  if (deck.defaultProfile === profileId) deck.defaultProfile = deck.profiles[0].id;
+  const saved = await persistDeck(deck, 'profilo eliminato');
+  if (saved && state.profileId === profileId) switchProfile(deck.profiles[0].id);
+}
+
+async function setDefaultProfile(profileId) {
+  const deck = cloneDeck();
+  deck.defaultProfile = profileId;
+  await persistDeck(deck, 'profilo iniziale aggiornato');
+}
+
+function renameProfile(profileId) {
+  const profile = findProfile(state.deck, profileId);
+  openSheet({
+    title: `Rinomina "${profile.name}"`,
+    body: `<label class="field"><span>Nome</span><input id="pr-rename" type="text" maxlength="64" value="${escapeHtml(profile.name)}" /></label>`,
+    actions: [
+      { label: 'Annulla', kind: 'ghost', onClick: () => editProfiles() },
+      {
+        label: 'Salva',
+        kind: 'primary',
+        onClick: async () => {
+          const deck = cloneDeck();
+          findProfile(deck, profileId).name = el('pr-rename').value.trim() || profileId;
+          await persistDeck(deck, 'profilo rinominato');
+        }
+      }
+    ]
+  });
+}
+
+/** Passa a un profilo, sincronizzando host e memoria locale. */
+function switchProfile(profileId) {
+  state.profileId = profileId;
+  state.pageId = null;
+  localStorage.setItem(STORAGE.profile, profileId);
+  renderAll();
+  send({ type: MSG.navigate, profile: profileId });
+}
+
 /** Invia il deck modificato all'host, che lo valida e lo scrive su disco. */
-async function persistDeck(deck, successMessage) {
+async function persistDeck(deck, successMessage, { quiet = false } = {}) {
   const res = await api(ENDPOINTS.save, { method: 'POST', body: { deck } });
   if (!res.ok) {
     const detail = (res.data.errors ?? []).slice(0, 3).map((e) => `${e.path}: ${e.message}`).join(' | ');
     toast(detail || res.data?.error?.message || 'salvataggio rifiutato', 'err');
     return false;
   }
-  closeSheet();
+  if (!quiet) closeSheet();
   toast(successMessage, 'ok');
   return true;
 }
@@ -929,16 +1296,28 @@ function bindEvents() {
   });
 
   ui.profileSelect.addEventListener('change', () => {
-    state.profileId = ui.profileSelect.value;
-    state.pageId = null;
-    localStorage.setItem(STORAGE.profile, state.profileId);
-    renderAll();
-    send({ type: MSG.navigate, profile: state.profileId });
+    if (ui.profileSelect.value === '__gestisci__') {
+      ui.profileSelect.value = state.profileId;
+      editProfiles();
+      return;
+    }
+    switchProfile(ui.profileSelect.value);
   });
 
   ui.pages.addEventListener('click', (event) => {
+    if (event.target.closest('[data-page-add]')) {
+      addPage();
+      return;
+    }
     const tab = event.target.closest('.page-tab');
-    if (tab) goToPage(tab.dataset.page);
+    if (!tab?.dataset.page) return;
+    // In modifica la matita sulla scheda apre le impostazioni della pagina;
+    // il resto della scheda continua a cambiare pagina, come sempre.
+    if (state.editing && event.target.closest('.page-edit')) {
+      editPage(tab.dataset.page);
+      return;
+    }
+    goToPage(tab.dataset.page);
   });
 
   bindGrid();
@@ -947,8 +1326,12 @@ function bindEvents() {
   ui.btnEdit.addEventListener('click', () => {
     state.editing = !state.editing;
     ui.btnEdit.setAttribute('aria-pressed', String(state.editing));
+    renderProfiles();
+    renderPages();
     renderGrid();
-    toast(state.editing ? 'Modifica attiva: tocca un controllo per modificarlo, una cella vuota per aggiungerne uno' : 'Modifica disattivata');
+    toast(state.editing
+      ? 'Modifica attiva: tocca un controllo per cambiarlo, trascinalo per spostarlo, tocca una cella vuota per aggiungerne uno'
+      : 'Modifica disattivata');
   });
 
   ui.btnSimulate.addEventListener('click', () => {
@@ -998,6 +1381,38 @@ function stepPage(delta) {
   goToPage(next.id, { animate: delta > 0 ? 'left' : 'right' });
 }
 
+/**
+ * Cella della griglia sotto un punto dello schermo.
+ *
+ * Si ricava dalla geometria della griglia invece che da elementFromPoint,
+ * perche' durante il trascinamento il dito e' sopra il controllo trascinato,
+ * non sotto di esso.
+ * @returns {{row: number, col: number}|null}
+ */
+function cellAt(clientX, clientY) {
+  const page = currentPage();
+  if (!page) return null;
+  const rect = ui.grid.getBoundingClientRect();
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+  const col = Math.floor(((clientX - rect.left) / rect.width) * page.cols);
+  const row = Math.floor(((clientY - rect.top) / rect.height) * page.rows);
+  if (row < 0 || col < 0 || row >= page.rows || col >= page.cols) return null;
+  return { row, col };
+}
+
+/** Evidenzia la cella su cui il controllo verrebbe rilasciato. */
+function highlightDropCell(clientX, clientY) {
+  clearDropCell();
+  const cell = cellAt(clientX, clientY);
+  if (!cell) return;
+  const target = ui.grid.querySelector(`[data-empty="${cell.row}:${cell.col}"]`);
+  if (target) target.classList.add('drop-target');
+}
+
+function clearDropCell() {
+  for (const element of ui.grid.querySelectorAll('.drop-target')) element.classList.remove('drop-target');
+}
+
 function bindGrid() {
   /** Gesto in corso: distingue pressione, hold e trascinamento. */
   let gesture = null;
@@ -1012,9 +1427,15 @@ function bindGrid() {
     const empty = event.target.closest('.deck-btn.empty');
 
     if (state.editing) {
-      if (button) editButton(button.dataset.id);
-      else if (slider) editButton(slider.dataset.id);
-      else if (empty) editButton(null, empty.dataset.empty);
+      const control = button ?? slider;
+      if (control) {
+        // Un tocco apre l'editor, un trascinamento sposta: quale dei due sia
+        // si capisce solo al rilascio, quindi qui si registra soltanto l'inizio.
+        control.setPointerCapture?.(event.pointerId);
+        gesture = { kind: 'edit-move', element: control, startX: event.clientX, startY: event.clientY, moved: false };
+      } else if (empty) {
+        editButton(null, empty.dataset.empty);
+      }
       return;
     }
 
@@ -1062,6 +1483,15 @@ function bindGrid() {
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
 
+    if (gesture.kind === 'edit-move') {
+      if (!gesture.moved && Math.hypot(dx, dy) > 10) {
+        gesture.moved = true;
+        gesture.element.classList.add('dragging');
+      }
+      if (gesture.moved) highlightDropCell(event.clientX, event.clientY);
+      return;
+    }
+
     if (gesture.kind === 'slider') {
       applySliderFromPointer(gesture.element, event.clientX);
       return;
@@ -1083,6 +1513,20 @@ function bindGrid() {
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
 
+    if (gesture.kind === 'edit-move') {
+      const element = gesture.element;
+      const moved = gesture.moved;
+      element.classList.remove('dragging');
+      clearDropCell();
+      gesture = null;
+      if (!moved) editButton(element.dataset.id);
+      else {
+        const cell = cellAt(event.clientX, event.clientY);
+        if (cell) moveButton(element.dataset.id, cell);
+      }
+      return;
+    }
+
     if (gesture.kind === 'slider') {
       sendSliderValue(gesture.element, { final: true });
       state.draggingId = null;
@@ -1098,8 +1542,9 @@ function bindGrid() {
 
   ui.grid.addEventListener('pointerup', endGesture);
   ui.grid.addEventListener('pointercancel', () => {
-    if (gesture?.element) gesture.element.classList.remove('pending');
+    if (gesture?.element) gesture.element.classList.remove('pending', 'dragging');
     clearHold();
+    clearDropCell();
     state.draggingId = null;
     gesture = null;
   });

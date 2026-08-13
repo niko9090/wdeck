@@ -19,6 +19,7 @@ import { createDispatcher } from './actions/dispatcher.mjs';
 import { createState } from './state.mjs';
 import { createStatusTracker } from './status.mjs';
 import { createAuth } from './security/auth.mjs';
+import { createIconStore } from './icons.mjs';
 import { createApiRouter } from './server/api.mjs';
 import { createHub } from './server/hub.mjs';
 import { createStaticHandler } from './server/static.mjs';
@@ -123,6 +124,10 @@ export function createHost(options = {}) {
     auth,
     dispatcher,
     status,
+    // Le icone caricate dall'utente stanno accanto a deck.json, non dentro:
+    // un file di configurazione pieno di base64 non sarebbe piu' modificabile
+    // a mano, che e' una delle cose che il progetto promette.
+    icons: createIconStore({ dir: path.join(baseDir, 'icons'), logger }),
     server: null,
     hub: null,
     upgrades: null,
@@ -156,7 +161,10 @@ export function createHost(options = {}) {
   host.saveDeck = (incoming) => {
     const result = saveDeck({
       configPath: configFile,
-      current: configStore.get(),
+      // Si parte dal file cosi' com'e' su disco, non dal deck normalizzato:
+      // altrimenti un avvio con --port o --token scriverebbe quei valori
+      // dentro deck.json al primo salvataggio, rendendoli permanenti.
+      current: configStore.snapshot(),
       incoming,
       actionTypes: registry.types()
     });
@@ -180,13 +188,15 @@ export function createHost(options = {}) {
    * @param {{pin?: string, ui?: object, updates?: object, tray?: object}} patch
    */
   host.updateSettings = (patch) => {
-    const current = configStore.get();
+    // Come per saveDeck: la base e' il file su disco, non il deck con gli
+    // override applicati.
+    const current = configStore.snapshot();
     const changed = [];
     const next = JSON.parse(JSON.stringify({
       version: current.version,
       name: current.name,
       defaultProfile: current.defaultProfile,
-      settings: current.settings,
+      settings: current.settings ?? {},
       profiles: current.profiles
     }));
 
@@ -195,10 +205,10 @@ export function createHost(options = {}) {
       if (pin !== '' && !/^[0-9]{4,12}$/.test(pin)) {
         return { ok: false, message: 'PIN non valido: sono ammesse da 4 a 12 cifre' };
       }
-      next.settings.security.pin = pin;
+      next.settings.security = { ...next.settings.security, pin };
       changed.push('pin');
     }
-    for (const section of ['ui', 'updates', 'tray']) {
+    for (const section of ['ui', 'updates', 'tray', 'status']) {
       if (patch[section] !== undefined) {
         next.settings[section] = { ...next.settings[section], ...patch[section] };
         changed.push(section);

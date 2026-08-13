@@ -3,6 +3,51 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.4] - 2026-08-13
+
+### Aggiunto
+
+- **L'editor visuale copre tutto il deck.** Oltre a bottoni e cursori si possono
+  ora creare, rinominare, riordinare ed eliminare **pagine e profili**, cambiare
+  la dimensione della griglia, scegliere pagina e profilo iniziali e **spostare
+  i controlli trascinandoli** in un'altra cella. Prima per queste cose serviva
+  aprire `deck.json` a mano.
+- **Icone personalizzate** caricate dall'utente: PNG, JPEG, WebP, GIF o SVG,
+  fino a 192 KB e 64 in tutto. Finiscono in `icons/` accanto a `deck.json` e si
+  usano come `"icon": "custom:mio-logo"`. Nuovi endpoint `GET`/`POST`/`DELETE
+  /api/icons` e `GET /api/icons/file`.
+- Nell'editor si sceglie l'icona da una griglia che mostra insieme i glifi
+  inclusi e quelli caricati, e si puo' decidere se un controllo debba mostrare
+  lo stato reale.
+
+### Corretto
+
+- **Gli override di avvio finivano dentro `deck.json`.** Il salvataggio partiva
+  dal deck in memoria, che porta con se' `--port`, `--token` e le variabili
+  `WDECK_*`: al primo salvataggio dall'editor quei valori diventavano
+  permanenti, e chi avviava su una porta effimera si ritrovava una
+  configurazione perfino invalida. Ora la base e' il file cosi' com'e' su disco
+  ([`ConfigStore.snapshot()`](src/host/config/loader.mjs)). Vale anche per
+  `POST /api/settings`. Il difetto e' emerso scrivendo i test dell'editor, ed e'
+  coperto da due test di regressione.
+- Un salvataggio riuscito da `POST /api/settings` non avvisava i client
+  collegati: ora rimanda il deck aggiornato come fa `POST /api/deck/save`.
+
+### Sicurezza
+
+Il formato di un'icona e' riconosciuto **dai byte**, non da quanto dichiara il
+client. Gli SVG - l'unico formato accettato che possa contenere codice -
+passano da una pulizia che toglie `<script>`, `<foreignObject>`, i gestori
+`on*`, gli URL `javascript:`, i riferimenti esterni e le entita' XXE; se dopo la
+pulizia resta qualcosa di eseguibile il caricamento e' rifiutato. Il file e'
+poi servito con `nosniff` e una `Content-Security-Policy` restrittiva. I nomi
+sono slug, quindi il path traversal non ha da dove passare.
+
+### Note
+
+Il campo `status` sui controlli e il riferimento `custom:` nel campo `icon` sono
+entrambi opzionali: le configurazioni esistenti si caricano identiche.
+
 ## [0.2.3] - 2026-08-13
 
 ### Aggiunto
