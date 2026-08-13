@@ -180,69 +180,98 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 
 ## Stub (presenti ma volutamente incompleti)
 
-| elemento | stato attuale | cosa manca |
+| elemento | stato attuale | perche' resta cosi' |
 |---|---|---|
-| azione `stub` | conferma la pressione e restituisce la nota configurata | resta come segnaposto per chi vuole disegnare un deck prima di scrivere l'azione vera: non esegue nulla, e ora nessuna integrazione inclusa la usa piu' |
-| firmware ESP32 | codice completo e conforme al protocollo, verificato dai test | **non e' mai stato compilato ne' provato su hardware reale**: i pin dichiarati vanno verificati sulla scheda in uso |
-| icone su ESP32 | il campo `n` viene scaricato ma ignorato | il display mostra solo l'etichetta testuale; servono glifi bitmap o LVGL |
-| `holdAction` | configurabile dall'editor, supportata da host e client web | non supportata dall'ESP32: il firmware non distingue un tocco lungo da uno breve |
-| `ui.showLabels` | rispettato dal client web | ignorato dall'ESP32 |
+| azione `stub` | conferma la pressione e restituisce la nota configurata | **e' voluta**: serve a disegnare un deck prima di aver scritto l'azione vera. Nessuna integrazione inclusa la usa piu' |
+| firmware ESP32 | codice completo e conforme al protocollo, verificato a ogni giro da `npm run test:esp32` | **non e' mai stato compilato ne' provato su hardware reale**: pin, rotazione e touch vanno verificati sulla scheda in uso |
+| icone su ESP32 | il campo `n` arriva al dispositivo ma il display mostra solo l'etichetta | servono glifi bitmap o LVGL, da guardare su uno schermo vero |
+| `holdAction` su ESP32 | configurabile dall'editor e supportata da host e client web | il firmware non distingue un tocco lungo da uno breve: la soglia va tarata sul touch reale |
+| `ui.showLabels` su ESP32 | rispettato dal client web | il firmware disegna sempre l'etichetta, perche' senza icone non resterebbe nulla da vedere |
 
 ---
 
 ## Mancante (non esiste ancora)
 
-### Piattaforme
+Ogni voce dice **perche'** manca. Cio' che resta si divide in tre casi: serve
+hardware che qui non c'e', e' escluso da una scelta di progetto, oppure
+costerebbe molto piu' di quanto renda.
 
-- **Luminosita' su macOS e Linux**: `brightness` resta dichiarata solo per
-  Windows. Su macOS non e' pilotabile senza un binario nativo (le API sono
-  private) e su Linux dipende dal driver grafico; dichiararla supportata
-  darebbe un errore a ogni pressione invece del `501` chiaro di oggi.
-- **Finestre, desktop virtuali, appunti, screenshot, notifiche, alimentazione**
-  restano azioni solo-Windows: ognuna richiederebbe un adattatore per ambiente
-  desktop (GNOME, KDE, Aqua) e non un solo comando come per tasti e volume.
-- Nessun servizio Windows vero e proprio. Non e' una dimenticanza: un servizio
-  gira nella sessione 0 e da li' non puo' inviare tasti ne' portare finestre in
-  primo piano nella sessione dell'utente, quindi meta' delle azioni smetterebbe
-  di funzionare. L'avvio automatico al login (`install.ps1 -Autostart`) ottiene
-  lo stesso risultato pratico senza quel limite.
+### Richiede hardware o un ambiente che qui non c'e'
 
-### Sicurezza
+- **Prova del firmware su una scheda vera.** Il codice e' completo e conforme
+  al protocollo - `npm run test:esp32` lo verifica contro `shared/protocol.mjs`
+  a ogni giro - ma non e' mai stato compilato ne' eseguito. Pin, rotazione e
+  taratura del touch vanno verificati sulla scheda in uso.
+- **Prova dell'input sintetico su macOS e Linux.** Gli adattatori ci sono e le
+  loro traduzioni sono verificate, ma inviare tasti richiede una sessione
+  grafica interattiva: la CI puo' avviare l'host e far girare i test, non
+  premere tasti in un desktop vero.
+- **Test del client web in un browser** (Playwright, Puppeteer): richiederebbe
+  un browser installato, cioe' la dipendenza piu' pesante di tutte, contro il
+  vincolo di zero dipendenze. La PWA e' verificata dal lato server e da un
+  controllo statico dei suoi moduli.
 
+### Escluso da una scelta di progetto
 
-### Funzionalita'
+- **Aggiornamento automatico.** L'host segnala che esiste una versione nuova ma
+  **non scarica e non installa nulla**: un programma che si sostituisce da solo
+  i file mentre esegue comandi sul PC e' esattamente cio' che questo progetto
+  non vuole essere. Il download resta all'utente.
+- **Servizio Windows.** Un servizio gira nella sessione 0, da cui non puo'
+  inviare tasti ne' portare finestre in primo piano nella sessione dell'utente:
+  meta' delle azioni smetterebbe di funzionare. L'avvio automatico al login
+  (`install.ps1 -Autostart`) da' lo stesso risultato senza quel limite.
+- **Bundling e minificazione del JavaScript.** La PWA e' servita come moduli ES
+  nativi: nessun passo di build da mantenere, nessuna mappa dei sorgenti da
+  allineare, e il codice che gira e' quello che si legge nel repository. Il CSS
+  e' minificato perche' li' il guadagno non costa nulla.
+- **Certificato riconosciuto da un'autorita'.** Quello generato all'avvio e'
+  autofirmato: cifra il traffico ma non dimostra l'identita' dell'host, e il
+  browser mostra un avviso la prima volta. Ottenere un certificato vero per un
+  indirizzo di rete locale richiede una CA interna, che e' fuori portata per un
+  programma che deve funzionare appena scaricato. Chi ne ha uno lo indica con
+  `certFile` e `keyFile`.
 
-- Luminosita': su un PC con HDR attivo e monitor che rifiutano DDC/CI nessuno
-  dei tre metodi funziona, e l'azione fallisce con un messaggio esplicito.
-  Servirebbe un overlay di attenuazione, che e' un processo in piu' da tenere
-  vivo.
-- L'aggiornamento viene segnalato ma non applicato: il download e la
-  sostituzione dei file restano a carico dell'utente.
-- Nessun bundling/minificazione del JavaScript della PWA (viene servito come
-  moduli ES; solo il CSS e' minificato).
+### Costerebbe piu' di quanto renda
 
-### Qualita'
-
-- Nessun test su hardware ESP32 reale, nessun test del client web in browser
-  (niente Playwright/Puppeteer): la PWA e' verificata solo lato server.
-- Nessuna misura di copertura del codice.
+- **Luminosita' su macOS e Linux.** Su macOS le API sono private e servirebbe un
+  binario nativo da compilare; su Linux dipende dal driver grafico. Dichiararla
+  supportata darebbe un errore a ogni pressione invece del `501` chiaro di oggi.
+- **Luminosita' su PC con HDR attivo e monitor che rifiutano DDC/CI**: nessuno
+  dei tre metodi (WMI, DDC/CI, gamma ramp) funziona, e l'azione fallisce con un
+  messaggio esplicito. Servirebbe una finestra di attenuazione sempre viva, cioe'
+  un secondo processo da tenere in piedi.
+- **Finestre, desktop virtuali, appunti, screenshot, notifiche e alimentazione
+  su macOS e Linux.** Per tasti e volume basta un comando per piattaforma; per
+  queste servirebbe un adattatore per ogni ambiente desktop (GNOME, KDE, Aqua),
+  ognuno da provare separatamente.
+- **Icone sull'ESP32.** Il campo `n` arriva al dispositivo ma il display mostra
+  solo l'etichetta: servirebbero glifi bitmap o LVGL, e vanno visti su uno
+  schermo vero per capire se si leggono.
+- **Pressione prolungata sull'ESP32.** Il firmware non distingue un tocco lungo
+  da uno breve; la taratura della soglia va fatta sul touch reale.
+- **Permessi per dispositivo.** Ogni token accoppiato puo' premere qualunque
+  bottone. Limitare un dispositivo a un profilo richiederebbe un modello di
+  permessi nel protocollo e nell'interfaccia, ed e' una funzionalita' a se'.
+- **Misura della copertura del codice.** Il valore aggiunto sopra 432 verifiche
+  scritte guardando il comportamento sarebbe soprattutto un numero.
 
 ---
 
 ## Prossimi passi consigliati
 
-In ordine di rapporto valore/costo, da decidere insieme:
+Le otto voci della consegna precedente sono state fatte tutte (vedi
+[CHANGELOG.md](../CHANGELOG.md), dalla 0.2.1 alla 0.3.0). Quello che resta, in
+ordine di rapporto valore/costo:
 
-1. **Provare il firmware su una scheda vera** e correggere pin/rotazione/touch:
-   e' l'unico pezzo dichiaratamente non collaudato.
-2. ~~**Feedback di stato sui bottoni** (toggle muto, scena OBS attiva).~~
-   **fatto in 0.2.2.**
-3. ~~**Adattatore Linux/macOS** per hotkey e tasti media.~~ **fatto in 0.2.3.**
-4. ~~**Editor grafico del deck** completo nella PWA.~~ **fatto in 0.2.4.**
-5. ~~**Token per dispositivo + revoca**, con QR code per il pairing.~~
-   **fatto in 0.2.6 e 0.2.9.**
-6. ~~**HTTPS/WSS** con certificato autofirmato generato all'avvio.~~
-   **fatto in 0.2.8.**
-7. ~~**Integrazioni** al posto dell'azione `stub`.~~ **fatto: OBS, Home
-   Assistant e Hue in 0.2.0, MQTT, Spotify e Discord in 0.2.10.**
-8. ~~**CI** che esegua `npm run verify` a ogni commit.~~ **fatto in 0.2.1.**
+1. **Provare il firmware su una scheda vera** e correggere pin, rotazione e
+   taratura del touch: e' l'unico pezzo dichiaratamente non collaudato, e
+   nessun test puo' sostituirlo.
+2. **Provare gli adattatori macOS e Linux** su una sessione grafica vera: il
+   codice c'e' e le traduzioni sono verificate, ma l'input sintetico va visto
+   funzionare.
+3. **Glifi sul display dell'ESP32**, che oggi mostra solo etichette testuali.
+4. **Permessi per dispositivo** (limitare un token a un profilo), se il deck
+   viene condiviso con qualcuno di cui ci si fida meno.
+5. **Attenuazione software a finestra** per la luminosita' sui monitor che
+   rifiutano sia WMI sia DDC/CI.
