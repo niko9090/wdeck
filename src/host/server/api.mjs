@@ -149,18 +149,21 @@ export function createApiRouter(host) {
       // a dover essere contato, riuscito o no.
       if (!allow(res, host.limits.checkAuth({ address }), 'tentativi di accesso')) {
         host.logger.warn?.(`[wdeck] pairing bloccato dal limite: ${address}`);
+        host.audit.write('rate-limited', { what: 'pair', address });
         return;
       }
 
       const body = await readJsonBody(req);
       const result = auth.pair(body.pin, { name: body.name, days: body.days });
       if (!result.ok) {
+        host.audit.write('pair-failed', { address, reason: result.reason ?? null });
         sendError(res, 401, ERROR_CODES.unauthorized, result.reason ?? 'pairing rifiutato');
         return;
       }
       // Chi ha dimostrato di conoscere il PIN non e' un attaccante: i suoi
       // tentativi precedenti non devono pesare sui prossimi accessi.
       host.limits.clearAuth({ address });
+      host.audit.write('pair', { address, device: result.device.id, name: result.device.name });
       host.logger.info?.(`[wdeck] pairing riuscito da ${address}: "${result.device.name}" (${result.device.id})`);
       // Il token viaggia una volta sola: dopo, di lui resta la sola impronta.
       sendJson(res, 200, { ok: true, token: result.token, device: result.device });
@@ -252,6 +255,17 @@ export function createApiRouter(host) {
       sendJson(res, 200, { ok: true, changed: result.changed });
     },
 
+    [`GET ${ENDPOINTS.audit}`]: (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get('limit')) || 100));
+      sendJson(res, 200, {
+        ok: true,
+        enabled: host.audit.enabled,
+        file: host.audit.file,
+        entries: host.audit.tail({ limit, event: url.searchParams.get('event') ?? undefined })
+      });
+    },
+
     // ---------------- dispositivi accoppiati ----------------
 
     [`GET ${ENDPOINTS.devices}`]: (req, res) => {
@@ -275,6 +289,7 @@ export function createApiRouter(host) {
         return;
       }
       const created = auth.createDevice({ name: body.name, days: body.days });
+      host.audit.write('device-created', { device: created.id, name: created.name, address: addressOf(req) });
       host.logger.info?.(`[wdeck] nuovo dispositivo "${created.name}" (${created.id})`);
       // Il token si vede una volta sola: dopo, di lui resta solo l'impronta.
       sendJson(res, 200, { ok: true, device: created });
@@ -287,6 +302,7 @@ export function createApiRouter(host) {
         sendError(res, 404, ERROR_CODES.notFound, `dispositivo sconosciuto: "${id}"`);
         return;
       }
+      host.audit.write('device-revoked', { device: id, address: addressOf(req) });
       host.logger.info?.(`[wdeck] dispositivo revocato: ${id}`);
       host.hub?.disconnectRevoked?.();
       sendJson(res, 200, { ok: true, revoked: id, devices: auth.listDevices() });
@@ -297,6 +313,7 @@ export function createApiRouter(host) {
       const body = await readJsonBody(req);
       const revokeDevices = body.revokeDevices === true;
       const next = auth.rotate({ revokeDevices });
+      host.audit.write('token-rotated', { revokeDevices, address: addressOf(req) });
       host.logger.warn?.(`[wdeck] token principale rigenerato${revokeDevices ? ' e dispositivi revocati' : ''}`);
       host.hub?.disconnectRevoked?.();
       // Il nuovo token viaggia una volta sola, in risposta a chi lo ha chiesto.
@@ -383,6 +400,7 @@ export function createApiRouter(host) {
       if (!requireAuth(req, res)) return;
       if (!allow(res, host.limits.checkPress({ address: addressOf(req) }), 'comandi')) return;
       const body = await readJsonBody(req);
+      const chi = auth.verifyRequest(req);
       const result = await dispatcher.press({
         buttonId: body.buttonId,
         profileId: body.profileId,
@@ -391,7 +409,9 @@ export function createApiRouter(host) {
         value: body.value,
         // il client puo' solo rendere l'esecuzione piu' prudente, mai meno
         dryRun: state.dryRun || body.dryRun === true,
-        source: 'rest'
+        source: 'rest',
+        deviceId: chi.device?.id ?? null,
+        address: addressOf(req)
       });
       sendJson(res, result.ok ? 200 : statusForError(result.error), { ok: result.ok, result });
     },
@@ -443,7 +463,9 @@ export function createApiRouter(host) {
       const result = await dispatcher.press({
         buttonId,
         dryRun: state.dryRun,
-        source: 'lite-rest'
+        source: 'lite-rest',
+        deviceId: auth.verifyRequest(req).device?.id ?? null,
+        address: addressOf(req)
       });
       sendJson(res, result.ok ? 200 : statusForError(result.error), {
         [LITE_FIELDS.version]: LITE_PROTOCOL_VERSION,

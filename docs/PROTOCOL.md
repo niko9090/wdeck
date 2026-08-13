@@ -366,6 +366,38 @@ pairing. I dispositivi gia' associati restano collegati: cambia solo cio' che
 serve per associarne di nuovi. Il token non si cambia da qui, perche'
 scollegherebbe ogni client.
 
+### `GET /api/audit`
+
+Ultime voci del registro persistente delle azioni, dalla piu' recente.
+Parametri: `limit` (1..1000, default 100) e `event` per filtrare.
+
+```json
+{
+  "ok": true,
+  "enabled": true,
+  "file": "C:\Users\nicola\AppData\Local\Wdeck\wdeck-audit.log",
+  "entries": [
+    { "at": 1786012800000, "event": "press", "buttonId": "mute", "type": "media", "ok": true, "dryRun": false, "source": "ws", "durationMs": 120, "detail": "inviato tasto media \"mute\"", "error": null, "device": "d-1a2b3c4d5e", "address": "192.168.1.5" },
+    { "at": 1786012700000, "event": "pair", "address": "192.168.1.5", "device": "d-1a2b3c4d5e", "name": "Telefono di Nicola" }
+  ]
+}
+```
+
+Eventi registrati: `press`, `pair`, `pair-failed`, `device-created`,
+`device-revoked`, `token-rotated`, `rate-limited`.
+
+Il file e' JSONL accanto a `deck.json` (`wdeck-audit.log`), ruotato a 1 MB con
+tre copie conservate. **Token, PIN e password non ci finiscono mai**: i campi
+con quei nomi sono sostituiti da `[omesso]` prima della scrittura, anche dentro
+i parametri liberi di un'azione. Gli identificatori dei dispositivi si', perche'
+sono esattamente cio' che serve per sapere chi ha fatto cosa.
+
+Si configura da `settings.security.audit`:
+
+```json
+{ "enabled": true, "file": "wdeck-audit.log", "maxBytes": 1048576, "keep": 3 }
+```
+
 ### `GET /api/icons`
 
 Icone personalizzate caricate dall'utente. Stanno in `icons/` **accanto** a

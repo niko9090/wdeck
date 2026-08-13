@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.6`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.7`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -71,6 +71,9 @@ esegue anche i file `.sh`.
   tentativi di accesso (10 / 5 min), con codice `rate_limited` e `Retry-After`.
   I token rifiutati contano come tentativi di accesso: i due contatori non sono
   separabili, altrimenti il limite sul PIN si aggirerebbe provando i token.
+- **Registro di audit** persistente (JSONL, ruotato) di ogni azione e di ogni
+  evento di sicurezza, con l'identita' di chi l'ha chiesta. Token, PIN e
+  password sono omessi prima della scrittura. Esposto da `GET /api/audit`.
 - Dry-run globale che **nessun client puo' disattivare** (puo' solo attivarlo).
 - Bind configurabile (`0.0.0.0` per la LAN, `127.0.0.1` per il solo locale).
 - Il layout servito ai client non contiene mai token, PIN o whitelist.
@@ -130,7 +133,7 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 306 |
+| `npm test` | file di test unitari/integrazione | 325 |
 | `npm run smoke` | end-to-end su host reale | 46 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
@@ -175,7 +178,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 ### Sicurezza
 
 - Nessun HTTPS/WSS: il traffico in LAN e' in chiaro (token compreso).
-- Nessun audit log persistente delle azioni eseguite.
 
 ### Funzionalita'
 

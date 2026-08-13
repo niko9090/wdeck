@@ -60,7 +60,7 @@ funzionano su quale sistema, e cosa serve installare, e' nella tabella
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.2.6 - deck "Wdeck"
+  Wdeck host v0.2.7 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
   azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
@@ -158,7 +158,7 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (306 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (325 verifiche) |
 | `npm run smoke` | smoke test end-to-end su un host reale (46 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
@@ -390,6 +390,11 @@ protezioni non sono un dettaglio.
   combinazioni: senza limite si provano in pochi secondi. Anche i token
   rifiutati contano come tentativi, altrimenti il limite si aggirerebbe
   provando quelli. Si tara da `settings.security.rateLimit`.
+- **Registro di audit** persistente accanto a `deck.json`: ogni azione con chi
+  l'ha chiesta, da dove, con quale esito e in quanto tempo, piu' gli eventi di
+  sicurezza (pairing riusciti e falliti, revoche, rotazioni, blocchi per
+  frequenza). E' JSONL, si legge con `tail` e si filtra con `grep`. Token, PIN e
+  password non ci finiscono mai. Si legge anche da `GET /api/audit`.
 - **Dry-run**: i client possono attivarlo ma **non disattivarlo**.
 - **Bind**: `127.0.0.1` per l'uso solo locale, `0.0.0.0` per la LAN.
 - Il layout inviato ai client **non contiene mai** token, PIN o whitelist.

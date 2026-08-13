@@ -21,6 +21,7 @@ import { createStatusTracker } from './status.mjs';
 import { createAuth } from './security/auth.mjs';
 import { createRateLimits } from './security/ratelimit.mjs';
 import { createIconStore } from './icons.mjs';
+import { createAuditLog, pressEntry } from './audit.mjs';
 import { createApiRouter } from './server/api.mjs';
 import { createHub } from './server/hub.mjs';
 import { createStaticHandler } from './server/static.mjs';
@@ -174,6 +175,18 @@ export function createHost(options = {}) {
     // un file di configurazione pieno di base64 non sarebbe piu' modificabile
     // a mano, che e' una delle cose che il progetto promette.
     icons: createIconStore({ dir: path.join(baseDir, 'icons'), logger }),
+    // Wdeck esegue programmi su richiesta della rete: senza un registro
+    // persistente non c'e' modo di ricostruire cosa e' successo, perche' i log
+    // della console spariscono alla chiusura.
+    audit: createAuditLog({
+      file: deck.settings.security.audit?.file
+        ? path.resolve(baseDir, deck.settings.security.audit.file)
+        : path.join(baseDir, 'wdeck-audit.log'),
+      enabled: options.audit !== false && deck.settings.security.audit?.enabled !== false,
+      maxBytes: deck.settings.security.audit?.maxBytes,
+      keep: deck.settings.security.audit?.keep,
+      logger
+    }),
     server: null,
     hub: null,
     upgrades: null,
@@ -184,6 +197,7 @@ export function createHost(options = {}) {
   // Dopo una pressione lo stato va riletto: e' il momento in cui l'utente si
   // aspetta di vedere il bottone cambiare aspetto.
   state.on('press', () => status.scheduleAfterPress());
+  state.on('action', (entry) => host.audit.write('press', pressEntry(entry)));
   // Cambio pagina o ricarica della configurazione: cambiano i controlli visibili.
   state.on('navigate', () => status.refresh({ force: true }).catch(() => {}));
   state.on('deck', () => {

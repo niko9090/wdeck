@@ -197,7 +197,9 @@ export function createHub(host) {
             hold: msg.hold === true,
             value: msg.value,
             dryRun: state.dryRun || msg.dryRun === true,
-            source: 'ws'
+            source: 'ws',
+            deviceId: conn.data.deviceId ?? null,
+            address: conn.data.address
           });
           conn.send({ type: MSG.ack, requestId: msg.requestId ?? null, ok: result.ok, result });
           break;
@@ -284,7 +286,9 @@ export function createHub(host) {
           const result = await dispatcher.press({
             buttonId: msg[F.id],
             dryRun: state.dryRun,
-            source: 'lite-ws'
+            source: 'lite-ws',
+            deviceId: conn.data.deviceId ?? null,
+            address: conn.data.address
           });
           conn.send({
             [F.type]: LITE_MSG.ack,

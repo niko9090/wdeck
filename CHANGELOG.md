@@ -3,6 +3,40 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.7] - 2026-08-13
+
+### Sicurezza
+
+- **Registro di audit persistente.** Wdeck esegue programmi sul PC su richiesta
+  della rete locale: se qualcosa va storto, i log della console non aiutano
+  perche' spariscono alla chiusura. Ora ogni azione lascia una riga accanto a
+  `deck.json` con chi l'ha chiesta, da dove, con quale esito e in quanto tempo.
+- Registrati anche gli eventi di sicurezza: `pair`, `pair-failed`,
+  `device-created`, `device-revoked`, `token-rotated`, `rate-limited`.
+- Formato JSONL, una riga per evento: si legge con `tail`, si filtra con `grep`,
+  e un file troncato da un arresto improvviso costa una riga, non il registro.
+  Rotazione a 1 MB con tre copie conservate.
+- **Token, PIN e password non ci finiscono mai**: i campi con quei nomi sono
+  sostituiti da `[omesso]` prima della scrittura, anche dentro i parametri
+  liberi di un'azione, dove un header di autorizzazione puo' capitare.
+- `GET /api/audit` (con `limit` ed `event`) e `settings.security.audit`.
+
+### Corretto
+
+- **Anche `npm run test:esp32` girava sulla `deck.json` dell'utente.** Come lo
+  smoke test, ora usa una copia temporanea: da questa versione l'host scrive
+  accanto alla configurazione, e una verifica non deve lasciarci nulla.
+- Due difetti trovati dai test appena scritti: una riga rimasta a meta' per un
+  arresto improvviso si portava via anche la riga successiva (che le veniva
+  appesa di seguito), e subito dopo una rotazione la scrittura falliva perche'
+  cercava di leggere la fine di un file appena spostato.
+
+### Note
+
+Ai client il registro non arriva: l'evento WebSocket `press` continua a portare
+la forma ridotta di sempre. L'identificativo del dispositivo di un altro non
+riguarda chi sta guardando il deck.
+
 ## [0.2.6] - 2026-08-13
 
 ### Sicurezza

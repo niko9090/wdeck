@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     maxSequenceSteps: 32,
     devices: [],
     deviceTokenDays: null,
+    audit: { enabled: true, maxBytes: 1048576, keep: 3 },
     rateLimit: {
       enabled: true,
       press: { windowMs: 10000, max: 60 },
@@ -214,6 +215,20 @@ function validateSettings(ctx, settings) {
       }
       if (security.deviceTokenDays !== undefined && security.deviceTokenDays !== null) {
         checkInt(ctx, 'settings.security.deviceTokenDays', security.deviceTokenDays, { min: 1, max: 3650 });
+      }
+
+      if (security.audit !== undefined) {
+        if (!isPlainObject(security.audit)) ctx.err('settings.security.audit', 'atteso oggetto');
+        else {
+          checkBool(ctx, 'settings.security.audit.enabled', security.audit.enabled);
+          checkString(ctx, 'settings.security.audit.file', security.audit.file);
+          if (security.audit.maxBytes !== undefined) {
+            checkInt(ctx, 'settings.security.audit.maxBytes', security.audit.maxBytes, { min: 4096, max: 268435456 });
+          }
+          if (security.audit.keep !== undefined) {
+            checkInt(ctx, 'settings.security.audit.keep', security.audit.keep, { min: 0, max: 20 });
+          }
+        }
       }
 
       if (security.rateLimit !== undefined) {

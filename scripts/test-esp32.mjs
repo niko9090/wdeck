@@ -15,6 +15,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -176,10 +177,18 @@ async function main() {
 
   // ---------------------------------------------------------------
   console.log('\n5) Prova end-to-end contro un host reale');
+  // Copia di lavoro della configurazione: la prova end-to-end usa la deck.json
+  // vera, ma non deve lasciarci dentro registri o dispositivi.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wdeck-esp32-'));
+  const tmpConfig = path.join(tmpDir, 'deck.json');
+  fs.copyFileSync(path.join(ROOT, 'deck.json'), tmpConfig);
+
   const host = createHost({
+    configFile: tmpConfig,
     overrides: { port: 0, host: '127.0.0.1', token: TOKEN, dryRun: true },
     logger: { info() {}, warn() {}, error() {}, debug() {}, log() {} },
-    watch: false
+    watch: false,
+    tray: false
   });
   const info = await host.start();
   const base = `http://127.0.0.1:${info.port}`;
