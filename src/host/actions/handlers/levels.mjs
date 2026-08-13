@@ -9,14 +9,11 @@
  */
 
 import { readAudioLevel, readBrightnessLevel } from '../../platform/readers.mjs';
+import { AUDIO_PLATFORMS, adjustVolume, readVolume, setMute, setVolume } from '../../platform/audio.mjs';
 import {
   buildAdjustBrightnessScript,
-  buildAdjustVolumeScript,
-  buildMuteScript,
   buildReadBrightnessScript,
-  buildReadVolumeScript,
   buildSetBrightnessScript,
-  buildSetVolumeScript,
   clampPercent,
   runLevelScript
 } from '../../platform/levels.mjs';
@@ -54,7 +51,7 @@ function makeVolumeAction({ type, target, title, description, category }) {
     type,
     title,
     description,
-    platforms: ['win32'],
+    platforms: [...AUDIO_PLATFORMS],
     category,
     control: 'slider',
     paramsHelp: {
@@ -79,7 +76,7 @@ function makeVolumeAction({ type, target, title, description, category }) {
     async run(params, ctx) {
       if (params?.mute !== undefined) {
         if (ctx.dryRun) return { ok: true, simulated: true, detail: `imposterebbe muto=${params.mute} su ${target}` };
-        const out = await runLevelScript(buildMuteScript(target, params.mute), { what: `muto ${target}` });
+        const out = await setMute(target, params.mute);
         return { ok: true, detail: `${title}: ${out.muted ? 'muto' : 'audio attivo'} (${out.volume}%)`, level: out.volume, muted: out.muted };
       }
 
@@ -89,12 +86,11 @@ function makeVolumeAction({ type, target, title, description, category }) {
         return { ok: true, simulated: true, detail: `${title}: ${what}` };
       }
 
-      let script;
-      if (mode === 'set') script = buildSetVolumeScript(target, amount);
-      else if (mode === 'adjust') script = buildAdjustVolumeScript(target, amount);
-      else script = buildReadVolumeScript(target);
+      let out;
+      if (mode === 'set') out = await setVolume(target, amount);
+      else if (mode === 'adjust') out = await adjustVolume(target, amount);
+      else out = await readVolume(target);
 
-      const out = await runLevelScript(script, { what: title.toLowerCase() });
       return {
         ok: true,
         detail: `${title}: ${out.volume}%${out.muted ? ' (muto)' : ''}`,

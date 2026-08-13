@@ -8,7 +8,8 @@
  * anche con dieci controlli che ne dipendono.
  */
 
-import { readVolume, readBrightness } from './levels.mjs';
+import { readVolume } from './audio.mjs';
+import { readBrightness } from './levels.mjs';
 
 /**
  * Volume e stato del muto di un canale, riusando la lettura del giro corrente.

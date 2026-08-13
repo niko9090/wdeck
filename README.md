@@ -1,9 +1,9 @@
 # Wdeck
 
-**Stream Deck software multi-piattaforma**: un host che gira sul PC Windows,
-un client web installabile (PWA) per Android e per gli altri PC, e un firmware
-di esempio per ESP32 con display touch. Nessun hardware proprietario, nessuna
-dipendenza npm a runtime.
+**Stream Deck software multi-piattaforma**: un host che gira su Windows, macOS e
+Linux, un client web installabile (PWA) per Android e per gli altri PC, e un
+firmware di esempio per ESP32 con display touch. Nessun hardware proprietario,
+nessuna dipendenza npm a runtime.
 
 ```
    Android / iPad / altro PC          ESP32 + TFT touch
@@ -13,7 +13,7 @@ dipendenza npm a runtime.
               |                                |
               +--------------+-----------------+
                              |
-                    HOST Node.js 22 (PC Windows)
+              HOST Node.js 22 (Windows, macOS, Linux)
                     REST + WebSocket, deck.json
                              |
               tasti media | hotkey | testo | programmi
@@ -43,9 +43,9 @@ sul desktop e (con `-Autostart`) lo fa partire insieme a Windows. Non serve
 essere amministratore e non viene scaricato nulla. Per rimuoverlo:
 `.\installer\install.ps1 -Uninstall` (la tua `deck.json` viene conservata).
 
-### Oppure dai sorgenti
+### Oppure dai sorgenti (Windows, macOS, Linux)
 
-```powershell
+```bash
 git clone https://github.com/niko9090/wdeck.git
 cd wdeck
 npm install          # nessuna dipendenza da scaricare: e' istantaneo
@@ -53,10 +53,14 @@ npm run build        # compila il client web in dist/web
 npm start            # avvia l'host
 ```
 
+Su macOS e Linux non c'e' un installer: si avvia dai sorgenti. Quali azioni
+funzionano su quale sistema, e cosa serve installare, e' nella tabella
+[Su quali sistemi gira](#su-quali-sistemi-gira).
+
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.2.0 - deck "Wdeck"
+  Wdeck host v0.2.3 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
   azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
@@ -121,9 +125,9 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (150 verifiche) |
-| `npm run smoke` | smoke test end-to-end su un host reale (36 verifiche) |
-| `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (109 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (215 verifiche) |
+| `npm run smoke` | smoke test end-to-end su un host reale (41 verifiche) |
+| `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
 | `npm run check:deps` | verifica il vincolo di zero dipendenze (package.json e import) |
 | `npm run verify` | tutti i controlli sopra, in sequenza |
@@ -207,6 +211,34 @@ Regole applicate dal validatore ([`src/host/config/schema.mjs`](src/host/config/
 Lo schema JSON per l'autocompletamento negli editor e'
 [`schema/deck.schema.json`](schema/deck.schema.json) (gia' referenziato con
 `$schema` in `deck.json`).
+
+### Su quali sistemi gira
+
+L'host, la PWA e il protocollo funzionano ovunque giri Node 20.10+. Cambia
+quali azioni possono essere *eseguite*:
+
+| azione | Windows | macOS | Linux |
+|---|:---:|:---:|:---:|
+| `media`, `hotkey`, `text`, `url` | si | si | si |
+| `volume`, `mic` | si | si | si |
+| `launch`, `script`, `http`, `sequence`, `navigate`, `obs`, `homeassistant`, `hue` | si | si | si |
+| `brightness`, `focus`, `desktop`, `window`, `power`, `clipboard`, `folder`, `screenshot`, `notify`, `browser`, `game`, `rdp` | si | - | - |
+
+Fuori dalle piattaforme supportate un'azione risponde `501` con un messaggio
+esplicito, e resta comunque provabile in dry-run.
+
+Cosa serve installare:
+
+- **Windows**: nulla, PowerShell basta.
+- **macOS**: nulla (`osascript` e' di sistema). L'input sintetico richiede pero'
+  il permesso **Accessibilita'** per l'applicazione che avvia Wdeck, in
+  *Impostazioni di Sistema -> Privacy e sicurezza -> Accessibilita'*; senza,
+  l'azione fallisce dicendo esattamente questo.
+- **Linux**: `xdotool` (sessioni X11) oppure `ydotool` con il suo demone
+  (sessioni Wayland) per tasti e testo; `pactl` (PipeWire/PulseAudio) o
+  `amixer` (ALSA) per il volume; `playerctl` per play/pausa e cambio brano
+  (senza, si ripiega sul tasto multimediale); `xdg-open` per gli URL. Se ne
+  manca uno, l'errore dice quale pacchetto installare.
 
 ### Azioni disponibili
 
@@ -336,7 +368,7 @@ Wdeck/
 │  ├─ config/                   validazione schema + caricamento e hot reload
 │  ├─ actions/                  registro, dispatcher e handler delle azioni
 │  ├─ security/                 token/PIN e whitelist di esecuzione
-│  ├─ platform/                 tasti virtuali e integrazione PowerShell
+│  ├─ platform/                 adattatori Windows / macOS / Linux
 │  ├─ server/                   API REST, hub WebSocket, file statici
 │  └─ ws/                       WebSocket RFC 6455 (frame, server, client)
 ├─ web/                         client PWA (moduli ES, nessun framework)
@@ -355,9 +387,13 @@ Scelte di fondo:
 - **Il protocollo e' un file solo.** `shared/protocol.mjs` e' importato
   dall'host e dal client web, e replicato in C in `wdeck_protocol.h`; un test
   automatico impedisce che i due divergano.
-- **Windows tramite PowerShell.** Tasti e hotkey usano `keybd_event` via
-  P/Invoke, il testo usa `SendKeys`; gli script sono passati con
-  `-EncodedCommand`, quindi i parametri non possono causare injection.
+- **Un adattatore per piattaforma, una facciata sola.** Gli handler parlano con
+  [`src/host/platform/input.mjs`](src/host/platform/input.mjs) e non sanno su
+  quale sistema girano. Windows usa PowerShell (`keybd_event` via P/Invoke,
+  `SendKeys` per il testo, script passati con `-EncodedCommand` cosi' i
+  parametri non possono causare injection); macOS usa `osascript`; Linux usa
+  `xdotool`/`ydotool`, `pactl`/`amixer` e `playerctl`. Le mappe dei tasti sono
+  moduli puri, quindi verificabili anche dalla piattaforma sbagliata.
 - **Dry-run come cittadino di prima classe.** Ogni handler sa simularsi: e'
   quello che rende i test eseguibili ovunque e sicuri.
 

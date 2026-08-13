@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     pin: '',
     dryRun: false,
     allowUrlSchemes: ['http', 'https'],
-    allowedExtensions: ['.exe', '.bat', '.cmd', '.ps1', '.py'],
+    allowedExtensions: ['.exe', '.bat', '.cmd', '.ps1', '.py', '.sh'],
     allowExec: [],
     maxSequenceSteps: 32
   },

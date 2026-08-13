@@ -143,7 +143,8 @@ check('la sezione "Stub" elenca almeno 3 voci', (stub.match(/^\s*[-|]/gm) ?? [])
 check('la sezione "Mancante" elenca almeno 5 voci', (mancante.match(/^\s*[-|]/gm) ?? []).length >= 5);
 check('dichiara i prossimi passi', /Prossimi passi/i.test(roadmap));
 check('dichiara la versione di riferimento', roadmap.includes(pkg.version));
-check('dichiara il limite di piattaforma (solo Windows per l\'input)', /macOS|Linux/.test(mancante));
+check('dichiara quali piattaforme sono coperte e quali limiti restano',
+  /macOS/.test(roadmap) && /Linux/.test(roadmap) && /macOS|Linux/.test(mancante));
 check('dichiara che il firmware non e\' provato su hardware', /hardware/i.test(stub));
 
 // ------------------------------------------------------------------

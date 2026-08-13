@@ -3,6 +3,47 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.3] - 2026-08-13
+
+### Aggiunto
+
+- **L'host non e' piu' solo-Windows.** `media`, `hotkey`, `text`, `url`,
+  `volume` e `mic` funzionano ora anche su macOS e su Linux. Prima fuori da
+  Windows rispondevano `501`.
+- Nuova facciata [`src/host/platform/input.mjs`](src/host/platform/input.mjs):
+  gli handler non contengono piu' alcun `if (process.platform === ...)`, e ogni
+  operazione ha una coppia `plan*` (descrive, per il dry-run) / `send*` (esegue).
+  Stessa cosa per l'audio in `platform/audio.mjs`.
+- Adattatore macOS (`osascript`): tasti e testo via System Events, volume e muto
+  via `set volume`, play/pausa/brano inoltrati al primo lettore attivo fra
+  Spotify, Music e TV. Se manca il permesso Accessibilita', l'errore lo dice.
+- Adattatore Linux: `xdotool` su X11 e `ydotool` su Wayland (scelti in base a
+  `XDG_SESSION_TYPE`), `pactl` con ripiego su `amixer` per il volume,
+  `playerctl` con ripiego sul tasto multimediale per la riproduzione,
+  `xdg-open` per gli URL. Quando uno strumento manca, l'errore dice quale
+  pacchetto installare invece di fallire in modo oscuro.
+- L'azione `script` esegue anche i file `.sh`, che e' cio' che serviva perche'
+  la sua dichiarazione `platforms: ['*']` fosse vera.
+- `test/platform.test.mjs`: 34 verifiche sulle mappe dei tasti, sulla scelta
+  degli strumenti e sulla facciata. Le mappe sono moduli puri, quindi la
+  traduzione per macOS e Linux e' verificata anche dalla macchina Windows su
+  cui il progetto e' nato, e dalla CI su tutti e tre i sistemi.
+
+### Note
+
+**Il percorso Windows non e' stato toccato**: gli stessi script PowerShell, le
+stesse funzioni di `platform/windows.mjs`. La facciata li richiama tali e quali.
+
+Restano dichiarate solo per Windows le azioni che richiederebbero un adattatore
+per ogni ambiente desktop invece di un comando solo: `brightness`, `focus`,
+`desktop`, `window`, `power`, `clipboard`, `folder`, `screenshot`, `notify`,
+`browser`, `game`, `rdp`. Il motivo di ciascuna e' in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+L'esecuzione reale su macOS e Linux non e' stata provata su quelle macchine:
+la CI ne verifica avvio, test e smoke, ma l'input sintetico richiede una
+sessione grafica interattiva.
+
 ## [0.2.2] - 2026-08-13
 
 ### Aggiunto

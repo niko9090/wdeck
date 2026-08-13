@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.2`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.3`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -41,6 +41,16 @@ L'input sintetico su Windows usa PowerShell con `keybd_event` (P/Invoke) per
 tasti e hotkey e `WScript.Shell.SendKeys` per il testo: nessuna dipendenza
 nativa da compilare. Gli script PowerShell sono passati con `-EncodedCommand`,
 quindi non esistono problemi di quoting o injection dai parametri.
+
+### Windows, macOS e Linux
+
+`media`, `hotkey`, `text`, `url`, `volume` e `mic` funzionano su tutte e tre le
+piattaforme. Gli handler parlano con la facciata
+[`src/host/platform/input.mjs`](../src/host/platform/input.mjs), che sceglie
+l'adattatore: PowerShell su Windows (invariato), `osascript` su macOS,
+`xdotool`/`ydotool` con `pactl`/`amixer` e `playerctl` su Linux. Quando uno
+strumento manca l'errore dice quale pacchetto installare. L'azione `script`
+esegue anche i file `.sh`.
 
 ### Sicurezza di base
 
@@ -95,7 +105,7 @@ quindi non esistono problemi di quoting o injection dai parametri.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 180 |
+| `npm test` | file di test unitari/integrazione | 215 |
 | `npm run smoke` | end-to-end su host reale | 41 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
@@ -127,11 +137,13 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 
 ### Piattaforme
 
-- **macOS e Linux**: l'host parte e serve la PWA ovunque, ma `media`, `hotkey`,
-  `text` e `url` sono implementate solo per Windows. Fuori da Windows queste
-  azioni rispondono `501` con un messaggio esplicito (e restano provabili in
-  dry-run). Servono adattatori: `osascript`/CGEvent su macOS, `xdotool`/`ydotool`
-  o `uinput` su Linux.
+- **Luminosita' su macOS e Linux**: `brightness` resta dichiarata solo per
+  Windows. Su macOS non e' pilotabile senza un binario nativo (le API sono
+  private) e su Linux dipende dal driver grafico; dichiararla supportata
+  darebbe un errore a ogni pressione invece del `501` chiaro di oggi.
+- **Finestre, desktop virtuali, appunti, screenshot, notifiche, alimentazione**
+  restano azioni solo-Windows: ognuna richiederebbe un adattatore per ambiente
+  desktop (GNOME, KDE, Aqua) e non un solo comando come per tasti e volume.
 - Nessun servizio Windows vero e proprio. Non e' una dimenticanza: un servizio
   gira nella sessione 0 e da li' non puo' inviare tasti ne' portare finestre in
   primo piano nella sessione dell'utente, quindi meta' delle azioni smetterebbe
@@ -183,8 +195,7 @@ In ordine di rapporto valore/costo, da decidere insieme:
    e' l'unico pezzo dichiaratamente non collaudato.
 2. ~~**Feedback di stato sui bottoni** (toggle muto, scena OBS attiva).~~
    **fatto in 0.2.2.**
-3. **Adattatore Linux/macOS** per hotkey e tasti media: apre l'uso dell'host
-   fuori da Windows (l'architettura e' gia' pronta, serve un modulo per piattaforma).
+3. ~~**Adattatore Linux/macOS** per hotkey e tasti media.~~ **fatto in 0.2.3.**
 4. **Editor grafico del deck** nella PWA, sfruttando `GET /api/actions` che gia'
    descrive ogni azione e i suoi parametri.
 5. **Token per dispositivo + revoca**, con QR code per il pairing.

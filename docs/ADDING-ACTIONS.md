@@ -206,12 +206,26 @@ Sanno dichiarare il proprio **stato reale** (`readState`): `volume`, `mic`,
 `brightness`, `media` (con `key` `mute`, `volumeup`, `volumedown`), `obs` e
 `hue`.
 
+### Scrivere un'azione multipiattaforma
+
+Un handler non deve contenere `if (process.platform === ...)`: quella scelta
+sta in [`src/host/platform/input.mjs`](../src/host/platform/input.mjs), che
+espone una coppia di funzioni per operazione - `plan*` descrive cosa verrebbe
+fatto (serve al dry-run ed e' pura), `send*` lo fa. Gli adattatori veri sono
+`windows.mjs`, `macos.mjs` e `linux.mjs`; le mappe dei tasti stanno in
+`keymaps.mjs` e sono moduli puri, quindi verificabili anche dalla piattaforma
+sbagliata. Per l'audio la facciata equivalente e' `platform/audio.mjs`.
+
+Dichiarare `platforms` con l'elenco vero: fuori da quelle piattaforme il
+dispatcher risponde `501` con un messaggio esplicito, che e' meglio di un
+errore oscuro a ogni pressione.
+
 ### Media e audio
 
 | tipo | piattaforme | descrizione |
 |---|---|---|
-| `volume` | win32 | volume di sistema assoluto 0..100, delta o muto (cursore) |
-| `mic` | win32 | volume e muto del microfono predefinito (cursore) |
+| `volume` | win32, darwin, linux | volume di sistema assoluto 0..100, delta o muto (cursore) |
+| `mic` | win32, darwin, linux | volume del microfono predefinito, e il muto dove il sistema lo espone (cursore) |
 
 ### Finestre e desktop
 
@@ -257,12 +271,12 @@ Sanno dichiarare il proprio **stato reale** (`readState`): `volume`, `mic`,
 
 | tipo | piattaforme | descrizione |
 |---|---|---|
-| `media` | win32 | tasti multimediali (play/pausa, next, prev, volume, muto) |
-| `hotkey` | win32 | combinazione di tasti, es. `ctrl+shift+m`, `win+l` |
-| `text` | win32 | digita testo nella finestra attiva |
+| `media` | win32, darwin, linux | comandi multimediali (play/pausa, next, prev, volume, muto) |
+| `hotkey` | win32, darwin, linux | combinazione di tasti, es. `ctrl+shift+m`, `win+l` |
+| `text` | win32, darwin, linux | digita testo nella finestra attiva |
 | `launch` | tutte | avvia un programma (whitelist) |
-| `script` | tutte | esegue `.ps1`/`.bat`/`.cmd`/`.py`/`.mjs` (whitelist) |
-| `url` | win32 | apre un URL con l'app predefinita |
+| `script` | tutte | esegue `.ps1`/`.bat`/`.cmd`/`.py`/`.mjs`/`.sh` (whitelist) |
+| `url` | win32, darwin, linux | apre un URL con l'app predefinita |
 | `http` | tutte | richiesta HTTP verso webhook/API |
 | `sequence` | tutte | esegue in ordine piu' azioni |
 | `delay` | tutte | attesa, da usare dentro `sequence` |
