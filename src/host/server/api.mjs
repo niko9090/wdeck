@@ -138,6 +138,15 @@ export function createApiRouter(host) {
       sendJson(res, 200, { ok: true, state: state.snapshot() });
     },
 
+    [`GET ${ENDPOINTS.status}`]: async (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      // ?refresh=1 forza una rilettura dal sistema invece di usare la cache.
+      if (url.searchParams.get('refresh') === '1') {
+        await host.status.refresh({ force: true });
+      }
+      sendJson(res, 200, { ok: true, states: host.status.snapshot() });
+    },
+
     [`GET ${ENDPOINTS.actions}`]: (req, res) => {
       if (!requireAuth(req, res)) return;
       sendJson(res, 200, {

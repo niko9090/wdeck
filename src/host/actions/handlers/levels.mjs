@@ -8,6 +8,7 @@
  * che il client possa allineare la posizione del cursore alla realta'.
  */
 
+import { readAudioLevel, readBrightnessLevel } from '../../platform/readers.mjs';
 import {
   buildAdjustBrightnessScript,
   buildAdjustVolumeScript,
@@ -100,6 +101,21 @@ function makeVolumeAction({ type, target, title, description, category }) {
         level: out.volume,
         muted: out.muted
       };
+    },
+
+    /**
+     * Stato reale del canale. Un bottone configurato con "mute" e' un
+     * interruttore, e come tale riporta acceso/spento; gli altri (cursori,
+     * +/-) riportano soltanto il livello.
+     */
+    async readState(params, ctx) {
+      const out = await readAudioLevel(ctx, target);
+      const isToggle = params?.mute !== undefined;
+      return {
+        on: isToggle ? out.muted === true : null,
+        level: out.volume ?? null,
+        text: isToggle && out.muted ? 'muto' : null
+      };
     }
   };
 }
@@ -159,6 +175,12 @@ export const brightnessAction = {
     const out = await runLevelScript(script, { what: 'luminosita\'', timeoutMs: 30000 });
     const via = out.mode === 'gamma' ? ' (attenuazione software)' : '';
     return { ok: true, detail: `luminosita': ${out.brightness}%${via}`, level: out.brightness, mode: out.mode };
+  },
+
+  /** La luminosita' non ha un acceso/spento: riporta solo il livello reale. */
+  async readState(params, ctx) {
+    const out = await readBrightnessLevel(ctx);
+    return { on: null, level: out.brightness ?? null, text: null };
   }
 };
 

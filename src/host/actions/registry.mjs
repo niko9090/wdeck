@@ -121,7 +121,9 @@ export class ActionRegistry {
         control: h.control ?? 'button',
         platforms: h.platforms,
         paramsHelp: h.paramsHelp,
-        stub: h.stub === true
+        stub: h.stub === true,
+        // L'editor lo usa per dire quali azioni sanno mostrare lo stato reale.
+        reportsState: typeof h.readState === 'function'
       };
     });
   }

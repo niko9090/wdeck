@@ -56,6 +56,7 @@
 #define WDECK_F_TIMESTAMP "s"  /* intero: millisecondi host          */
 #define WDECK_F_PAGES     "q"  /* array di stringhe: pagine profilo  */
 #define WDECK_F_DRY_RUN   "d"  /* 0|1: host in modalita' dry-run     */
+#define WDECK_F_STATES    "w"  /* oggetto: id bottone -> 0|1         */
 
 /* ------------------------------------------------------------------ */
 /* Tipi di messaggio WebSocket (campo WDECK_F_TYPE)                    */
@@ -71,5 +72,6 @@
 #define WDECK_MSG_PING     "i"  /* device -> host                     */
 #define WDECK_MSG_PONG     "o"  /* host -> device                     */
 #define WDECK_MSG_NAVIGATE "n"  /* host -> device: cambio pagina      */
+#define WDECK_MSG_STATUS   "z"  /* host -> device: stato dei bottoni  */
 
 #endif /* WDECK_PROTOCOL_H */

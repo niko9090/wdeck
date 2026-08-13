@@ -1,7 +1,11 @@
 /** Azioni di input sintetico: tasti media, hotkey, digitazione testo. */
 
 import { parseHotkey, resolveMediaKey, MEDIA_KEYS } from '../../platform/keys.mjs';
+import { readAudioLevel } from '../../platform/readers.mjs';
 import { buildKeyScript, buildTypeTextScript, runPowerShell } from '../../platform/windows.mjs';
+
+/** Tasti media che corrispondono a una condizione leggibile dal sistema. */
+const READABLE_MEDIA_KEYS = new Set(['mute', 'volumeup', 'volup', 'volumedown', 'voldown']);
 
 export const mediaAction = {
   type: 'media',
@@ -27,6 +31,22 @@ export const mediaAction = {
     const res = await runPowerShell(script, { timeoutMs: 8000 });
     if (res.code !== 0) throw new Error(`PowerShell ha restituito ${res.code}: ${res.stderr || 'errore sconosciuto'}`);
     return { ok: true, detail: `inviato tasto media "${params.key}"` };
+  },
+
+  /**
+   * Il tasto "mute" e' un interruttore e puo' dire in che posizione si trova;
+   * i tasti di volume mostrano il livello. Gli altri (play, next, prev) non
+   * hanno uno stato leggibile senza sapere quale programma sta suonando.
+   */
+  async readState(params, ctx) {
+    const key = String(params?.key ?? '').trim().toLowerCase();
+    if (!READABLE_MEDIA_KEYS.has(key)) return null;
+    const out = await readAudioLevel(ctx, 'speaker');
+    return {
+      on: key === 'mute' ? out.muted === true : null,
+      level: out.volume ?? null,
+      text: key === 'mute' && out.muted ? 'muto' : null
+    };
   }
 };
 

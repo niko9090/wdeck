@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     maxSequenceSteps: 32
   },
   ui: { theme: 'dark', accent: '#4c8dff', showLabels: true },
+  status: { enabled: true, intervalMs: 8000 },
   tray: { enabled: true },
   updates: { check: true, repository: 'niko9090/wdeck' },
   integrations: {}
@@ -103,7 +104,18 @@ function validateSettings(ctx, settings) {
     return;
   }
 
-  const { server, security, ui, tray, updates, integrations } = settings;
+  const { server, security, ui, tray, updates, integrations, status } = settings;
+
+  if (status !== undefined) {
+    if (!isPlainObject(status)) ctx.err('settings.status', 'atteso oggetto');
+    else {
+      checkBool(ctx, 'settings.status.enabled', status.enabled);
+      if (status.intervalMs !== undefined) {
+        // Sotto il secondo si tratterebbe di un polling continuo del sistema.
+        checkInt(ctx, 'settings.status.intervalMs', status.intervalMs, { min: 1000, max: 600000 });
+      }
+    }
+  }
 
   if (tray !== undefined) {
     if (!isPlainObject(tray)) ctx.err('settings.tray', 'atteso oggetto');
@@ -220,6 +232,10 @@ function validateButton(ctx, path, button, page, seen, actionTypes) {
     ctx.err(`${path}.kind`, `valore ammesso: ${CONTROL_KINDS.join(' | ')}`);
   }
   checkBool(ctx, `${path}.confirm`, button.confirm);
+  // `status: false` spegne la lettura periodica dello stato reale per questo
+  // controllo: assente vale true, quindi le configurazioni esistenti guadagnano
+  // il feedback senza modifiche.
+  checkBool(ctx, `${path}.status`, button.status);
 
   // Uno slider occupa piu' celle in orizzontale e ha un proprio intervallo.
   if (button.span !== undefined) checkInt(ctx, `${path}.span`, button.span, { min: 1, max: LIMITS.maxCols });
@@ -428,6 +444,7 @@ export function normalizeDeck(raw) {
         kind: button.kind ?? 'button',
         span: button.span ?? (button.kind === 'slider' ? 2 : 1),
         confirm: button.confirm === true,
+        status: button.status !== false,
         ...(button.kind === 'slider'
           ? { min: button.min ?? 0, max: button.max ?? 100, step: button.step ?? 1 }
           : {}),

@@ -79,10 +79,14 @@ export function rawDeck(overrides = {}) {
   };
 }
 
-/** Deck normalizzato pronto all'uso. */
-export function makeDeck(overrides) {
+/**
+ * Deck normalizzato pronto all'uso.
+ * @param {object} [overrides] porzioni di deck da sostituire
+ * @param {{actionTypes?: string[]}} [options] tipi ammessi (per i test con handler finti)
+ */
+export function makeDeck(overrides, options = {}) {
   const raw = rawDeck(overrides);
-  const result = validateDeck(raw, { actionTypes: createDefaultRegistry().types() });
+  const result = validateDeck(raw, { actionTypes: options.actionTypes ?? createDefaultRegistry().types() });
   if (!result.valid) {
     throw new Error(`fixture non valida: ${JSON.stringify(result.errors)}`);
   }

@@ -3,6 +3,41 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.2] - 2026-08-13
+
+### Aggiunto
+
+- **Stato reale dei controlli.** Il bottone del muto sa di essere muto, quello
+  della scena OBS sa se e' in onda, la luce Hue sa di essere accesa. L'host
+  legge la condizione vera dal sistema e dai servizi collegati e la manda ai
+  client: bordo acceso, spia e un'etichetta breve (`muto`, `LIVE`, il nome
+  della scena). Resta giusta anche quando qualcosa viene cambiato da un'altra
+  applicazione, che e' il caso in cui un deck cieco mente.
+- Nuovo contratto opzionale `readState(params, ctx)` per gli handler
+  (vedi [`docs/ADDING-ACTIONS.md`](docs/ADDING-ACTIONS.md)). Lo dichiarano
+  `volume`, `mic`, `brightness`, `media`, `obs` e `hue`.
+- `GET /api/status` (con `?refresh=1`) e messaggio WebSocket `status`, con
+  `states` completo e `changed` per le sole voci variate.
+- Il canale lite trasporta lo stato in forma compatta (`z` / `w`, `id -> 0|1`):
+  il firmware ESP32 disegna i bottoni accesi con bordo chiaro e spia.
+- `settings.status` (`enabled`, `intervalMs`) e `"status": false` sul singolo
+  controllo per escluderlo dalle letture.
+- `GET /api/actions` riporta `reportsState` per ogni azione.
+- `test/status.test.mjs`: 21 verifiche su normalizzazione, letture condivise,
+  backoff, eventi di variazione e traduzione delle risposte di OBS.
+
+### Note
+
+Il costo delle letture e' contenuto per scelta: vengono interrogati solo i
+controlli della pagina attiva, solo mentre almeno un client e' collegato, le
+letture identiche di un giro sono messe in comune e un servizio che non
+risponde viene messo in pausa per un minuto. **In dry-run non viene letto
+nulla**: la promessa di non toccare il PC vale anche per le letture, quindi in
+quella modalita' la mappa degli stati resta vuota.
+
+Il supporto ESP32 e' conforme al protocollo e verificato da `npm run test:esp32`,
+ma come tutto il firmware **non e' provato su hardware reale**.
+
 ## [0.2.1] - 2026-08-13
 
 ### Aggiunto

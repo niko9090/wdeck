@@ -28,6 +28,7 @@ export const ENDPOINTS = {
   health: '/api/health',
   deck: '/api/deck',
   state: '/api/state',
+  status: '/api/status',
   press: '/api/press',
   pair: '/api/pair',
   actions: '/api/actions',
@@ -49,6 +50,7 @@ export const MSG = {
   auth: 'auth',
   authOk: 'auth-ok',
   state: 'state',
+  status: 'status',
   deck: 'deck',
   press: 'press',
   ack: 'ack',
@@ -89,7 +91,8 @@ export const LITE_FIELDS = {
   message: 'm',
   timestamp: 's',
   pages: 'q',
-  dryRun: 'd'
+  dryRun: 'd',
+  states: 'w'
 };
 
 /** Tipi di messaggio (campo `t`) del protocollo lite su WebSocket. */
@@ -103,7 +106,8 @@ export const LITE_MSG = {
   error: 'e',
   ping: 'i',
   pong: 'o',
-  navigate: 'n'
+  navigate: 'n',
+  status: 'z'
 };
 
 /** Codici di errore applicativi, condivisi fra REST e WebSocket. */
@@ -164,6 +168,23 @@ export function toLitePage(page, ctx = {}) {
   if (ctx.profileId) out[F.profile] = ctx.profileId;
   if (ctx.dryRun !== undefined) out[F.dryRun] = ctx.dryRun ? 1 : 0;
   if (ctx.pages) out[F.pages] = ctx.pages;
+  return out;
+}
+
+/**
+ * Comprime la mappa degli stati nella forma lite: solo acceso/spento.
+ *
+ * Un microcontrollore non ha spazio per etichette e livelli: gli serve sapere
+ * se il bottone e' acceso, per disegnarlo diverso. I bottoni il cui stato non
+ * e' noto (o non e' binario) restano fuori dalla mappa.
+ * @param {Record<string, {on?: boolean|null}>} statuses
+ * @returns {Record<string, 0|1>}
+ */
+export function toLiteStates(statuses) {
+  const out = {};
+  for (const [id, entry] of Object.entries(statuses ?? {})) {
+    if (typeof entry?.on === 'boolean') out[id] = entry.on ? 1 : 0;
+  }
   return out;
 }
 

@@ -70,6 +70,10 @@ const state = {
   actionGroups: null,
   /** ultimo livello noto di ogni slider, per non farlo saltare al re-render */
   levels: new Map(),
+  /** stato reale dei controlli letto dall'host: id -> {on, level, text} */
+  statuses: {},
+  /** cursore attualmente sotto il dito: non va riallineato dall'host */
+  draggingId: null,
   update: null
 };
 
@@ -170,6 +174,7 @@ function switchHost(id) {
   state.profileId = null;
   state.pageId = null;
   state.levels.clear();
+  state.statuses = {};
   state.actionGroups = null;
   saveHosts();
   renderHosts();
@@ -328,6 +333,11 @@ function handleMessage(msg) {
       renderStatus();
       break;
 
+    case MSG.status:
+      state.statuses = msg.states ?? {};
+      applyStatuses();
+      break;
+
     case MSG.navigate:
       state.profileId = msg.activeProfile;
       state.pageId = msg.activePage;
@@ -459,6 +469,7 @@ function renderGrid() {
     }
   }
   ui.grid.innerHTML = parts.join('');
+  applyStatuses();
 }
 
 function buttonHtml(button) {
@@ -504,6 +515,48 @@ function renderStatus() {
   ];
   ui.statusText.textContent = parts.join(' - ');
   if (state.hostState.lastAction) renderLastAction(state.hostState.lastAction);
+}
+
+/**
+ * Applica alla griglia lo stato reale letto dall'host.
+ *
+ * Non ridisegna nulla: tocca solo gli attributi dei controlli gia' presenti.
+ * Ricostruire la griglia a ogni aggiornamento di stato (uno ogni pochi
+ * secondi) azzererebbe le animazioni e farebbe sfarfallare i bottoni.
+ */
+function applyStatuses() {
+  for (const element of ui.grid.querySelectorAll('[data-id]')) {
+    applyStatusTo(element, state.statuses[element.dataset.id]);
+  }
+}
+
+function applyStatusTo(element, entry) {
+  if (!entry || entry.error || typeof entry.on !== 'boolean') delete element.dataset.on;
+  else element.dataset.on = entry.on ? '1' : '0';
+
+  setStateTag(element, entry?.error ? '!' : (entry?.text ?? ''));
+
+  // Il livello reale allinea il cursore, tranne mentre il dito lo sta muovendo:
+  // vedersi scappare via il cursore sotto le dita e' peggio di un valore vecchio.
+  if (typeof entry?.level === 'number' && state.draggingId !== element.dataset.id) {
+    state.levels.set(element.dataset.id, entry.level);
+    updateSliderVisual(element, entry.level);
+  }
+}
+
+/** Etichetta breve dello stato ("muto", "LIVE", nome della scena in onda). */
+function setStateTag(element, text) {
+  let tag = element.querySelector('.state-tag');
+  if (!text) {
+    tag?.remove();
+    return;
+  }
+  if (!tag) {
+    tag = document.createElement('span');
+    tag.className = 'state-tag';
+    element.appendChild(tag);
+  }
+  tag.textContent = text;
 }
 
 function renderLastAction(entry) {
@@ -967,6 +1020,7 @@ function bindGrid() {
 
     if (slider) {
       slider.setPointerCapture?.(event.pointerId);
+      state.draggingId = slider.dataset.id;
       gesture = { kind: 'slider', element: slider, startX: event.clientX, startY: event.clientY, lastSent: 0 };
       applySliderFromPointer(slider, event.clientX);
       return;
@@ -1031,6 +1085,7 @@ function bindGrid() {
 
     if (gesture.kind === 'slider') {
       sendSliderValue(gesture.element, { final: true });
+      state.draggingId = null;
     } else if (gesture.kind === 'button' && !gesture.fired) {
       const spec = gesture.spec;
       gesture.element.classList.remove('pending');
@@ -1045,6 +1100,7 @@ function bindGrid() {
   ui.grid.addEventListener('pointercancel', () => {
     if (gesture?.element) gesture.element.classList.remove('pending');
     clearHold();
+    state.draggingId = null;
     gesture = null;
   });
   ui.grid.addEventListener('contextmenu', (event) => event.preventDefault());

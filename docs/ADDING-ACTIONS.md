@@ -22,7 +22,10 @@ export const miaAzione = {
   stub: false,                    // true se non e' ancora implementata
 
   validate(params) {},            // lancia Error se i parametri sono sbagliati
-  describe(params) {}             // stringa mostrata in dry-run, log e ack
+  describe(params) {},            // stringa mostrata in dry-run, log e ack
+
+  // opzionale: stato reale del controllo (vedi sezione 2-bis)
+  async readState(params, ctx) {}
 };
 ```
 
@@ -64,6 +67,43 @@ lo traduce in HTTP `403`.
    [`src/host/security/allowlist.mjs`](../src/host/security/allowlist.mjs)).
    La verifica va fatta **prima** del controllo su `dryRun`, cosi' una
    configurazione vietata risulta bloccata anche in simulazione.
+
+## 2-bis. Lo stato reale del controllo (`readState`)
+
+Un'azione che accende, spegne o regola qualcosa puo' dire ai client **in che
+stato si trova adesso**: e' cio' che rende il bottone del muto diverso da un
+telecomando, perche' resta giusto anche se il volume viene cambiato altrove.
+
+```js
+async readState(params, ctx) {
+  const audio = await ctx.cached('audio:speaker', () => leggiVolume());
+  return {
+    on: audio.muted,        // true | false | null (null = non e' un interruttore)
+    level: audio.volume,    // 0..100, oppure null
+    text: audio.muted ? 'muto' : null   // etichetta breve, oppure null
+  };
+}
+```
+
+Restituire `null` significa "non lo so": il client non mostra alcuna spia.
+
+Regole:
+
+| regola | perche' |
+|---|---|
+| **`readState` non deve modificare nulla.** | Viene chiamata da sola, ogni pochi secondi. |
+| **Usare `ctx.cached(chiave, fn)`** per la parte costosa. | Dieci bottoni volume devono costare una lettura sola, non dieci processi PowerShell. |
+| **Lanciare un errore se il servizio non risponde.** | L'host lo mostra come stato in errore e mette quella lettura in pausa per un minuto, invece di insistere. |
+| **Non serve gestire `ctx.dryRun`.** | In dry-run l'host non chiama affatto `readState`. |
+
+`ctx` e' lo stesso di `run()`, piu' `ctx.cached` e `ctx.reading === true`.
+Chi non dichiara `readState` non viene mai interrogato: aggiungerla e' a costo
+zero per tutte le altre azioni. `GET /api/actions` riporta `reportsState: true`
+per le azioni che la dichiarano.
+
+L'host interroga solo i controlli della pagina attiva, e solo mentre almeno un
+client e' collegato. Un bottone con `"status": false` in `deck.json` viene
+escluso.
 
 ## 3. Esempio completo
 
@@ -161,6 +201,10 @@ fallire la suite.
 Ogni handler dichiara anche una `category` (usata dall'editor per raggruppare le
 azioni) e un `control`, che vale `button` salvo per le azioni pilotabili con un
 cursore, dove vale `slider`.
+
+Sanno dichiarare il proprio **stato reale** (`readState`): `volume`, `mic`,
+`brightness`, `media` (con `key` `mute`, `volumeup`, `volumedown`), `obs` e
+`hue`.
 
 ### Media e audio
 

@@ -70,7 +70,7 @@ test('registry: types() e list() sono ordinati e serializzabili', () => {
   assert.equal(list.length, 2);
   assert.deepEqual(
     Object.keys(list[0]).sort(),
-    ['category', 'control', 'description', 'paramsHelp', 'platforms', 'stub', 'title', 'type']
+    ['category', 'control', 'description', 'paramsHelp', 'platforms', 'reportsState', 'stub', 'title', 'type']
   );
   assert.doesNotThrow(() => JSON.stringify(list));
 });
@@ -130,4 +130,13 @@ test('registry predefinito: solo "stub" e\' marcata come non implementata', () =
   const registry = createDefaultRegistry();
   const stubs = registry.list().filter((a) => a.stub).map((a) => a.type);
   assert.deepEqual(stubs, ['stub']);
+});
+
+test('registry: list() dichiara quali azioni sanno leggere il proprio stato', () => {
+  const registry = createRegistry();
+  registry.register(dummy('cieca'));
+  registry.register({ ...dummy('parlante'), readState: async () => ({ on: true }) });
+  const byType = Object.fromEntries(registry.list().map((a) => [a.type, a]));
+  assert.equal(byType.cieca.reportsState, false);
+  assert.equal(byType.parlante.reportsState, true);
 });

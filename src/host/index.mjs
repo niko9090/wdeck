@@ -17,6 +17,7 @@ import { startTray } from './tray.mjs';
 import { createDefaultRegistry } from './actions/handlers/index.mjs';
 import { createDispatcher } from './actions/dispatcher.mjs';
 import { createState } from './state.mjs';
+import { createStatusTracker } from './status.mjs';
 import { createAuth } from './security/auth.mjs';
 import { createApiRouter } from './server/api.mjs';
 import { createHub } from './server/hub.mjs';
@@ -96,6 +97,20 @@ export function createHost(options = {}) {
     logger
   });
 
+  // Lo stato reale dei controlli (muto acceso, scena OBS in onda, livello del
+  // volume) e' letto dal sistema, non dedotto dalle pressioni: e' l'unico modo
+  // perche' resti giusto anche quando il PC viene toccato da altrove.
+  const statusSettings = deck.settings.status ?? {};
+  const status = createStatusTracker({
+    registry,
+    state,
+    getDeck: () => configStore.get(),
+    baseDir,
+    logger,
+    intervalMs: statusSettings.intervalMs,
+    enabled: options.status !== false && statusSettings.enabled !== false
+  });
+
   /** @type {any} */
   const host = {
     version: readVersion(),
@@ -107,12 +122,23 @@ export function createHost(options = {}) {
     state,
     auth,
     dispatcher,
+    status,
     server: null,
     hub: null,
     upgrades: null,
     tray: null,
     address: null
   };
+
+  // Dopo una pressione lo stato va riletto: e' il momento in cui l'utente si
+  // aspetta di vedere il bottone cambiare aspetto.
+  state.on('press', () => status.scheduleAfterPress());
+  // Cambio pagina o ricarica della configurazione: cambiano i controlli visibili.
+  state.on('navigate', () => status.refresh({ force: true }).catch(() => {}));
+  state.on('deck', () => {
+    status.prune();
+    status.refresh({ force: true }).catch(() => {});
+  });
 
   host.reload = () => {
     const result = configStore.reload();
@@ -204,6 +230,7 @@ export function createHost(options = {}) {
   const api = createApiRouter(host);
   const hub = createHub(host);
   host.hub = hub;
+  status.on('change', (snapshot, changes) => hub.broadcastStatus(snapshot, changes));
 
   const serveStatic = createStaticHandler({
     roots: [path.join(PROJECT_ROOT, 'dist', 'web'), path.join(PROJECT_ROOT, 'web')],
@@ -256,6 +283,7 @@ export function createHost(options = {}) {
         configStore.on('change', (next) => state.replaceDeck(next));
       }
       host.updates.start();
+      status.start();
 
       const settings = configStore.get().settings;
       if (settings.tray?.enabled !== false && options.tray !== false) {
@@ -281,6 +309,7 @@ export function createHost(options = {}) {
   host.stop = () => new Promise((resolve) => {
     configStore.close();
     host.updates.stop();
+    status.stop();
     host.tray?.stop();
     hub.close();
     upgrades.closeAll();

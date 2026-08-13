@@ -69,6 +69,16 @@ async function main() {
     check('la prima pagina contiene bottoni', Array.isArray(firstPage?.buttons) && firstPage.buttons.length > 0);
     check('il layout NON espone il token', !JSON.stringify(deckBody).includes(TOKEN));
 
+    const statusNoToken = await fetch(`${base}${ENDPOINTS.status}`);
+    check('/api/status senza token -> 401', statusNoToken.status === 401, `status=${statusNoToken.status}`);
+
+    const statusRes = await fetch(`${base}${ENDPOINTS.status}?token=${TOKEN}`);
+    const statusBody = await statusRes.json();
+    check('/api/status con token -> 200', statusRes.status === 200, `status=${statusRes.status}`);
+    check('/api/status restituisce la mappa degli stati',
+      statusBody.ok === true && typeof statusBody.states === 'object' && statusBody.states !== null,
+      JSON.stringify(statusBody));
+
     const pressNoToken = await fetch(`${base}${ENDPOINTS.press}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -111,6 +121,10 @@ async function main() {
     check('dopo l\'autenticazione arriva lo stato',
       typeof stateMsg.state?.activeProfile === 'string' && typeof stateMsg.state?.activePage === 'string');
     check('lo stato riporta dry-run attivo', stateMsg.state.dryRun === true);
+
+    const statusMsg = await waitForMessage(ws, (m) => m.type === MSG.status, { label: 'status' });
+    check('dopo l\'autenticazione arriva lo stato reale dei controlli',
+      typeof statusMsg.states === 'object' && statusMsg.states !== null, JSON.stringify(statusMsg));
 
     ws.send({ type: MSG.press, buttonId: 'media-playpause', requestId: 'req-1' });
     const ack = await waitForMessage(ws, (m) => m.type === MSG.ack && m.requestId === 'req-1', { label: 'ack pressione' });
@@ -169,6 +183,11 @@ async function main() {
     const wsLite = await connectWebSocket(`ws://127.0.0.1:${info.port}${ENDPOINTS.wsLite}?token=${TOKEN}`);
     const liteHello = await waitForMessage(wsLite, (m) => m[LITE_FIELDS.type] === LITE_MSG.hello, { label: 'hello lite' });
     check('il canale lite invia hello compatto', liteHello[LITE_FIELDS.version] === 1, JSON.stringify(liteHello));
+
+    const liteStatus = await waitForMessage(wsLite, (m) => m[LITE_FIELDS.type] === LITE_MSG.status, { label: 'status lite' });
+    check('il canale lite invia lo stato compatto dei bottoni',
+      typeof liteStatus[LITE_FIELDS.states] === 'object' && liteStatus[LITE_FIELDS.states] !== null,
+      JSON.stringify(liteStatus));
 
     wsLite.send({ [LITE_FIELDS.type]: LITE_MSG.press, [LITE_FIELDS.id]: 'lock-station' });
     const liteAck = await waitForMessage(wsLite, (m) => m[LITE_FIELDS.type] === LITE_MSG.ack, { label: 'ack lite' });

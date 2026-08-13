@@ -75,6 +75,7 @@ export function compactDeck(deck) {
           if (button.kind && button.kind !== 'button') out.kind = button.kind;
           if (button.span && button.span !== 1) out.span = button.span;
           if (button.confirm) out.confirm = true;
+          if (button.status === false) out.status = false;
           if (button.icon) out.icon = button.icon;
           if (button.color) out.color = button.color;
           if (button.textColor) out.textColor = button.textColor;

@@ -11,7 +11,8 @@ import {
   LITE_FIELDS,
   PROTOCOL_VERSION,
   LITE_PROTOCOL_VERSION,
-  toLitePage
+  toLitePage,
+  toLiteStates
 } from '../../../shared/protocol.mjs';
 import { publicDeck } from './api.mjs';
 
@@ -23,6 +24,7 @@ const MAX_MESSAGE_BYTES = 64 * 1024;
  */
 export function createHub(host) {
   const { auth, state, dispatcher, configStore, logger } = host;
+  const statusSnapshot = () => host.status?.snapshot() ?? {};
 
   /** @type {Set<import('../ws/connection.mjs').WebSocketConnection>} */
   const fullClients = new Set();
@@ -38,6 +40,17 @@ export function createHub(host) {
     [F.page]: state.activePageId,
     [F.dryRun]: state.dryRun ? 1 : 0,
     [F.timestamp]: Date.now()
+  });
+
+  /**
+   * Stato dei bottoni nella forma lite: id -> 0/1, nient'altro.
+   * Un ESP32 non ha spazio per livelli ed etichette, ma puo' disegnare
+   * diversamente un bottone acceso.
+   */
+  const liteStatusPayload = () => ({
+    [F.type]: LITE_MSG.status,
+    [F.version]: LITE_PROTOCOL_VERSION,
+    [F.states]: toLiteStates(statusSnapshot())
   });
 
   function broadcastFull(message) {
@@ -108,6 +121,10 @@ export function createHub(host) {
       conn.send({ type: MSG.authOk, protocol: PROTOCOL_VERSION });
       conn.send({ type: MSG.deck, deck: publicDeck(configStore.get()), state: state.snapshot() });
       conn.send({ type: MSG.state, state: state.snapshot() });
+      conn.send({ type: MSG.status, states: statusSnapshot() });
+      // Il primo client collegato trova la cache vuota: una lettura subito, cosi'
+      // i bottoni a due stati partono gia' con l'aspetto giusto.
+      host.status?.refresh({ force: true }).catch(() => {});
     }
 
     if (preAuthenticated) completeAuth();
@@ -207,6 +224,8 @@ export function createHub(host) {
       [F.dryRun]: state.dryRun ? 1 : 0
     });
     conn.send(liteStatePayload());
+    conn.send(liteStatusPayload());
+    host.status?.refresh({ force: true }).catch(() => {});
 
     conn.on('message', async (raw) => {
       let msg;
@@ -291,6 +310,16 @@ export function createHub(host) {
     broadcastDeck() {
       broadcastFull({ type: MSG.deck, deck: publicDeck(configStore.get()), state: state.snapshot() });
       broadcastLite(liteStatePayload());
+    },
+
+    /**
+     * Rimanda a tutti i client lo stato reale dei controlli.
+     * @param {Record<string, object>} snapshot stato completo
+     * @param {Record<string, object|null>} [changes] sole voci cambiate
+     */
+    broadcastStatus(snapshot, changes) {
+      broadcastFull({ type: MSG.status, states: snapshot, changed: changes ?? null });
+      broadcastLite(liteStatusPayload());
     },
 
     /** Segnala a tutti i client che esiste una versione piu' recente. */

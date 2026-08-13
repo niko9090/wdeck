@@ -226,6 +226,56 @@ body {
   color: var(--warn);
 }
 
+/* ---------------- stato reale dei controlli ----------------
+   Un bottone a due stati (muto, scena OBS in onda, luce accesa) mostra la
+   condizione letta dal PC, non l'ultima pressione. Acceso = bordo e alone di
+   colore accento piu' una spia in alto a sinistra; spento = spia scura. */
+
+.deck-btn[data-on] { border-color: var(--border); }
+
+.deck-btn[data-on]::before {
+  content: '';
+  position: absolute;
+  top: 6px; left: 6px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  opacity: 0.5;
+  transition: background 140ms ease, opacity 140ms ease, box-shadow 140ms ease;
+}
+
+.deck-btn[data-on='1'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-btn));
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.deck-btn[data-on='1']::before {
+  background: var(--accent);
+  opacity: 1;
+  box-shadow: 0 0 6px var(--accent);
+}
+
+/* La spia occuperebbe lo stesso angolo del segnale di conferma. */
+.deck-btn[data-on] .confirm-tag { left: 18px; }
+
+.deck-btn .state-tag,
+.deck-slider .state-tag {
+  position: absolute;
+  bottom: 3px; right: 6px;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.deck-btn[data-on='0'] .state-tag { color: var(--text-dim); }
+
 /* ---------------- modalita' modifica ---------------- */
 
 .grid.editing .deck-btn.empty {

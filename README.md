@@ -248,6 +248,36 @@ scatti come i tasti media:
 `span` indica quante celle occupa in orizzontale. Il valore mostrato e' sempre
 quello reale letto dal PC, non l'ultima posizione del dito.
 
+### Stato reale dei controlli
+
+Il bottone del muto sa di essere muto. L'host legge periodicamente la
+condizione vera dal PC e dai servizi collegati, e i client la mostrano: bordo
+acceso, spia e un'etichetta breve (`muto`, `LIVE`, il nome della scena OBS in
+onda). Il valore resta giusto anche quando qualcosa viene cambiato **da
+un'altra applicazione**, che e' proprio il caso in cui un deck "cieco" mente.
+
+Sanno dichiarare il proprio stato: `volume`, `mic`, `brightness`, `media` (con
+`key` `mute`/`volumeup`/`volumedown`), `obs` e `hue`.
+
+```json
+{ "id": "mute", "label": "Muto", "row": 0, "col": 0,
+  "action": { "type": "volume", "params": { "mute": "toggle" } } }
+```
+
+Non serve configurare nulla. Per spegnere la lettura su un singolo controllo:
+`"status": false`. Per spegnerla del tutto o cambiarne il ritmo:
+
+```json
+"settings": { "status": { "enabled": true, "intervalMs": 8000 } }
+```
+
+Vengono interrogati solo i controlli della pagina che si sta guardando, e solo
+mentre c'e' almeno un client collegato; le letture uguali sono messe in comune
+(dieci cursori del volume costano una lettura sola) e un servizio spento viene
+messo in pausa per un minuto invece di essere interrogato di continuo.
+In **dry-run non viene letto nulla**: la promessa di non toccare il PC vale
+anche per le letture.
+
 ### Conferma per le azioni pericolose
 
 `"confirm": true` su un bottone fa comparire una richiesta di conferma prima

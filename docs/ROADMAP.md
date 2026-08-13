@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.1`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.2`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -19,7 +19,8 @@ volutamente incompleto - **Mancante** = non esiste.
   il framing WebSocket RFC 6455 e' implementato in
   [`src/host/ws/`](../src/host/ws/) (server, client e parser di frame).
 - API REST completa: `/api/health`, `/api/pair`, `/api/deck`, `/api/state`,
-  `/api/actions`, `/api/press`, `/api/reload` (vedi [PROTOCOL.md](PROTOCOL.md)).
+  `/api/status`, `/api/actions`, `/api/press`, `/api/reload`
+  (vedi [PROTOCOL.md](PROTOCOL.md)).
 - Canale WebSocket full `/ws` con autenticazione, broadcast di stato,
   `ack` correlati da `requestId`, heartbeat ping/pong.
 - Configurazione dichiarativa `deck.json` con **validazione propria**
@@ -53,6 +54,18 @@ quindi non esistono problemi di quoting o injection dai parametri.
 - Bind configurabile (`0.0.0.0` per la LAN, `127.0.0.1` per il solo locale).
 - Il layout servito ai client non contiene mai token, PIN o whitelist.
 
+### Stato reale dei controlli
+
+- Gli handler dichiarano `readState()` e l'host legge la condizione vera dal
+  sistema: muto acceso, scena OBS in onda, registrazione o diretta attive, luce
+  Hue accesa, livello di volume e luminosita'. Copre `volume`, `mic`,
+  `brightness`, `media`, `obs`, `hue`.
+- Pubblicato su `GET /api/status`, sul messaggio WebSocket `status` e, in forma
+  compatta (`id -> 0|1`), sul canale lite: anche l'ESP32 disegna i bottoni accesi.
+- Costo tenuto basso di proposito: si interrogano solo i controlli della pagina
+  attiva, solo con client collegati, con letture messe in comune e pausa di un
+  minuto sui servizi che non rispondono. In dry-run non si legge nulla.
+
 ### Client web PWA
 
 - Griglia responsive con proporzioni corrette su telefono, tablet e desktop.
@@ -82,9 +95,9 @@ quindi non esistono problemi di quoting o injection dai parametri.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 159 |
-| `npm run smoke` | end-to-end su host reale | 36 |
-| `npm run test:esp32` | conformita' firmware <-> protocollo | 109 |
+| `npm test` | file di test unitari/integrazione | 180 |
+| `npm run smoke` | end-to-end su host reale | 41 |
+| `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
 | `npm run check:docs` | coerenza della documentazione | - |
 | `npm run check:deps` | vincolo di zero dipendenze | - |
@@ -141,9 +154,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
   quelli serve ancora modificare `deck.json`
   (con l'aiuto di [`schema/deck.schema.json`](../schema/deck.schema.json)).
 - Nessun caricamento di icone personalizzate (PNG/SVG dell'utente).
-- Feedback di stato reale solo sui cursori (volume, microfono, luminosita',
-  che rileggono il valore dal PC). I bottoni a due stati, come il muto, non
-  sanno ancora mostrare la condizione corrente.
 - Luminosita': su un PC con HDR attivo e monitor che rifiutano DDC/CI nessuno
   dei tre metodi funziona, e l'azione fallisce con un messaggio esplicito.
   Servirebbe un overlay di attenuazione, che e' un processo in piu' da tenere
@@ -171,8 +181,8 @@ In ordine di rapporto valore/costo, da decidere insieme:
 
 1. **Provare il firmware su una scheda vera** e correggere pin/rotazione/touch:
    e' l'unico pezzo dichiaratamente non collaudato.
-2. **Feedback di stato sui bottoni** (toggle muto, scena OBS attiva): e' cio'
-   che distingue davvero uno Stream Deck da un telecomando.
+2. ~~**Feedback di stato sui bottoni** (toggle muto, scena OBS attiva).~~
+   **fatto in 0.2.2.**
 3. **Adattatore Linux/macOS** per hotkey e tasti media: apre l'uso dell'host
    fuori da Windows (l'architettura e' gia' pronta, serve un modulo per piattaforma).
 4. **Editor grafico del deck** nella PWA, sfruttando `GET /api/actions` che gia'

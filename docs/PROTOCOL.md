@@ -148,6 +148,40 @@ sono rimossi da `publicDeck()`.
 }
 ```
 
+### `GET /api/status`
+
+Stato **reale** dei controlli, letto dal sistema e non dedotto dalle pressioni:
+e' cio' che permette al bottone del muto di sapere di essere muto anche quando
+il volume viene cambiato da un'altra applicazione.
+
+```json
+{
+  "ok": true,
+  "states": {
+    "mute": { "on": true, "level": 34, "text": "muto", "at": 1786012800000 },
+    "slider-volume": { "on": null, "level": 34, "text": null, "at": 1786012800000 },
+    "obs-scena": { "on": false, "level": null, "text": "Pausa", "at": 1786012800000 },
+    "obs-rec": { "on": null, "level": null, "text": null, "error": "OBS non raggiungibile", "at": 1786012800000 }
+  }
+}
+```
+
+| campo | significato |
+|---|---|
+| `on` | `true`/`false` per i controlli a due stati, `null` se non ne hanno uno |
+| `level` | livello 0..100 per volume, microfono, luminosita' |
+| `text` | etichetta breve gia' pronta (`muto`, `LIVE`, nome della scena in onda) |
+| `error` | presente solo se la lettura e' fallita (servizio spento, piattaforma non supportata) |
+| `at` | istante della lettura |
+
+Con `?refresh=1` la lettura viene rifatta subito invece di usare la cache.
+
+Solo i controlli della **pagina attiva** vengono interrogati, e solo mentre c'e'
+almeno un client collegato. Un controllo con `"status": false` in `deck.json`
+non viene mai interrogato. **In dry-run l'host non legge nulla dal sistema**,
+quindi la mappa resta vuota: la promessa "in dry-run non tocco il PC" vale anche
+per le letture.
+
 ### `GET /api/actions`
 
 Elenco del registro azioni (utile per costruire editor di configurazione).
@@ -276,6 +310,7 @@ viene chiusa con codice `1008`.
 | `auth-ok` | `protocol` | autenticazione riuscita |
 | `deck` | `deck`, `state` | dopo `auth-ok` e a ogni ricarica di `deck.json` |
 | `state` | `state` | a ogni variazione (pressioni, client, dry-run) |
+| `status` | `states`, `changed` | stato reale dei controlli: dopo `auth-ok`, dopo ogni pressione e a ogni variazione letta dal sistema |
 | `navigate` | `activeProfile`, `activePage` | cambio pagina/profilo |
 | `ack` | `requestId`, `ok`, `result` | risposta a `press` / `navigate` / `reload` |
 | `event` | `event: "press"`, `data` | notifica broadcast di una pressione |
@@ -301,10 +336,16 @@ client -> {"type":"auth","token":"abc123"}
 host   <- {"type":"auth-ok","protocol":1}
 host   <- {"type":"deck","deck":{...},"state":{...}}
 host   <- {"type":"state","state":{...}}
+host   <- {"type":"status","states":{"mute":{"on":false,"level":34,"text":null}}}
 client -> {"type":"press","buttonId":"mute","requestId":"r1"}
 host   <- {"type":"ack","requestId":"r1","ok":true,"result":{...}}
 host   <- {"type":"event","event":"press","data":{...}}
+host   <- {"type":"status","states":{"mute":{"on":true,"level":34,"text":"muto"}},"changed":{"mute":{"on":true}}}
 ```
+
+`states` e' sempre la mappa completa; `changed` contiene le sole voci variate
+(`null` come valore = stato non piu' disponibile), utile per animare solo cio'
+che e' cambiato.
 
 Il server invia un `ping` di controllo ogni 30 secondi; i client che non
 rispondono con `pong` vengono chiusi.
@@ -339,6 +380,7 @@ nessun dato superfluo, layout di una pagina tipicamente sotto 1 KB.
 | timestamp | `s` | intero | millisecondi dell'host |
 | pages | `q` | array | id delle pagine del profilo |
 | dryRun | `d` | 0/1 | host in dry-run |
+| states | `w` | oggetto | id bottone -> 0/1: stato reale dei controlli a due stati |
 
 ### Tipi di messaggio (campo `t`)
 
@@ -354,6 +396,7 @@ nessun dato superfluo, layout di una pagina tipicamente sotto 1 KB.
 | ping | `i` | device -> host |
 | pong | `o` | host -> device |
 | navigate | `n` | host -> device |
+| status | `z` | host -> device |
 
 ### `GET /api/lite/deck`
 
@@ -397,12 +440,18 @@ un microcontrollore non deve gestire stati intermedi).
 device -> ws://192.168.1.10:8899/ws/lite?token=abc123
 host   <- {"t":"h","v":1,"f":"default","p":"main","d":0}
 host   <- {"t":"s","v":1,"f":"default","p":"main","d":0,"s":1765432100000}
+host   <- {"t":"z","v":1,"w":{"mute":0}}             (stato: il muto e' spento)
 device -> {"t":"p","i":"mute"}
 host   <- {"t":"a","i":"mute","k":1,"m":"inviato tasto media \"mute\""}
+host   <- {"t":"z","v":1,"w":{"mute":1}}             (stato: ora e' acceso)
 host   <- {"t":"n","f":"default","p":"utility"}      (cambio pagina: riscaricare il layout)
 device -> {"t":"i"}
 host   <- {"t":"o","s":1765432100000}
 ```
+
+Il messaggio di stato porta solo `id -> 0|1`: livelli ed etichette restano al
+dialetto full, perche' un microcontrollore non ha spazio per tenerli. I bottoni
+assenti dalla mappa hanno stato sconosciuto e vanno disegnati senza spia.
 
 ### Come implementare un nuovo dispositivo
 
@@ -410,7 +459,8 @@ host   <- {"t":"o","s":1765432100000}
 2. Aprire `/ws/lite?token=...` e restare in ascolto.
 3. Su tocco inviare `{"t":"p","i":"<id>"}` e mostrare l'esito dell'`ack` (`k`).
 4. Su `{"t":"n",...}` riscaricare il layout della nuova pagina.
-5. Inviare `{"t":"i"}` ogni ~20 s per tenere viva la connessione.
+5. Su `{"t":"z","w":{...}}` aggiornare l'aspetto dei bottoni accesi.
+6. Inviare `{"t":"i"}` ogni ~20 s per tenere viva la connessione.
 
 ---
 
