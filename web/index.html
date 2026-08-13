@@ -53,15 +53,19 @@
         <span id="status-dot" class="dot" data-state="offline" title="stato connessione"></span>
         <strong id="deck-name">Wdeck</strong>
         <span id="dry-badge" class="badge warn" hidden>DRY-RUN</span>
+        <button id="btn-update" class="badge update" type="button" hidden>Aggiornamento</button>
       </div>
       <nav class="topbar-right">
         <select id="profile-select" class="select" aria-label="Profilo"></select>
+        <button id="btn-edit" class="icon-btn" type="button" title="Modifica il deck" aria-pressed="false">&#9998;</button>
         <button id="btn-simulate" class="icon-btn" type="button" title="Simula le azioni (dry-run lato client)" aria-pressed="false">SIM</button>
         <button id="btn-fullscreen" class="icon-btn" type="button" title="Schermo intero">&#9974;</button>
-        <button id="btn-reload" class="icon-btn" type="button" title="Ricarica deck.json sull'host">&#8635;</button>
-        <button id="btn-logout" class="icon-btn" type="button" title="Dimentica il token">&#9099;</button>
+        <button id="btn-settings" class="icon-btn" type="button" title="Impostazioni">&#9881;</button>
       </nav>
     </header>
+
+    <!-- computer collegati: uno per PC su cui gira l'host -->
+    <div id="hosts" class="hosts" role="tablist" aria-label="Computer"></div>
 
     <div id="pages" class="pages" role="tablist"></div>
 
@@ -72,6 +76,19 @@
       <span id="last-action" class="last-action"></span>
     </footer>
   </main>
+
+  <!-- pannello modale riusato da editor, impostazioni e conferme -->
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-backdrop" data-close="1"></div>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <header class="sheet-head">
+        <h2 id="sheet-title">Titolo</h2>
+        <button id="sheet-close" class="icon-btn" type="button" data-close="1" title="Chiudi">&#10005;</button>
+      </header>
+      <div id="sheet-body" class="sheet-body"></div>
+      <footer id="sheet-foot" class="sheet-foot"></footer>
+    </div>
+  </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 

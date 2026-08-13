@@ -10,6 +10,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createConfigStore, envOverrides } from './config/loader.mjs';
+import { saveDeck, writeAtomic } from './config/writer.mjs';
+import { formatErrors, validateDeck } from './config/schema.mjs';
+import { createUpdateChecker } from './updates.mjs';
+import { startTray } from './tray.mjs';
 import { createDefaultRegistry } from './actions/handlers/index.mjs';
 import { createDispatcher } from './actions/dispatcher.mjs';
 import { createState } from './state.mjs';
@@ -65,6 +69,21 @@ export function createHost(options = {}) {
   });
 
   const deck = configStore.load();
+
+  // Un EventEmitter che emette 'error' senza ascoltatori fa terminare il
+  // processo: senza questa riga un errore di battitura in deck.json durante la
+  // ricarica a caldo spegnerebbe l'host invece di lasciarlo sulla versione
+  // valida precedente, che e' esattamente il comportamento promesso.
+  configStore.on('error', (err) => {
+    logger.error?.(`[wdeck] deck.json non valido: ${err.message}`);
+    if (Array.isArray(err.errors)) {
+      for (const detail of err.errors.slice(0, 10)) {
+        logger.error?.(`[wdeck]   - ${detail.path || '<root>'}: ${detail.message}`);
+      }
+    }
+    logger.warn?.('[wdeck] resta attiva la configurazione precedente: correggi il file e salva di nuovo');
+  });
+
   const state = createState(deck);
   const auth = createAuth(deck.settings.security);
   const baseDir = path.dirname(configFile);
@@ -91,6 +110,7 @@ export function createHost(options = {}) {
     server: null,
     hub: null,
     upgrades: null,
+    tray: null,
     address: null
   };
 
@@ -102,6 +122,84 @@ export function createHost(options = {}) {
     }
     return result;
   };
+
+  /**
+   * Salva su deck.json le modifiche fatte dall'editor visuale.
+   * @param {object} incoming deck (o porzione) proveniente dal client
+   */
+  host.saveDeck = (incoming) => {
+    const result = saveDeck({
+      configPath: configFile,
+      current: configStore.get(),
+      incoming,
+      actionTypes: registry.types()
+    });
+    if (!result.ok) {
+      logger.warn?.(`[wdeck] salvataggio rifiutato: ${result.errors?.length ?? 0} errori di validazione`);
+      return result;
+    }
+    // Il watcher vedrebbe comunque la modifica, ma applicarla subito evita che
+    // il client resti indietro per il tempo di debounce del file system.
+    configStore.reload();
+    state.replaceDeck(configStore.get());
+    hub.broadcastDeck?.();
+    logger.info?.(`[wdeck] deck salvato${result.backup ? ` (backup: ${path.basename(result.backup)})` : ''}`);
+    return result;
+  };
+
+  /**
+   * Aggiorna le impostazioni modificabili a caldo: PIN, tema, aggiornamenti.
+   * Il token non passa da qui: cambiarlo scollegherebbe ogni client, quindi
+   * resta un'operazione da fare a mano su deck.json.
+   * @param {{pin?: string, ui?: object, updates?: object, tray?: object}} patch
+   */
+  host.updateSettings = (patch) => {
+    const current = configStore.get();
+    const changed = [];
+    const next = JSON.parse(JSON.stringify({
+      version: current.version,
+      name: current.name,
+      defaultProfile: current.defaultProfile,
+      settings: current.settings,
+      profiles: current.profiles
+    }));
+
+    if (patch.pin !== undefined) {
+      const pin = String(patch.pin);
+      if (pin !== '' && !/^[0-9]{4,12}$/.test(pin)) {
+        return { ok: false, message: 'PIN non valido: sono ammesse da 4 a 12 cifre' };
+      }
+      next.settings.security.pin = pin;
+      changed.push('pin');
+    }
+    for (const section of ['ui', 'updates', 'tray']) {
+      if (patch[section] !== undefined) {
+        next.settings[section] = { ...next.settings[section], ...patch[section] };
+        changed.push(section);
+      }
+    }
+    if (changed.length === 0) return { ok: false, message: 'nessuna impostazione da aggiornare' };
+
+    const validation = validateDeck(next, { actionTypes: registry.types() });
+    if (!validation.valid) {
+      return { ok: false, message: `impostazioni non valide:\n${formatErrors(validation.errors)}` };
+    }
+
+    writeAtomic(configFile, `${JSON.stringify(next, null, 2)}\n`);
+    configStore.reload();
+    state.replaceDeck(configStore.get());
+    if (changed.includes('pin')) auth.setPin(next.settings.security.pin);
+    logger.info?.(`[wdeck] impostazioni aggiornate: ${changed.join(', ')}`);
+    return { ok: true, changed };
+  };
+
+  host.updates = createUpdateChecker({
+    version: host.version,
+    repository: deck.settings.updates?.repository ?? 'niko9090/wdeck',
+    enabled: deck.settings.updates?.check !== false,
+    logger,
+    onUpdate: (status) => hub.broadcastUpdate?.(status)
+  });
 
   const api = createApiRouter(host);
   const hub = createHub(host);
@@ -157,6 +255,20 @@ export function createHost(options = {}) {
         configStore.watch();
         configStore.on('change', (next) => state.replaceDeck(next));
       }
+      host.updates.start();
+
+      const settings = configStore.get().settings;
+      if (settings.tray?.enabled !== false && options.tray !== false) {
+        const urls = buildUrls(bindHost, addr.port);
+        host.tray = startTray({
+          url: urls[0] ?? `http://127.0.0.1:${addr.port}`,
+          urls: urls.map((u) => `${u}?token=${auth.token}`),
+          token: auth.token,
+          version: host.version,
+          deckName: configStore.get().name,
+          logger
+        });
+      }
       resolve({
         host: bindHost,
         port: addr.port,
@@ -168,6 +280,8 @@ export function createHost(options = {}) {
   /** Ferma il server e libera le risorse. */
   host.stop = () => new Promise((resolve) => {
     configStore.close();
+    host.updates.stop();
+    host.tray?.stop();
     hub.close();
     upgrades.closeAll();
     if (!server.listening) return resolve();

@@ -14,13 +14,29 @@
       "token": "CHANGE-ME-wdeck-dev-token",
       "pin": "246810",
       "dryRun": false,
-      "allowUrlSchemes": ["http", "https", "mailto", "ms-settings"],
-      "allowedExtensions": [".exe", ".com", ".bat", ".cmd", ".ps1", ".py", ".lnk"],
+      "allowUrlSchemes": [
+        "http",
+        "https",
+        "mailto",
+        "ms-settings",
+        "steam",
+        "com.epicgames.launcher"
+      ],
+      "allowedExtensions": [
+        ".exe",
+        ".com",
+        ".bat",
+        ".cmd",
+        ".ps1",
+        ".py",
+        ".lnk"
+      ],
       "allowExec": [
         "C:\\Windows\\System32\\notepad.exe",
         "C:\\Windows\\System32\\calc.exe",
         "C:\\Windows\\explorer.exe",
-        "scripts/examples/*"
+        "scripts/examples/*",
+        "C:\\Windows\\System32\\mstsc.exe"
       ],
       "maxSequenceSteps": 32
     },
@@ -49,7 +65,12 @@
               "col": 0,
               "icon": "prev",
               "color": "#2d3b55",
-              "action": { "type": "media", "params": { "key": "prev" } }
+              "action": {
+                "type": "media",
+                "params": {
+                  "key": "prev"
+                }
+              }
             },
             {
               "id": "media-playpause",
@@ -58,7 +79,12 @@
               "col": 1,
               "icon": "play",
               "color": "#1f6feb",
-              "action": { "type": "media", "params": { "key": "playpause" } }
+              "action": {
+                "type": "media",
+                "params": {
+                  "key": "playpause"
+                }
+              }
             },
             {
               "id": "media-next",
@@ -67,7 +93,12 @@
               "col": 2,
               "icon": "next",
               "color": "#2d3b55",
-              "action": { "type": "media", "params": { "key": "next" } }
+              "action": {
+                "type": "media",
+                "params": {
+                  "key": "next"
+                }
+              }
             },
             {
               "id": "vol-down",
@@ -76,7 +107,13 @@
               "col": 3,
               "icon": "volume-down",
               "color": "#2d3b55",
-              "action": { "type": "media", "params": { "key": "volumedown", "repeat": 2 } }
+              "action": {
+                "type": "media",
+                "params": {
+                  "key": "volumedown",
+                  "repeat": 2
+                }
+              }
             },
             {
               "id": "vol-up",
@@ -85,7 +122,13 @@
               "col": 4,
               "icon": "volume-up",
               "color": "#2d3b55",
-              "action": { "type": "media", "params": { "key": "volumeup", "repeat": 2 } }
+              "action": {
+                "type": "media",
+                "params": {
+                  "key": "volumeup",
+                  "repeat": 2
+                }
+              }
             },
             {
               "id": "mute",
@@ -94,7 +137,12 @@
               "col": 0,
               "icon": "mute",
               "color": "#8a3b3b",
-              "action": { "type": "media", "params": { "key": "mute" } }
+              "action": {
+                "type": "media",
+                "params": {
+                  "key": "mute"
+                }
+              }
             },
             {
               "id": "notepad",
@@ -105,7 +153,9 @@
               "color": "#3b6e4f",
               "action": {
                 "type": "launch",
-                "params": { "path": "C:\\Windows\\System32\\notepad.exe" }
+                "params": {
+                  "path": "C:\\Windows\\System32\\notepad.exe"
+                }
               }
             },
             {
@@ -117,7 +167,9 @@
               "color": "#3b5a6e",
               "action": {
                 "type": "url",
-                "params": { "url": "https://github.com/" }
+                "params": {
+                  "url": "https://github.com/"
+                }
               }
             },
             {
@@ -129,7 +181,12 @@
               "color": "#5b4b8a",
               "action": {
                 "type": "script",
-                "params": { "path": "scripts/examples/hello.ps1", "args": ["Wdeck"] }
+                "params": {
+                  "path": "scripts/examples/hello.ps1",
+                  "args": [
+                    "Wdeck"
+                  ]
+                }
               }
             },
             {
@@ -141,7 +198,9 @@
               "color": "#6e5a3b",
               "action": {
                 "type": "text",
-                "params": { "text": "Cordiali saluti,\nWdeck" }
+                "params": {
+                  "text": "Cordiali saluti,\nWdeck"
+                }
               }
             },
             {
@@ -151,7 +210,12 @@
               "col": 0,
               "icon": "layers",
               "color": "#2d3b55",
-              "action": { "type": "hotkey", "params": { "keys": "ctrl+c" } }
+              "action": {
+                "type": "hotkey",
+                "params": {
+                  "keys": "ctrl+c"
+                }
+              }
             },
             {
               "id": "combo-focus",
@@ -164,9 +228,24 @@
                 "type": "sequence",
                 "params": {
                   "steps": [
-                    { "type": "media", "params": { "key": "playpause" } },
-                    { "type": "delay", "params": { "ms": 250 } },
-                    { "type": "hotkey", "params": { "keys": "win+d" } }
+                    {
+                      "type": "media",
+                      "params": {
+                        "key": "playpause"
+                      }
+                    },
+                    {
+                      "type": "delay",
+                      "params": {
+                        "ms": 250
+                      }
+                    },
+                    {
+                      "type": "hotkey",
+                      "params": {
+                        "keys": "win+d"
+                      }
+                    }
                   ]
                 }
               }
@@ -180,7 +259,11 @@
               "color": "#3b6e6e",
               "action": {
                 "type": "http",
-                "params": { "url": "http://127.0.0.1:9/ping", "method": "POST", "body": "{\"from\":\"wdeck\"}" }
+                "params": {
+                  "url": "http://127.0.0.1:9/ping",
+                  "method": "POST",
+                  "body": "{\"from\":\"wdeck\"}"
+                }
               }
             },
             {
@@ -192,19 +275,23 @@
               "color": "#444c5c",
               "action": {
                 "type": "navigate",
-                "params": { "page": "utility" }
+                "params": {
+                  "page": "utility"
+                }
               }
             },
             {
               "id": "obs-stub",
-              "label": "OBS (stub)",
+              "label": "Sistema",
               "row": 2,
               "col": 4,
-              "icon": "camera",
-              "color": "#5c4444",
+              "icon": "gear",
+              "color": "#3b5a6e",
               "action": {
-                "type": "stub",
-                "params": { "note": "Integrazione OBS WebSocket non ancora implementata" }
+                "type": "navigate",
+                "params": {
+                  "page": "sistema"
+                }
               }
             }
           ]
@@ -222,7 +309,12 @@
               "col": 0,
               "icon": "power",
               "color": "#8a3b3b",
-              "action": { "type": "hotkey", "params": { "keys": "win+l" } }
+              "action": {
+                "type": "hotkey",
+                "params": {
+                  "keys": "win+l"
+                }
+              }
             },
             {
               "id": "screenshot",
@@ -231,7 +323,12 @@
               "col": 1,
               "icon": "camera",
               "color": "#3b5a6e",
-              "action": { "type": "hotkey", "params": { "keys": "win+shift+s" } }
+              "action": {
+                "type": "hotkey",
+                "params": {
+                  "keys": "win+shift+s"
+                }
+              }
             },
             {
               "id": "explorer",
@@ -242,7 +339,12 @@
               "color": "#6e5a3b",
               "action": {
                 "type": "launch",
-                "params": { "path": "C:\\Windows\\explorer.exe", "args": ["C:\\"] }
+                "params": {
+                  "path": "C:\\Windows\\explorer.exe",
+                  "args": [
+                    "C:\\"
+                  ]
+                }
               }
             },
             {
@@ -252,7 +354,12 @@
               "col": 3,
               "icon": "prev",
               "color": "#444c5c",
-              "action": { "type": "navigate", "params": { "page": "main" } }
+              "action": {
+                "type": "navigate",
+                "params": {
+                  "page": "main"
+                }
+              }
             },
             {
               "id": "profile-stream",
@@ -263,7 +370,10 @@
               "color": "#5b4b8a",
               "action": {
                 "type": "navigate",
-                "params": { "profile": "streaming", "page": "live" }
+                "params": {
+                  "profile": "streaming",
+                  "page": "live"
+                }
               }
             },
             {
@@ -273,7 +383,163 @@
               "col": 3,
               "icon": "gear",
               "color": "#3a3f4b",
-              "action": { "type": "noop", "params": {} }
+              "action": {
+                "type": "noop",
+                "params": {}
+              }
+            }
+          ]
+        },
+        {
+          "id": "sistema",
+          "name": "Sistema",
+          "rows": 4,
+          "cols": 4,
+          "buttons": [
+            {
+              "id": "slider-volume",
+              "label": "Volume",
+              "row": 0,
+              "col": 0,
+              "kind": "slider",
+              "span": 4,
+              "icon": "volume-up",
+              "color": "#1f6feb",
+              "action": {
+                "type": "volume",
+                "params": {}
+              }
+            },
+            {
+              "id": "slider-brightness",
+              "label": "Luminosita'",
+              "row": 1,
+              "col": 0,
+              "kind": "slider",
+              "span": 4,
+              "icon": "star",
+              "color": "#8a5a2b",
+              "action": {
+                "type": "brightness",
+                "params": {}
+              }
+            },
+            {
+              "id": "mic-mute",
+              "label": "Muto microfono",
+              "row": 2,
+              "col": 0,
+              "icon": "mute",
+              "color": "#8a3b3b",
+              "action": {
+                "type": "mic",
+                "params": {
+                  "mute": "toggle"
+                }
+              }
+            },
+            {
+              "id": "desktop-next",
+              "label": "Desktop >",
+              "row": 2,
+              "col": 1,
+              "icon": "next",
+              "color": "#3b5a6e",
+              "action": {
+                "type": "desktop",
+                "params": {
+                  "direction": "next"
+                }
+              }
+            },
+            {
+              "id": "desktop-prev",
+              "label": "< Desktop",
+              "row": 2,
+              "col": 2,
+              "icon": "prev",
+              "color": "#3b5a6e",
+              "action": {
+                "type": "desktop",
+                "params": {
+                  "direction": "prev"
+                }
+              }
+            },
+            {
+              "id": "shot-screen",
+              "label": "Schermata",
+              "row": 2,
+              "col": 3,
+              "icon": "camera",
+              "color": "#3b6e4f",
+              "action": {
+                "type": "screenshot",
+                "params": {
+                  "mode": "screen",
+                  "clipboard": true
+                }
+              }
+            },
+            {
+              "id": "focus-explorer",
+              "label": "Vai a Esplora",
+              "row": 3,
+              "col": 0,
+              "icon": "folder",
+              "color": "#6e5a3b",
+              "action": {
+                "type": "focus",
+                "params": {
+                  "process": "explorer"
+                }
+              }
+            },
+            {
+              "id": "notify-test",
+              "label": "Avvisami",
+              "row": 3,
+              "col": 1,
+              "icon": "gear",
+              "color": "#5b4b8a",
+              "action": {
+                "type": "notify",
+                "params": {
+                  "title": "Wdeck",
+                  "message": "Promemoria dal telefono",
+                  "sound": true
+                }
+              }
+            },
+            {
+              "id": "lock-pc",
+              "label": "Blocca",
+              "row": 3,
+              "col": 2,
+              "icon": "power",
+              "color": "#8a3b3b",
+              "action": {
+                "type": "power",
+                "params": {
+                  "command": "lock"
+                }
+              }
+            },
+            {
+              "id": "shutdown-pc",
+              "label": "Spegni",
+              "row": 3,
+              "col": 3,
+              "icon": "power",
+              "color": "#7a2b2b",
+              "confirm": true,
+              "action": {
+                "type": "power",
+                "params": {
+                  "command": "shutdown",
+                  "delaySeconds": 30
+                }
+              }
             }
           ]
         }
@@ -297,7 +563,12 @@
               "col": 0,
               "icon": "mic",
               "color": "#8a3b3b",
-              "action": { "type": "hotkey", "params": { "keys": "ctrl+shift+m" } }
+              "action": {
+                "type": "hotkey",
+                "params": {
+                  "keys": "ctrl+shift+m"
+                }
+              }
             },
             {
               "id": "scene-1",
@@ -306,7 +577,12 @@
               "col": 1,
               "icon": "layers",
               "color": "#3b6e4f",
-              "action": { "type": "hotkey", "params": { "keys": "ctrl+alt+1" } }
+              "action": {
+                "type": "hotkey",
+                "params": {
+                  "keys": "ctrl+alt+1"
+                }
+              }
             },
             {
               "id": "scene-2",
@@ -315,7 +591,12 @@
               "col": 2,
               "icon": "layers",
               "color": "#3b6e4f",
-              "action": { "type": "hotkey", "params": { "keys": "ctrl+alt+2" } }
+              "action": {
+                "type": "hotkey",
+                "params": {
+                  "keys": "ctrl+alt+2"
+                }
+              }
             },
             {
               "id": "back-default",
@@ -326,7 +607,10 @@
               "color": "#444c5c",
               "action": {
                 "type": "navigate",
-                "params": { "profile": "default", "page": "main" }
+                "params": {
+                  "profile": "default",
+                  "page": "main"
+                }
               }
             }
           ]

@@ -87,7 +87,11 @@ test('api: /api/deck non espone mai i dati sensibili', async (t) => {
 
 test('api: publicDeck rimuove security e server', () => {
   const pubblico = publicDeck(makeDeck());
-  assert.deepEqual(Object.keys(pubblico).sort(), ['defaultProfile', 'name', 'profiles', 'ui', 'version']);
+  assert.deepEqual(
+    Object.keys(pubblico).sort(),
+    ['defaultProfile', 'integrations', 'name', 'profiles', 'ui', 'version']
+  );
+  assert.equal(pubblico.settings, undefined, 'nessuna traccia di token, PIN o allowExec');
 });
 
 test('api: il client non puo\' disattivare il dry-run dell\'host', async (t) => {

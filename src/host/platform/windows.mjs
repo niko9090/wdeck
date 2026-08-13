@@ -180,6 +180,175 @@ export function launchProcess({ path: exePath, args = [], cwd }) {
 }
 
 /**
+ * Funzione PowerShell che invia Win+Ctrl+Freccia, la scorciatoia ufficiale per
+ * spostarsi fra desktop virtuali. Tutti e tre i tasti sono "extended".
+ */
+export const VK_WIN_CTRL_ARROW_SCRIPT = [
+  '$sigK = @\'',
+  '[DllImport("user32.dll", SetLastError=true)]',
+  'public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);',
+  '\'@',
+  "$kb = Add-Type -MemberDefinition $sigK -Name 'WdeckDesk' -Namespace 'Wdeck' -PassThru",
+  'function Wdeck-DesktopStep([string]$dir) {',
+  '  $arrow = if ($dir -eq \'right\') { 0x27 } else { 0x25 }',
+  '  $kb::keybd_event(0x5B, 0, 0x0001, [UIntPtr]::Zero)',
+  '  $kb::keybd_event(0x11, 0, 0x0001, [UIntPtr]::Zero)',
+  '  $kb::keybd_event($arrow, 0, 0x0001, [UIntPtr]::Zero)',
+  '  $kb::keybd_event($arrow, 0, 0x0003, [UIntPtr]::Zero)',
+  '  $kb::keybd_event(0x11, 0, 0x0003, [UIntPtr]::Zero)',
+  '  $kb::keybd_event(0x5B, 0, 0x0003, [UIntPtr]::Zero)',
+  '}'
+].join('\n');
+
+/**
+ * Blocco P/Invoke riusato da tutti gli script che manipolano finestre.
+ * Definito una volta sola per non duplicare la stessa Add-Type in mezzo file.
+ */
+export const WINDOW_PINVOKE = [
+  '$sig = @\'',
+  '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);',
+  '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);',
+  '[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);',
+  '[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+  '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);',
+  '[DllImport("user32.dll")] public static extern bool AttachThreadInput(uint a, uint b, bool f);',
+  '[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);',
+  '[DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int t, uint flags);',
+  '[DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int t, bool repaint);',
+  '[DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();',
+  '\'@',
+  "$w = Add-Type -MemberDefinition $sig -Name 'WdeckWin' -Namespace 'Wdeck' -PassThru"
+].join('\n');
+
+/**
+ * Funzione PowerShell che porta davvero una finestra in primo piano.
+ *
+ * Windows rifiuta SetForegroundWindow se il processo chiamante non possiede
+ * gia' il focus (foreground lock): qui il vincolo viene aggirato agganciando
+ * temporaneamente il thread di input della finestra attiva a quello della
+ * finestra da attivare, che e' la tecnica documentata e non invasiva.
+ */
+export const FOCUS_HELPER = [
+  'function Wdeck-Focus([IntPtr]$h) {',
+  '  if ($h -eq [IntPtr]::Zero) { return $false }',
+  '  if ($w::IsIconic($h)) { [void]$w::ShowWindow($h, 9) } else { [void]$w::ShowWindow($h, 5) }',
+  '  $fg = $w::GetForegroundWindow()',
+  '  $tidFg = $w::GetWindowThreadProcessId($fg, [IntPtr]::Zero)',
+  '  $tidMe = $w::GetCurrentThreadId()',
+  '  $attached = $false',
+  '  if ($tidFg -ne $tidMe) { $attached = $w::AttachThreadInput($tidFg, $tidMe, $true) }',
+  '  [void]$w::BringWindowToTop($h)',
+  '  $ok = $w::SetForegroundWindow($h)',
+  '  if ($attached) { [void]$w::AttachThreadInput($tidFg, $tidMe, $false) }',
+  '  return $ok',
+  '}'
+].join('\n');
+
+/**
+ * Genera lo script che porta in primo piano la finestra principale di un PID.
+ * Attende che la finestra esista: i programmi appena avviati non ce l'hanno subito.
+ * @param {number} pid
+ * @param {{timeoutMs?: number}} [options]
+ * @returns {string}
+ */
+export function buildFocusPidScript(pid, { timeoutMs = 4000, processName = null } = {}) {
+  const attempts = Math.max(1, Math.round(Number(timeoutMs) / 150));
+  const lines = [
+    WINDOW_PINVOKE,
+    FOCUS_HELPER,
+    `$target = ${Number(pid)}`,
+    `for ($i = 0; $i -lt ${attempts}; $i++) {`,
+    '  $p = Get-Process -Id $target -ErrorAction SilentlyContinue',
+    '  if ($null -ne $p) {',
+    '    $p.Refresh()',
+    '    if ($p.MainWindowHandle -ne [IntPtr]::Zero) {',
+    '      if (Wdeck-Focus $p.MainWindowHandle) { Write-Output "focus:ok"; exit 0 }',
+    '    }',
+    '  }'
+  ];
+
+  // Diversi programmi non tengono la finestra sul processo che si e' avviato:
+  // il Blocco note di Windows 11 passa il documento a un'istanza gia' viva, gli
+  // installer e i launcher di giochi delegano a un secondo eseguibile. Senza
+  // questo secondo tentativo per nome, il focus fallirebbe proprio nei casi in
+  // cui la finestra e' comparsa davvero.
+  if (processName) {
+    const b64 = Buffer.from(String(processName), 'utf8').toString('base64');
+    lines.push(
+      `  $name = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64}'))`,
+      '  $alt = Get-Process -Name $name -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Sort-Object StartTime -Descending | Select-Object -First 1',
+      '  if ($null -ne $alt) {',
+      '    if (Wdeck-Focus $alt.MainWindowHandle) { Write-Output "focus:ok"; exit 0 }',
+      '  }'
+    );
+  }
+
+  lines.push(
+    '  Start-Sleep -Milliseconds 150',
+    '}',
+    'Write-Output "focus:none"'
+  );
+  return lines.join('\n');
+}
+
+/**
+ * Genera lo script che porta in primo piano una finestra cercata per nome
+ * di processo o per titolo (confronto case-insensitive, con caratteri jolly).
+ * @param {{process?: string, title?: string}} spec
+ * @returns {string}
+ */
+export function buildFocusWindowScript({ process: procName, title }) {
+  const b64 = (v) => Buffer.from(String(v), 'utf8').toString('base64');
+  const lines = [
+    WINDOW_PINVOKE,
+    FOCUS_HELPER,
+    '$cands = Get-Process | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero }'
+  ];
+  if (procName) {
+    lines.push(
+      `$n = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64(procName)}'))`,
+      '$cands = $cands | Where-Object { $_.ProcessName -like $n -or $_.ProcessName -eq [System.IO.Path]::GetFileNameWithoutExtension($n) }'
+    );
+  }
+  if (title) {
+    lines.push(
+      `$t = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64(title)}'))`,
+      '$cands = $cands | Where-Object { $_.MainWindowTitle -like "*$t*" }'
+    );
+  }
+  lines.push(
+    '$target = $cands | Sort-Object -Property StartTime -Descending | Select-Object -First 1',
+    'if ($null -eq $target) { Write-Output "focus:none"; exit 3 }',
+    'if (Wdeck-Focus $target.MainWindowHandle) { Write-Output "focus:ok" } else { Write-Output "focus:failed"; exit 4 }'
+  );
+  return lines.join('\n');
+}
+
+/**
+ * Porta in primo piano la finestra di un processo appena avviato.
+ * Non lancia mai: il focus e' un "di piu'", il programma e' comunque partito.
+ * @param {number} pid
+ * @param {{timeoutMs?: number}} [options]
+ * @returns {Promise<boolean>}
+ */
+export async function focusPid(pid, options = {}) {
+  if (!isWindows() || !pid) return false;
+  // Il nome del processo si ricava dal percorso dell'eseguibile lanciato e
+  // serve al tentativo di riserva quando il pid non possiede la finestra.
+  const processName = options.processName
+    ?? (options.exePath ? path.basename(options.exePath, path.extname(options.exePath)) : null);
+  try {
+    const res = await runPowerShell(
+      buildFocusPidScript(pid, { ...options, processName }),
+      { timeoutMs: (options.timeoutMs ?? 4000) + 3000 }
+    );
+    return res.code === 0 && res.stdout.includes('focus:ok');
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Determina il comando da usare per eseguire uno script in base all'estensione.
  * Funzione pura, testabile su qualunque piattaforma.
  * @param {string} scriptPath

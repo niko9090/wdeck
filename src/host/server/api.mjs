@@ -4,6 +4,7 @@
  */
 
 import { ENDPOINTS, ERROR_CODES, PROTOCOL_VERSION, LITE_PROTOCOL_VERSION, LITE_FIELDS, toLitePage } from '../../../shared/protocol.mjs';
+import { CATEGORIES } from '../actions/registry.mjs';
 
 const MAX_BODY = 64 * 1024;
 
@@ -69,6 +70,11 @@ export function publicDeck(deck) {
     name: deck.name,
     defaultProfile: deck.defaultProfile,
     ui: deck.settings.ui,
+    // Le integrazioni contengono password e token: al client serve solo sapere
+    // quali sono configurate, per poter mostrare o meno le relative azioni.
+    integrations: Object.fromEntries(
+      Object.entries(deck.settings.integrations ?? {}).map(([name, config]) => [name, { configured: Object.keys(config ?? {}).length > 0 }])
+    ),
     profiles: deck.profiles
   };
 }
@@ -134,7 +140,72 @@ export function createApiRouter(host) {
 
     [`GET ${ENDPOINTS.actions}`]: (req, res) => {
       if (!requireAuth(req, res)) return;
-      sendJson(res, 200, { ok: true, actions: registry.list() });
+      sendJson(res, 200, {
+        ok: true,
+        actions: registry.list(),
+        categories: CATEGORIES,
+        // Raggruppate lato host: l'editor le mostra cosi' come arrivano,
+        // senza dover conoscere l'ordine delle categorie.
+        groups: registry.byCategory(),
+        platform: process.platform
+      });
+    },
+
+    [`POST ${ENDPOINTS.save}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const body = await readJsonBody(req);
+      if (!body.deck) {
+        sendError(res, 400, ERROR_CODES.badRequest, 'campo "deck" mancante');
+        return;
+      }
+      const result = host.saveDeck(body.deck);
+      if (!result.ok) {
+        sendJson(res, 400, { ok: false, error: { code: ERROR_CODES.badRequest, message: result.message }, errors: result.errors });
+        return;
+      }
+      sendJson(res, 200, { ok: true, deck: publicDeck(result.deck), state: state.snapshot(), backup: result.backup });
+    },
+
+    [`GET ${ENDPOINTS.settings}`]: (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const deck = configStore.get();
+      sendJson(res, 200, {
+        ok: true,
+        settings: {
+          server: deck.settings.server,
+          ui: deck.settings.ui,
+          tray: deck.settings.tray,
+          updates: deck.settings.updates,
+          // Del blocco sicurezza si espone la forma, mai i valori.
+          security: {
+            requireToken: deck.settings.security.requireToken,
+            pinConfigured: Boolean(deck.settings.security.pin),
+            pinLength: deck.settings.security.pin ? String(deck.settings.security.pin).length : 0,
+            dryRun: deck.settings.security.dryRun,
+            allowExec: deck.settings.security.allowExec,
+            allowUrlSchemes: deck.settings.security.allowUrlSchemes
+          }
+        }
+      });
+    },
+
+    [`POST ${ENDPOINTS.settings}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const body = await readJsonBody(req);
+      const result = host.updateSettings(body);
+      if (!result.ok) {
+        sendError(res, 400, ERROR_CODES.badRequest, result.message);
+        return;
+      }
+      sendJson(res, 200, { ok: true, changed: result.changed });
+    },
+
+    [`GET ${ENDPOINTS.update}`]: async (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      const status = url.searchParams.get('check') === '1'
+        ? await host.updates.check({ force: true })
+        : host.updates.status;
+      sendJson(res, 200, { ok: true, update: status });
     },
 
     [`POST ${ENDPOINTS.press}`]: async (req, res) => {
@@ -145,6 +216,7 @@ export function createApiRouter(host) {
         profileId: body.profileId,
         pageId: body.pageId,
         hold: body.hold === true,
+        value: body.value,
         // il client puo' solo rendere l'esecuzione piu' prudente, mai meno
         dryRun: state.dryRun || body.dryRun === true,
         source: 'rest'

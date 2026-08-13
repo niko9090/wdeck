@@ -67,7 +67,10 @@ export function extractToken(req) {
 export function createAuth(config = {}) {
   let token = config.token && config.token.length > 0 ? config.token : generateToken();
   const requireToken = config.requireToken !== false;
-  const pin = config.pin ?? '';
+  // Il PIN e' modificabile a caldo dalle impostazioni: le sessioni gia'
+  // accoppiate continuano a funzionare, cambia solo cosa serve per accoppiarne
+  // di nuove.
+  let pin = config.pin ?? '';
   const generated = !(config.token && config.token.length > 0);
 
   return {
@@ -84,6 +87,15 @@ export function createAuth(config = {}) {
     /** true se il pairing tramite PIN e' abilitato. */
     get pinEnabled() {
       return typeof pin === 'string' && pin.length > 0;
+    },
+
+    /**
+     * Sostituisce il PIN di pairing. Una stringa vuota disattiva il pairing.
+     * @param {string} next
+     */
+    setPin(next) {
+      pin = typeof next === 'string' ? next : '';
+      return pin.length > 0;
     },
 
     /**

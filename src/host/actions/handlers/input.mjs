@@ -8,6 +8,7 @@ export const mediaAction = {
   title: 'Tasti multimediali',
   description: 'Invia un tasto multimediale di sistema (play/pausa, brano precedente/successivo, volume, muto).',
   platforms: ['win32'],
+  category: 'media',
   paramsHelp: { key: Object.keys(MEDIA_KEYS).join(' | '), repeat: 'intero 1..20 (default 1)' },
   validate(params) {
     resolveMediaKey(params?.key);
@@ -34,6 +35,7 @@ export const hotkeyAction = {
   title: 'Hotkey',
   description: 'Invia una combinazione di tasti, ad esempio "ctrl+shift+m" oppure "win+d".',
   platforms: ['win32'],
+  category: 'input',
   paramsHelp: { keys: 'es. "ctrl+alt+del", "win+l", "f5"', repeat: 'intero 1..20 (default 1)' },
   validate(params) {
     parseHotkey(params?.keys);
@@ -65,6 +67,7 @@ export const textAction = {
   title: 'Digitazione testo',
   description: 'Digita un testo nella finestra attiva tramite SendKeys.',
   platforms: ['win32'],
+  category: 'input',
   paramsHelp: { text: 'testo da digitare (max 2000 caratteri)' },
   validate(params) {
     const text = params?.text;

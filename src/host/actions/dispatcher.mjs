@@ -141,8 +141,8 @@ export function createDispatcher({ registry, state, getDeck, baseDir, logger = c
   }
 
   /**
-   * Gestisce la pressione di un bottone.
-   * @param {{buttonId: string, profileId?: string, pageId?: string, source?: string, dryRun?: boolean, hold?: boolean}} req
+   * Gestisce la pressione di un bottone (o il trascinamento di uno slider).
+   * @param {{buttonId: string, profileId?: string, pageId?: string, source?: string, dryRun?: boolean, hold?: boolean, value?: number}} req
    */
   async function press(req) {
     const deck = getDeck();
@@ -164,7 +164,22 @@ export function createDispatcher({ registry, state, getDeck, baseDir, logger = c
       };
     }
 
-    const action = req.hold && found.button.holdAction ? found.button.holdAction : found.button.action;
+    let action = req.hold && found.button.holdAction ? found.button.holdAction : found.button.action;
+
+    // Uno slider manda il valore trascinato: diventa un parametro dell'azione,
+    // cosi' gli handler non devono sapere nulla del trasporto.
+    if (req.value !== undefined) {
+      const value = Number(req.value);
+      if (!Number.isFinite(value)) {
+        return {
+          ok: false,
+          buttonId,
+          error: { code: ERROR_CODES.badRequest, message: `campo "value" non numerico: ${req.value}` }
+        };
+      }
+      action = { ...action, params: { ...(action.params ?? {}), value } };
+    }
+
     const outcome = await execute(action, {
       source: req.source ?? 'api',
       dryRun: req.dryRun ?? state.dryRun,

@@ -6,6 +6,10 @@ dist/
 Thumbs.db
 # runtime state generato dall'host
 .wdeck-runtime.json
+# backup automatici creati dall'editor visuale
+.wdeck-backup/
+# archivi di distribuzione
+release/
 # PlatformIO
 firmware/esp32/.pio/
 firmware/esp32/.vscode/

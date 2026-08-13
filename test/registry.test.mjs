@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createRegistry } from '../src/host/actions/registry.mjs';
+import { createRegistry, CATEGORIES } from '../src/host/actions/registry.mjs';
 import { createDefaultRegistry, builtinHandlers } from '../src/host/actions/handlers/index.mjs';
 
 const dummy = (type = 'demo') => ({
@@ -68,7 +68,10 @@ test('registry: types() e list() sono ordinati e serializzabili', () => {
   assert.deepEqual(registry.types(), ['alfa', 'zeta']);
   const list = registry.list();
   assert.equal(list.length, 2);
-  assert.deepEqual(Object.keys(list[0]).sort(), ['description', 'paramsHelp', 'platforms', 'stub', 'title', 'type']);
+  assert.deepEqual(
+    Object.keys(list[0]).sort(),
+    ['category', 'control', 'description', 'paramsHelp', 'platforms', 'stub', 'title', 'type']
+  );
   assert.doesNotThrow(() => JSON.stringify(list));
 });
 
@@ -83,9 +86,29 @@ test('registry: supportsPlatform rispetta il campo platforms', () => {
 
 test('registry predefinito: contiene tutte le azioni documentate', () => {
   const registry = createDefaultRegistry();
-  const expected = ['delay', 'hotkey', 'http', 'launch', 'media', 'navigate', 'noop', 'script', 'sequence', 'stub', 'text', 'url'];
+  const expected = [
+    'brightness', 'browser', 'clipboard', 'delay', 'desktop', 'focus', 'folder', 'game',
+    'homeassistant', 'hotkey', 'http', 'hue', 'launch', 'media', 'mic', 'navigate', 'noop',
+    'notify', 'obs', 'power', 'rdp', 'screenshot', 'script', 'sequence', 'stub', 'text',
+    'url', 'volume', 'window'
+  ];
   assert.deepEqual(registry.types(), expected);
   assert.equal(registry.size, builtinHandlers.length);
+});
+
+test('registry predefinito: ogni azione dichiara una categoria nota', () => {
+  const registry = createDefaultRegistry();
+  const known = new Set(CATEGORIES.map((c) => c.id));
+  const senzaCategoria = registry.list().filter((a) => !known.has(a.category));
+  assert.deepEqual(senzaCategoria.map((a) => a.type), [], 'ogni azione deve finire in una categoria dell\'editor');
+});
+
+test('registry: byCategory raggruppa senza perdere azioni', () => {
+  const registry = createDefaultRegistry();
+  const groups = registry.byCategory();
+  const raggruppate = groups.flatMap((g) => g.actions.map((a) => a.type)).sort();
+  assert.deepEqual(raggruppate, registry.types());
+  assert.ok(groups.every((g) => g.label && g.actions.length > 0), 'nessun gruppo vuoto o senza etichetta');
 });
 
 test('registry predefinito: accetta handler aggiuntivi (plugin)', () => {

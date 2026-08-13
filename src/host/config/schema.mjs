@@ -30,8 +30,14 @@ export const DEFAULT_SETTINGS = Object.freeze({
     allowExec: [],
     maxSequenceSteps: 32
   },
-  ui: { theme: 'dark', accent: '#4c8dff', showLabels: true }
+  ui: { theme: 'dark', accent: '#4c8dff', showLabels: true },
+  tray: { enabled: true },
+  updates: { check: true, repository: 'niko9090/wdeck' },
+  integrations: {}
 });
+
+/** Tipi di controllo che un elemento della griglia puo' assumere. */
+export const CONTROL_KINDS = ['button', 'slider'];
 
 class Ctx {
   constructor() {
@@ -97,7 +103,36 @@ function validateSettings(ctx, settings) {
     return;
   }
 
-  const { server, security, ui } = settings;
+  const { server, security, ui, tray, updates, integrations } = settings;
+
+  if (tray !== undefined) {
+    if (!isPlainObject(tray)) ctx.err('settings.tray', 'atteso oggetto');
+    else checkBool(ctx, 'settings.tray.enabled', tray.enabled);
+  }
+
+  if (updates !== undefined) {
+    if (!isPlainObject(updates)) ctx.err('settings.updates', 'atteso oggetto');
+    else {
+      checkBool(ctx, 'settings.updates.check', updates.check);
+      if (updates.repository !== undefined) {
+        checkString(ctx, 'settings.updates.repository', updates.repository, {
+          pattern: /^[\w.-]+\/[\w.-]+$/,
+          label: 'formato utente/repository'
+        });
+      }
+    }
+  }
+
+  // Le integrazioni sono coppie nome -> configurazione libera: ogni handler
+  // valida i propri campi, qui si controlla solo la forma generale.
+  if (integrations !== undefined) {
+    if (!isPlainObject(integrations)) ctx.err('settings.integrations', 'atteso oggetto');
+    else {
+      for (const [name, value] of Object.entries(integrations)) {
+        if (!isPlainObject(value)) ctx.err(`settings.integrations.${name}`, 'atteso oggetto');
+      }
+    }
+  }
 
   if (server !== undefined) {
     if (!isPlainObject(server)) ctx.err('settings.server', 'atteso oggetto');
@@ -180,6 +215,24 @@ function validateButton(ctx, path, button, page, seen, actionTypes) {
   checkInt(ctx, `${path}.row`, button.row, { required: true, min: 0, max: LIMITS.maxRows - 1 });
   checkInt(ctx, `${path}.col`, button.col, { required: true, min: 0, max: LIMITS.maxCols - 1 });
   if (button.icon !== undefined) checkString(ctx, `${path}.icon`, button.icon, { pattern: /^[a-z0-9][a-z0-9-]{0,23}$/, label: 'nome icona' });
+
+  if (button.kind !== undefined && !CONTROL_KINDS.includes(button.kind)) {
+    ctx.err(`${path}.kind`, `valore ammesso: ${CONTROL_KINDS.join(' | ')}`);
+  }
+  checkBool(ctx, `${path}.confirm`, button.confirm);
+
+  // Uno slider occupa piu' celle in orizzontale e ha un proprio intervallo.
+  if (button.span !== undefined) checkInt(ctx, `${path}.span`, button.span, { min: 1, max: LIMITS.maxCols });
+  for (const key of ['min', 'max', 'step']) {
+    if (button[key] !== undefined) checkInt(ctx, `${path}.${key}`, button[key], { min: 0, max: 1000 });
+  }
+  if (button.kind === 'slider') {
+    const min = button.min ?? 0;
+    const max = button.max ?? 100;
+    if (typeof min === 'number' && typeof max === 'number' && min >= max) {
+      ctx.err(`${path}.max`, `"max" (${max}) deve essere maggiore di "min" (${min})`);
+    }
+  }
   if (button.color !== undefined) checkString(ctx, `${path}.color`, button.color, { pattern: HEX_COLOR_RE, label: 'colore hex' });
   if (button.textColor !== undefined) checkString(ctx, `${path}.textColor`, button.textColor, { pattern: HEX_COLOR_RE, label: 'colore hex' });
 
@@ -190,9 +243,17 @@ function validateButton(ctx, path, button, page, seen, actionTypes) {
     ctx.err(`${path}.col`, `colonna ${button.col} fuori dalla griglia (cols=${page.cols})`);
   }
 
-  const cell = `${button.row}:${button.col}`;
-  if (seen.cells.has(cell)) ctx.err(path, `cella ${cell} gia' occupata dal bottone "${seen.cells.get(cell)}"`);
-  else seen.cells.set(cell, button.id);
+  // Un controllo con span > 1 occupa piu' celle consecutive sulla stessa riga:
+  // vanno marcate tutte, altrimenti un bottone potrebbe finirci sotto.
+  const span = Number.isInteger(button.span) && button.span > 0 ? button.span : 1;
+  if (typeof button.col === 'number' && typeof page.cols === 'number' && button.col + span > page.cols) {
+    ctx.err(`${path}.span`, `il controllo largo ${span} celle da colonna ${button.col} esce dalla griglia (cols=${page.cols})`);
+  }
+  for (let offset = 0; offset < span; offset += 1) {
+    const cell = `${button.row}:${button.col + offset}`;
+    if (seen.cells.has(cell)) ctx.err(path, `cella ${cell} gia' occupata dal controllo "${seen.cells.get(cell)}"`);
+    else seen.cells.set(cell, button.id);
+  }
 
   if (typeof button.id === 'string') {
     if (seen.buttonIds.has(button.id)) ctx.err(`${path}.id`, `id bottone duplicato: "${button.id}" (gli id devono essere univoci nell'intero deck)`);
@@ -364,6 +425,12 @@ export function normalizeDeck(raw) {
         label: button.label ?? '',
         row: button.row,
         col: button.col,
+        kind: button.kind ?? 'button',
+        span: button.span ?? (button.kind === 'slider' ? 2 : 1),
+        confirm: button.confirm === true,
+        ...(button.kind === 'slider'
+          ? { min: button.min ?? 0, max: button.max ?? 100, step: button.step ?? 1 }
+          : {}),
         icon: button.icon ?? null,
         color: button.color ?? null,
         textColor: button.textColor ?? null,

@@ -9,9 +9,27 @@ import input from './input.mjs';
 import system from './system.mjs';
 import net from './net.mjs';
 import flow from './flow.mjs';
+import levels from './levels.mjs';
+import windowHandlers from './window.mjs';
+import power from './power.mjs';
+import apps from './apps.mjs';
+import productivity from './productivity.mjs';
+import integrations from './integrations.mjs';
 
 /** Tutti gli handler inclusi, in ordine di caricamento. */
-export const builtinHandlers = [...basic, ...input, ...system, ...net, ...flow];
+export const builtinHandlers = [
+  ...basic,
+  ...input,
+  ...system,
+  ...net,
+  ...flow,
+  ...levels,
+  ...windowHandlers,
+  ...power,
+  ...apps,
+  ...productivity,
+  ...integrations
+];
 
 /**
  * Crea un registro popolato con gli handler predefiniti.

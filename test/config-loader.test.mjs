@@ -163,3 +163,23 @@ test('store: watch() ricarica automaticamente alla modifica del file', async (t)
     assert.equal(deck.name, 'Ricaricato a caldo');
   }
 });
+
+test('host: un deck.json non valido non fa terminare l\'host', async (t) => {
+  // Regressione: configStore emette "error" quando la ricarica fallisce. Senza
+  // un ascoltatore registrato Node trasforma quell'evento in un'eccezione non
+  // gestita e il processo muore, perdendo anche la configurazione valida che
+  // aveva gia' in memoria.
+  const { file, cleanup } = tempDeck(rawDeck());
+  t.after(cleanup);
+
+  const { createHost } = await import('../src/host/index.mjs');
+  const silent = { info() {}, warn() {}, error() {}, debug() {} };
+  const host = createHost({ configFile: file, logger: silent, watch: false });
+  t.after(() => host.stop());
+
+  const profiliBuoni = host.configStore.get().profiles.length;
+  fs.writeFileSync(file, JSON.stringify({ version: 1, profiles: [] }, null, 2));
+
+  assert.doesNotThrow(() => host.reload(), 'una ricarica fallita non deve propagare eccezioni');
+  assert.equal(host.configStore.get().profiles.length, profiliBuoni, 'resta attiva la configurazione precedente');
+});

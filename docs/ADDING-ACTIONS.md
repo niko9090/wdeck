@@ -158,6 +158,59 @@ fallire la suite.
 
 ## 6. Azioni incluse
 
+Ogni handler dichiara anche una `category` (usata dall'editor per raggruppare le
+azioni) e un `control`, che vale `button` salvo per le azioni pilotabili con un
+cursore, dove vale `slider`.
+
+### Media e audio
+
+| tipo | piattaforme | descrizione |
+|---|---|---|
+| `volume` | win32 | volume di sistema assoluto 0..100, delta o muto (cursore) |
+| `mic` | win32 | volume e muto del microfono predefinito (cursore) |
+
+### Finestre e desktop
+
+| tipo | piattaforme | descrizione |
+|---|---|---|
+| `focus` | win32 | porta in primo piano una finestra gia' aperta, per processo o titolo |
+| `desktop` | win32 | passa a un desktop virtuale per numero, per nome o di uno a destra/sinistra |
+| `window` | win32 | mostra il desktop, minimizza tutto, chiudi, affianca, massimizza, cambia finestra |
+
+### Sistema e alimentazione
+
+| tipo | piattaforme | descrizione |
+|---|---|---|
+| `brightness` | win32 | luminosita' 0..100 via WMI, DDC/CI o gamma ramp (cursore) |
+| `power` | win32 | blocca, sospendi, iberna, spegni, riavvia, disconnetti, spegni lo schermo |
+
+### Programmi, browser e desktop remoti
+
+| tipo | piattaforme | descrizione |
+|---|---|---|
+| `game` | win32 | avvia un gioco via Steam, Epic, GOG, Xbox o percorso |
+| `browser` | win32 | apre un indirizzo in un browser scelto, con profilo, anonima o chiosco |
+| `rdp` | win32 | apre una connessione Desktop remoto (mstsc) |
+
+### Produttivita'
+
+| tipo | piattaforme | descrizione |
+|---|---|---|
+| `clipboard` | win32 | copia, incolla o svuota gli appunti |
+| `folder` | win32 | apre una cartella in Esplora file |
+| `screenshot` | win32 | cattura lo schermo in PNG o apre la cattura d'area |
+| `notify` | win32 | mostra una notifica di Windows sull'host |
+
+### Integrazioni
+
+| tipo | piattaforme | descrizione |
+|---|---|---|
+| `obs` | tutte | OBS Studio via obs-websocket v5: scene, registrazione, diretta, muto |
+| `homeassistant` | tutte | chiama un servizio di Home Assistant |
+| `hue` | tutte | accende, spegne e regola luci e gruppi Philips Hue |
+
+### Base
+
 | tipo | piattaforme | descrizione |
 |---|---|---|
 | `media` | win32 | tasti multimediali (play/pausa, next, prev, volume, muto) |

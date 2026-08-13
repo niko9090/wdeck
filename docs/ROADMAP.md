@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-12 - versione `0.1.0`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.0`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -115,8 +115,11 @@ quindi non esistono problemi di quoting o injection dai parametri.
   azioni rispondono `501` con un messaggio esplicito (e restano provabili in
   dry-run). Servono adattatori: `osascript`/CGEvent su macOS, `xdotool`/`ydotool`
   o `uinput` su Linux.
-- Nessun pacchetto di installazione, nessun avvio automatico, nessun servizio
-  Windows, nessuna icona in area di notifica.
+- Nessun servizio Windows vero e proprio. Non e' una dimenticanza: un servizio
+  gira nella sessione 0 e da li' non puo' inviare tasti ne' portare finestre in
+  primo piano nella sessione dell'utente, quindi meta' delle azioni smetterebbe
+  di funzionare. L'avvio automatico al login (`install.ps1 -Autostart`) ottiene
+  lo stesso risultato pratico senza quel limite.
 
 ### Sicurezza
 
@@ -129,12 +132,22 @@ quindi non esistono problemi di quoting o injection dai parametri.
 
 ### Funzionalita'
 
-- Nessun editor grafico della configurazione: `deck.json` si modifica a mano
+- L'editor visuale copre bottoni e cursori di una pagina, ma non ancora la
+  creazione di pagine e profili, ne' lo spostamento per trascinamento: per
+  quelli serve ancora modificare `deck.json`
   (con l'aiuto di [`schema/deck.schema.json`](../schema/deck.schema.json)).
 - Nessun caricamento di icone personalizzate (PNG/SVG dell'utente).
-- Nessun feedback di stato *reale* sui bottoni (es. il tasto muto non sa se il
-  sistema e' effettivamente muto): il protocollo lo prevede, la logica no.
-- Nessuna integrazione pronta: OBS, Home Assistant, MQTT, Spotify, Discord.
+- Feedback di stato reale solo sui cursori (volume, microfono, luminosita',
+  che rileggono il valore dal PC). I bottoni a due stati, come il muto, non
+  sanno ancora mostrare la condizione corrente.
+- Luminosita': su un PC con HDR attivo e monitor che rifiutano DDC/CI nessuno
+  dei tre metodi funziona, e l'azione fallisce con un messaggio esplicito.
+  Servirebbe un overlay di attenuazione, che e' un processo in piu' da tenere
+  vivo.
+- Integrazioni MQTT, Spotify e Discord ancora assenti (OBS, Home Assistant e
+  Hue ci sono).
+- L'aggiornamento viene segnalato ma non applicato: il download e la
+  sostituzione dei file restano a carico dell'utente.
 - Nessuna scoperta automatica dell'host (mDNS/Bonjour) ne' QR code per il pairing.
 - Nessuna localizzazione: interfaccia e messaggi solo in italiano.
 - Nessun bundling/minificazione del JavaScript della PWA (viene servito come

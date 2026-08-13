@@ -146,6 +146,7 @@ export function createHub(host) {
             profileId: msg.profileId,
             pageId: msg.pageId,
             hold: msg.hold === true,
+            value: msg.value,
             dryRun: state.dryRun || msg.dryRun === true,
             source: 'ws'
           });
@@ -285,6 +286,18 @@ export function createHub(host) {
     liteLayout,
     broadcastFull,
     broadcastLite,
+
+    /** Rimanda a tutti i client il deck aggiornato (usato dopo un salvataggio). */
+    broadcastDeck() {
+      broadcastFull({ type: MSG.deck, deck: publicDeck(configStore.get()), state: state.snapshot() });
+      broadcastLite(liteStatePayload());
+    },
+
+    /** Segnala a tutti i client che esiste una versione piu' recente. */
+    broadcastUpdate(status) {
+      broadcastFull({ type: MSG.event, event: 'update', data: status });
+    },
+
     close() {
       for (const conn of [...fullClients, ...liteClients]) conn.close(1001, 'server in chiusura');
       fullClients.clear();

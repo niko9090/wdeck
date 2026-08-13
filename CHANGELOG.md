@@ -3,6 +3,70 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.0] - 2026-08-13
+
+Prima versione installabile, con l'editor visuale e 17 azioni in piu'.
+
+### Aggiunto
+
+#### Client
+
+- **Cursori** per volume, microfono e luminosita': si trascinano come uno slider
+  e mostrano il valore reale letto dal PC. Gli invii sono limitati a uno ogni
+  120 ms piu' uno garantito al rilascio, per non lanciare decine di script.
+- **Scorrimento orizzontale** per cambiare pagina, con animazione direzionale e
+  un rimbalzo quando non c'e' altra pagina. Funzionano anche le frecce.
+- **Editor visuale**: la matita in alto attiva la modifica; si tocca un
+  controllo per cambiarlo o una cella vuota per aggiungerne uno, scegliendo
+  l'azione da un menu diviso per categorie con la descrizione dei parametri.
+  Il salvataggio passa dalla validazione dell'host e crea un backup.
+- **Piu' computer nella stessa app**: schede in alto per passare da un PC
+  all'altro, ognuno con il proprio token. Gestione da Impostazioni.
+- **Impostazioni** nel client: PIN modificabile, elenco dei computer,
+  controllo aggiornamenti.
+- **Conferma** prima delle azioni marcate `"confirm": true`.
+- L'esito delle azioni senza effetti visibili (script, notifiche, comandi
+  remoti) compare come messaggio: prima non si vedeva nulla.
+
+#### Host
+
+- **Icona nell'area di notifica** con menu: apri il deck, copia gli indirizzi,
+  ricarica la configurazione, controlla aggiornamenti, esci. Realizzata con
+  NotifyIcon di WinForms, senza dipendenze.
+- **Controllo aggiornamenti** sulle release di GitHub, con notifica nel client.
+  L'host non scarica e non installa nulla da solo.
+- **Salvataggio della configurazione** (`POST /api/deck/save`) con validazione,
+  scrittura atomica e backup ruotati in `.wdeck-backup/`.
+- **Impostazioni a caldo** (`GET`/`POST /api/settings`): PIN, tema, aggiornamenti.
+- 17 nuove azioni: `volume`, `mic`, `brightness`, `focus`, `desktop`, `window`,
+  `power`, `browser`, `game`, `rdp`, `clipboard`, `folder`, `screenshot`,
+  `notify`, `obs`, `homeassistant`, `hue`.
+- Le azioni dichiarano una **categoria** e un tipo di controllo, usati
+  dall'editor per raggrupparle.
+- **Installer** (`installer/install.ps1`): installazione nel profilo utente,
+  collegamenti, avvio automatico opzionale, generazione di token e PIN casuali,
+  disinstallazione che conserva `deck.json`.
+- `npm run package` prepara l'archivio da allegare a una release.
+
+### Corretto
+
+- **I programmi avviati restavano dietro alla finestra del browser.** `launch`
+  ora chiede esplicitamente il primo piano: Windows rifiuta
+  `SetForegroundWindow` a un processo che non ha il focus, quindi si aggancia
+  temporaneamente il thread di input della finestra attiva. Se il programma
+  delega la finestra a un'altra istanza (il Blocco note di Windows 11, i
+  launcher dei giochi) c'e' un secondo tentativo per nome di processo.
+- **L'interfaccia andava a scatti.** Tre cause distinte: mancava
+  `touch-action`, quindi il browser aspettava 300 ms per escludere un doppio
+  tap; l'azione partiva solo al rilascio, dopo un timer di 650 ms; e la griglia
+  veniva ricostruita a ogni messaggio di stato. Ora il tocco parte subito, il
+  timer serve solo ai bottoni con `holdAction`, e la griglia si ridisegna solo
+  quando cambia davvero.
+- **Un `deck.json` non valido faceva terminare l'host** durante la ricarica a
+  caldo, invece di lasciare attiva la configurazione precedente come
+  documentato: l'evento `error` del config store non aveva ascoltatori, e in
+  Node questo si traduce in un'eccezione non gestita. Coperto da un test.
+
 ## [0.1.0] - 2026-08-12
 
 Prima consegna: lavoro semi-finito, funzionante e valutabile.

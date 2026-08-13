@@ -5,6 +5,7 @@ export const sequenceAction = {
   title: 'Sequenza',
   description: 'Esegue in ordine una lista di azioni. Si ferma al primo errore, salvo continueOnError.',
   platforms: ['*'],
+  category: 'deck',
   paramsHelp: {
     steps: 'array di azioni { type, params }',
     continueOnError: 'boolean (default false)'

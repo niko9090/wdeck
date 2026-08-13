@@ -1,0 +1,165 @@
+/**
+ * Azioni "a livello": volume master, volume microfono, luminosita' schermo.
+ *
+ * A differenza dei tasti media, queste azioni leggono e scrivono un valore
+ * assoluto: sono quelle che alimentano gli slider del client. Ogni handler
+ * dichiara `control: 'slider'` perche' l'editor sappia offrirle come cursore
+ * invece che come pulsante, e restituisce sempre il livello risultante cosi'
+ * che il client possa allineare la posizione del cursore alla realta'.
+ */
+
+import {
+  buildAdjustBrightnessScript,
+  buildAdjustVolumeScript,
+  buildMuteScript,
+  buildReadBrightnessScript,
+  buildReadVolumeScript,
+  buildSetBrightnessScript,
+  buildSetVolumeScript,
+  clampPercent,
+  runLevelScript
+} from '../../platform/levels.mjs';
+
+/** Legge il modo in cui l'azione e' stata invocata: valore assoluto, delta o lettura. */
+function resolveMode(params) {
+  if (params?.value !== undefined) return { mode: 'set', amount: clampPercent(params.value) };
+  if (params?.delta !== undefined) return { mode: 'adjust', amount: Number(params.delta) };
+  if (params?.set !== undefined) return { mode: 'set', amount: clampPercent(params.set) };
+  return { mode: 'read', amount: null };
+}
+
+function validateLevelParams(params) {
+  if (params?.value !== undefined && !Number.isFinite(Number(params.value))) {
+    throw new Error('parametro "value" non valido: atteso numero 0..100');
+  }
+  if (params?.set !== undefined && !Number.isFinite(Number(params.set))) {
+    throw new Error('parametro "set" non valido: atteso numero 0..100');
+  }
+  if (params?.delta !== undefined) {
+    const d = Number(params.delta);
+    if (!Number.isFinite(d) || d < -100 || d > 100) {
+      throw new Error('parametro "delta" non valido: atteso numero fra -100 e 100');
+    }
+  }
+}
+
+/**
+ * Costruisce un handler volume per il canale indicato: la logica di altoparlanti
+ * e microfono e' identica, cambia solo il dispositivo Core Audio interrogato.
+ * @param {{type: string, target: 'speaker'|'mic', title: string, description: string, category: string}} spec
+ */
+function makeVolumeAction({ type, target, title, description, category }) {
+  return {
+    type,
+    title,
+    description,
+    platforms: ['win32'],
+    category,
+    control: 'slider',
+    paramsHelp: {
+      value: 'livello assoluto 0..100 (inviato dallo slider)',
+      set: 'livello assoluto 0..100 (alternativa a value, per un pulsante fisso)',
+      delta: 'variazione relativa -100..100, es. -5 per abbassare',
+      mute: 'true | false | "toggle"'
+    },
+    validate(params) {
+      validateLevelParams(params);
+      if (params?.mute !== undefined && ![true, false, 'toggle'].includes(params.mute)) {
+        throw new Error('parametro "mute" non valido: atteso true, false o "toggle"');
+      }
+    },
+    describe(params) {
+      if (params?.mute !== undefined) return `${title}: muto = ${params.mute}`;
+      const { mode, amount } = resolveMode(params);
+      if (mode === 'set') return `${title} al ${amount}%`;
+      if (mode === 'adjust') return `${title} ${amount > 0 ? '+' : ''}${amount}%`;
+      return `${title}: lettura`;
+    },
+    async run(params, ctx) {
+      if (params?.mute !== undefined) {
+        if (ctx.dryRun) return { ok: true, simulated: true, detail: `imposterebbe muto=${params.mute} su ${target}` };
+        const out = await runLevelScript(buildMuteScript(target, params.mute), { what: `muto ${target}` });
+        return { ok: true, detail: `${title}: ${out.muted ? 'muto' : 'audio attivo'} (${out.volume}%)`, level: out.volume, muted: out.muted };
+      }
+
+      const { mode, amount } = resolveMode(params);
+      if (ctx.dryRun) {
+        const what = mode === 'read' ? 'leggerebbe il livello' : `porterebbe il livello a ${mode === 'set' ? `${amount}%` : `${amount > 0 ? '+' : ''}${amount}%`}`;
+        return { ok: true, simulated: true, detail: `${title}: ${what}` };
+      }
+
+      let script;
+      if (mode === 'set') script = buildSetVolumeScript(target, amount);
+      else if (mode === 'adjust') script = buildAdjustVolumeScript(target, amount);
+      else script = buildReadVolumeScript(target);
+
+      const out = await runLevelScript(script, { what: title.toLowerCase() });
+      return {
+        ok: true,
+        detail: `${title}: ${out.volume}%${out.muted ? ' (muto)' : ''}`,
+        level: out.volume,
+        muted: out.muted
+      };
+    }
+  };
+}
+
+export const volumeAction = makeVolumeAction({
+  type: 'volume',
+  target: 'speaker',
+  title: 'Volume di sistema',
+  description: 'Legge o imposta il volume master in percentuale. Usata dagli slider del client; '
+    + 'con "delta" funziona anche come pulsante +/-, con "mute" come interruttore.',
+  category: 'media'
+});
+
+export const micAction = makeVolumeAction({
+  type: 'mic',
+  target: 'mic',
+  title: 'Microfono',
+  description: 'Legge o imposta il volume del microfono predefinito, oppure lo silenzia. '
+    + 'Il classico "push to mute" per riunioni e dirette.',
+  category: 'media'
+});
+
+export const brightnessAction = {
+  type: 'brightness',
+  title: 'Luminosita\' schermo',
+  description: 'Legge o imposta la luminosita\' in percentuale. Prova nell\'ordine WMI (pannelli dei '
+    + 'portatili), DDC/CI (monitor esterni) e infine l\'attenuazione software via gamma ramp.',
+  platforms: ['win32'],
+  category: 'system',
+  control: 'slider',
+  paramsHelp: {
+    value: 'livello assoluto 0..100 (inviato dallo slider)',
+    set: 'livello assoluto 0..100',
+    delta: 'variazione relativa -100..100'
+  },
+  validate: validateLevelParams,
+  describe(params) {
+    const { mode, amount } = resolveMode(params);
+    if (mode === 'set') return `luminosita' al ${amount}%`;
+    if (mode === 'adjust') return `luminosita' ${amount > 0 ? '+' : ''}${amount}%`;
+    return 'luminosita\': lettura';
+  },
+  async run(params, ctx) {
+    const { mode, amount } = resolveMode(params);
+    if (ctx.dryRun) {
+      const what = mode === 'read' ? 'leggerebbe la luminosita\'' : `porterebbe la luminosita' a ${amount}%`;
+      return { ok: true, simulated: true, detail: what };
+    }
+
+    let script;
+    if (mode === 'set') script = buildSetBrightnessScript(amount);
+    else if (mode === 'adjust') script = buildAdjustBrightnessScript(amount);
+    else script = buildReadBrightnessScript();
+
+    // La compilazione C# del primo avvio e' lenta: il timeout va oltre i 12s
+    // di default, altrimenti la prima pressione fallisce sempre.
+    const out = await runLevelScript(script, { what: 'luminosita\'', timeoutMs: 30000 });
+    const via = out.mode === 'gamma' ? ' (attenuazione software)' : '';
+    return { ok: true, detail: `luminosita': ${out.brightness}%${via}`, level: out.brightness, mode: out.mode };
+  }
+};
+
+export default [volumeAction, micAction, brightnessAction];

@@ -32,6 +32,9 @@ export const ENDPOINTS = {
   pair: '/api/pair',
   actions: '/api/actions',
   reload: '/api/reload',
+  save: '/api/deck/save',
+  settings: '/api/settings',
+  update: '/api/update',
   ws: '/ws',
   // --- lite API (ESP32) ---
   liteDeck: '/api/lite/deck',
@@ -56,6 +59,12 @@ export const MSG = {
   ping: 'ping',
   pong: 'pong'
 };
+
+/**
+ * Nomi dei controlli ammessi in una griglia.
+ * `slider` invia il valore trascinato nel campo `value` del messaggio press.
+ */
+export const CONTROLS = { button: 'button', slider: 'slider' };
 
 /**
  * Mappa dei nomi di campo compatti del protocollo lite.

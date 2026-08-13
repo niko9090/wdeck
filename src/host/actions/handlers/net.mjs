@@ -7,6 +7,7 @@ export const httpAction = {
   title: 'Richiesta HTTP',
   description: 'Invia una richiesta HTTP (webhook). Utile per Home Assistant, Node-RED, OBS via plugin REST.',
   platforms: ['*'],
+  category: 'browser',
   paramsHelp: {
     url: 'URL http/https',
     method: ALLOWED_METHODS.join(' | '),

@@ -2,7 +2,7 @@
 
 import fs from 'node:fs';
 import { checkExecutable, checkUrl } from '../../security/allowlist.mjs';
-import { buildOpenUrlScript, launchProcess, runPowerShell, runScript, resolveScriptRunner } from '../../platform/windows.mjs';
+import { buildOpenUrlScript, focusPid, launchProcess, runPowerShell, runScript, resolveScriptRunner } from '../../platform/windows.mjs';
 
 function assertArgs(args) {
   if (args === undefined) return [];
@@ -18,10 +18,19 @@ export const launchAction = {
   title: 'Avvia programma',
   description: 'Avvia un eseguibile. Il percorso deve comparire nella whitelist settings.security.allowExec.',
   platforms: ['*'],
-  paramsHelp: { path: 'percorso eseguibile', args: 'array di stringhe (opzionale)', cwd: 'directory di lavoro (opzionale)' },
+  category: 'app',
+  paramsHelp: {
+    path: 'percorso eseguibile',
+    args: 'array di stringhe (opzionale)',
+    cwd: 'directory di lavoro (opzionale)',
+    foreground: 'true (default) porta la finestra in primo piano dopo l\'avvio'
+  },
   validate(params) {
     if (typeof params?.path !== 'string' || params.path.trim() === '') throw new Error('parametro "path" mancante');
     assertArgs(params?.args);
+    if (params?.foreground !== undefined && typeof params.foreground !== 'boolean') {
+      throw new Error('parametro "foreground" non valido: atteso booleano');
+    }
   },
   describe: (params) => `avvia ${params?.path}${params?.args?.length ? ` ${params.args.join(' ')}` : ''}`,
   async run(params, ctx) {
@@ -46,7 +55,15 @@ export const launchAction = {
     }
     if (!fs.existsSync(check.resolved)) throw new Error(`eseguibile non trovato: ${check.resolved}`);
     const { pid } = await launchProcess({ path: check.resolved, args, cwd: params.cwd });
-    return { ok: true, detail: `avviato ${check.resolved} (pid ${pid})`, pid };
+    // Senza questo passaggio Windows apre la finestra dietro al browser: il
+    // foreground lock impedisce a un processo senza focus di prendersi il focus.
+    const focused = params.foreground === false ? false : await focusPid(pid, { exePath: check.resolved });
+    return {
+      ok: true,
+      detail: `avviato ${check.resolved} (pid ${pid})${focused ? ' - in primo piano' : ''}`,
+      pid,
+      focused
+    };
   }
 };
 
@@ -55,6 +72,7 @@ export const urlAction = {
   title: 'Apri URL',
   description: 'Apre un URL con l\'applicazione predefinita di sistema. Lo schema deve essere in settings.security.allowUrlSchemes.',
   platforms: ['win32'],
+  category: 'browser',
   paramsHelp: { url: 'URL completo, es. https://example.com' },
   validate(params) {
     if (typeof params?.url !== 'string' || params.url.trim() === '') throw new Error('parametro "url" mancante');
@@ -82,6 +100,7 @@ export const scriptAction = {
   description: 'Esegue uno script .ps1/.bat/.cmd/.py/.mjs e restituisce stdout/stderr troncati. '
     + 'Il percorso deve comparire nella whitelist settings.security.allowExec.',
   platforms: ['*'],
+  category: 'script',
   paramsHelp: {
     path: 'percorso dello script',
     args: 'array di stringhe (opzionale)',

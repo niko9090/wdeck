@@ -5,6 +5,7 @@ export const noopAction = {
   title: 'Nessuna azione',
   description: 'Non fa nulla. Utile come segnaposto o per bottoni puramente decorativi.',
   platforms: ['*'],
+  category: 'deck',
   describe: () => 'nessuna azione',
   async run() {
     return { ok: true, detail: 'noop' };
@@ -16,6 +17,7 @@ export const delayAction = {
   title: 'Attesa',
   description: 'Attende un numero di millisecondi. Pensata per essere usata dentro una sequence.',
   platforms: ['*'],
+  category: 'deck',
   paramsHelp: { ms: 'intero 0..10000' },
   validate(params) {
     const ms = Number(params?.ms);
@@ -37,6 +39,7 @@ export const navigateAction = {
   title: 'Cambio pagina/profilo',
   description: 'Cambia la pagina o il profilo attivo e notifica tutti i client collegati.',
   platforms: ['*'],
+  category: 'deck',
   paramsHelp: { profile: 'id profilo (opzionale)', page: 'id pagina (opzionale)' },
   validate(params) {
     if (!params?.profile && !params?.page) {
@@ -64,6 +67,7 @@ export const stubAction = {
   description: 'Azione dichiaratamente non implementata: conferma la pressione ma non esegue nulla. '
     + 'Usata per marcare le integrazioni previste in roadmap (OBS, MQTT, Home Assistant...).',
   platforms: ['*'],
+  category: 'deck',
   stub: true,
   paramsHelp: { note: 'testo libero mostrato nella risposta' },
   describe: (params) => `stub: ${params?.note ?? 'non implementata'}`,

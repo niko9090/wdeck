@@ -201,6 +201,65 @@ supportata sulla piattaforma, `500` errore interno.
 Rilegge `deck.json` da disco. Se il file non e' valido la configurazione
 precedente resta attiva e la risposta e' `400` con l'elenco degli errori.
 
+### `POST /api/deck/save`
+
+Salva una configurazione modificata dall'editor visuale.
+
+```json
+{ "deck": { "version": 1, "profiles": [ ... ] } }
+```
+
+Il corpo viene fuso con la configurazione su disco, validato per intero e
+scritto in modo atomico; la versione precedente resta in `.wdeck-backup/`.
+Il blocco `settings.security` **non e' modificabile da qui**: token, PIN e
+whitelist non transitano mai per il client. Con una configurazione non valida
+risponde `400` con `errors[]` (`path` e `message` per ogni problema) e il file
+su disco non viene toccato.
+
+Al salvataggio riuscito l'host rimanda a tutti i client collegati il messaggio
+WebSocket `deck` aggiornato.
+
+### `GET /api/settings`
+
+Restituisce le impostazioni modificabili. Del blocco sicurezza espone solo la
+forma (`pinConfigured`, `pinLength`, `requireToken`, `allowExec`), mai i valori
+segreti.
+
+### `POST /api/settings`
+
+Aggiorna a caldo PIN, tema, preferenze di aggiornamento e icona nella barra:
+
+```json
+{ "pin": "135790", "ui": { "accent": "#4c8dff" }, "updates": { "check": true } }
+```
+
+Il PIN accetta da 4 a 12 cifre, oppure la stringa vuota per disattivare il
+pairing. I dispositivi gia' associati restano collegati: cambia solo cio' che
+serve per associarne di nuovi. Il token non si cambia da qui, perche'
+scollegherebbe ogni client.
+
+### `GET /api/update`
+
+Stato del controllo aggiornamenti. Con `?check=1` interroga subito le release
+di GitHub invece di restituire l'ultimo risultato in cache.
+
+```json
+{
+  "ok": true,
+  "update": {
+    "checkedAt": 1786012800000,
+    "available": true,
+    "current": "0.2.0",
+    "latest": { "version": "0.3.0", "url": "https://github.com/...", "notes": "...", "asset": { "name": "wdeck-0.3.0.zip" } },
+    "error": null
+  }
+}
+```
+
+L'host non scarica e non installa nulla: si limita a segnalarlo. Quando un
+aggiornamento compare, i client ricevono anche l'evento WebSocket
+`{ "type": "event", "event": "update" }`.
+
 ---
 
 ## 3. WebSocket full - `/ws`
