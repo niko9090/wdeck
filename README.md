@@ -60,7 +60,7 @@ funzionano su quale sistema, e cosa serve installare, e' nella tabella
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.2.7 - deck "Wdeck"
+  Wdeck host v0.2.8 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
   azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
@@ -158,7 +158,7 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (325 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (347 verifiche) |
 | `npm run smoke` | smoke test end-to-end su un host reale (46 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
@@ -172,11 +172,12 @@ Opzioni della CLI:
 node bin/wdeck.mjs --help
 node bin/wdeck.mjs --port 9000 --host 127.0.0.1   # solo locale
 node bin/wdeck.mjs --dry-run --no-watch
+node bin/wdeck.mjs --tls                          # HTTPS/WSS autofirmato
 node bin/wdeck.mjs --config .\deck-lavoro.json
 ```
 
 Equivalenti come variabili d'ambiente: `WDECK_PORT`, `WDECK_HOST`,
-`WDECK_TOKEN`, `WDECK_DRY_RUN`, `WDECK_REQUIRE_TOKEN`.
+`WDECK_TOKEN`, `WDECK_DRY_RUN`, `WDECK_REQUIRE_TOKEN`, `WDECK_TLS`.
 
 ### Integrazione continua
 
@@ -396,6 +397,14 @@ protezioni non sono un dettaglio.
   frequenza). E' JSONL, si legge con `tail` e si filtra con `grep`. Token, PIN e
   password non ci finiscono mai. Si legge anche da `GET /api/audit`.
 - **Dry-run**: i client possono attivarlo ma **non disattivarlo**.
+- **HTTPS/WSS opzionale** con certificato autofirmato generato all'avvio
+  (`--tls`, oppure `settings.server.tls.enabled`). Senza, il token viaggia in
+  chiaro dentro l'URL che apri sul telefono: chiunque sia sulla stessa rete
+  Wi-Fi puo' leggerlo. Il certificato copre `localhost`, `127.0.0.1` e gli
+  indirizzi della macchina, si rigenera quando scade o quando cambia rete, e
+  non richiede alcuna dipendenza: la struttura X.509 e' costruita nel progetto.
+  Non essendo firmato da un'autorita', il browser mostra un avviso la prima
+  volta. Chi ha un certificato vero lo indica con `certFile` e `keyFile`.
 - **Bind**: `127.0.0.1` per l'uso solo locale, `0.0.0.0` per la LAN.
 - Il layout inviato ai client **non contiene mai** token, PIN o whitelist.
 
@@ -408,9 +417,8 @@ node bin/wdeck.mjs --revoke-device d-1a2b3c4d5e
 node bin/wdeck.mjs --rotate-token
 ```
 
-Limiti noti: nessun HTTPS.
-Vedi la sezione *Mancante* di [`docs/ROADMAP.md`](docs/ROADMAP.md).
-Usare solo su una rete di cui ti fidi.
+Vedi la sezione *Mancante* di [`docs/ROADMAP.md`](docs/ROADMAP.md) per quello
+che resta scoperto.
 
 ---
 

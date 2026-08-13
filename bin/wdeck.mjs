@@ -27,6 +27,7 @@ Opzioni:
   --dry-run           simula le azioni senza eseguirle
   --no-token          disattiva l'autenticazione (SOLO per test in locale)
   --no-watch          disattiva la ricarica a caldo di deck.json
+  --tls               attiva HTTPS/WSS con certificato autofirmato
   --quiet             riduce i log
   -h, --help          mostra questo aiuto
 
@@ -132,6 +133,7 @@ function main() {
         'dry-run': { type: 'boolean', default: false },
         'no-token': { type: 'boolean', default: false },
         'no-watch': { type: 'boolean', default: false },
+        tls: { type: 'boolean', default: false },
         quiet: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
         'rotate-token': { type: 'boolean', default: false },
@@ -168,6 +170,7 @@ function main() {
   if (args.token) overrides.token = args.token;
   if (args['dry-run']) overrides.dryRun = true;
   if (args['no-token']) overrides.requireToken = false;
+  if (args.tls) overrides.tls = true;
 
   const logger = args.quiet
     ? { ...console, info: () => {}, debug: () => {} }
@@ -198,6 +201,7 @@ function main() {
       `  Wdeck host v${host.version} - deck "${host.configStore.get().name}"`,
       `  configurazione : ${host.configFile}`,
       `  piattaforma    : ${process.platform}`,
+      `  cifratura      : ${info.tls ? 'HTTPS/WSS attivo' : 'assente (traffico in chiaro)'}`,
       `  dry-run        : ${host.state.dryRun ? 'ATTIVO (nessuna azione reale)' : 'disattivato'}`,
       `  azioni         : ${host.registry.types().join(', ')}`,
       '',
@@ -205,6 +209,10 @@ function main() {
     ];
     for (const url of info.urls) {
       banner.push(`    ${url}${host.auth.required ? `?token=${encodeURIComponent(token)}` : ''}`);
+    }
+    if (info.tls && host.tls?.selfSigned) {
+      banner.push('', '  Il certificato e\' autofirmato: la prima volta il browser mostra un avviso,',
+        '  va accettato una volta sola per dispositivo.');
     }
     if (host.auth.required) {
       banner.push('', `  token : ${token}${host.auth.generated ? '  (generato automaticamente)' : ''}`);

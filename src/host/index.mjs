@@ -5,6 +5,7 @@
 
 import fs from 'node:fs';
 import http from 'node:http';
+import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,7 @@ import { createStatusTracker } from './status.mjs';
 import { createAuth } from './security/auth.mjs';
 import { createRateLimits } from './security/ratelimit.mjs';
 import { createIconStore } from './icons.mjs';
+import { loadTlsOptions } from './security/tls.mjs';
 import { createAuditLog, pressEntry } from './audit.mjs';
 import { createApiRouter } from './server/api.mjs';
 import { createHub } from './server/hub.mjs';
@@ -312,7 +314,31 @@ export function createHost(options = {}) {
     }
   });
 
-  const server = http.createServer(async (req, res) => {
+  // Senza cifratura il token viaggia in chiaro dentro l'URL che si apre sul
+  // telefono: chiunque sia sulla stessa rete puo' leggerlo. Il certificato
+  // autofirmato non dimostra l'identita' dell'host, ma toglie di mezzo quello.
+  const tlsConfig = deck.settings.server.tls ?? {};
+  let tls = null;
+  if (options.tls !== false) {
+    try {
+      tls = loadTlsOptions({
+        config: tlsConfig,
+        baseDir,
+        hosts: ['localhost', '127.0.0.1', ...lanAddresses()],
+        logger
+      });
+    } catch (err) {
+      // Un errore nella configurazione TLS non deve lasciare l'host spento e
+      // muto: si dice cosa non va e si prosegue in chiaro.
+      logger.error?.(`[wdeck] TLS non attivabile: ${err.message}`);
+      logger.warn?.('[wdeck] l\'host prosegue in HTTP: correggi settings.server.tls e riavvia');
+      tls = null;
+    }
+  }
+  host.tls = tls;
+  host.scheme = tls ? 'https' : 'http';
+
+  const onRequest = async (req, res) => {
     try {
       if (await api(req, res)) return;
       if (serveStatic(req, res)) return;
@@ -328,7 +354,11 @@ export function createHost(options = {}) {
         res.end('500 - errore interno');
       }
     }
-  });
+  };
+
+  const server = tls
+    ? https.createServer({ key: tls.key, cert: tls.cert }, onRequest)
+    : http.createServer(onRequest);
 
   const upgrades = createUpgradeHandler({
     routes: hub.routes,
@@ -363,7 +393,7 @@ export function createHost(options = {}) {
 
       const settings = configStore.get().settings;
       if (settings.tray?.enabled !== false && options.tray !== false) {
-        const urls = buildUrls(bindHost, addr.port);
+        const urls = buildUrls(bindHost, addr.port, host.scheme);
         host.tray = startTray({
           url: urls[0] ?? `http://127.0.0.1:${addr.port}`,
           urls: urls.map((u) => `${u}?token=${auth.token}`),
@@ -376,7 +406,9 @@ export function createHost(options = {}) {
       resolve({
         host: bindHost,
         port: addr.port,
-        urls: buildUrls(bindHost, addr.port)
+        scheme: host.scheme,
+        tls: Boolean(tls),
+        urls: buildUrls(bindHost, addr.port, host.scheme)
       });
     });
   });
@@ -399,13 +431,18 @@ export function createHost(options = {}) {
   return host;
 }
 
-/** Costruisce l'elenco degli URL raggiungibili. */
-export function buildUrls(bindHost, port) {
-  const urls = [`http://127.0.0.1:${port}/`];
+/**
+ * Costruisce l'elenco degli URL raggiungibili.
+ * @param {string} bindHost
+ * @param {number} port
+ * @param {'http'|'https'} [scheme]
+ */
+export function buildUrls(bindHost, port, scheme = 'http') {
+  const urls = [`${scheme}://127.0.0.1:${port}/`];
   if (bindHost === '0.0.0.0' || bindHost === '::') {
-    for (const ip of lanAddresses()) urls.push(`http://${ip}:${port}/`);
+    for (const ip of lanAddresses()) urls.push(`${scheme}://${ip}:${port}/`);
   } else if (bindHost !== '127.0.0.1' && bindHost !== 'localhost') {
-    urls.push(`http://${bindHost}:${port}/`);
+    urls.push(`${scheme}://${bindHost}:${port}/`);
   }
   return urls;
 }

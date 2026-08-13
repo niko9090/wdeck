@@ -3,6 +3,43 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.8] - 2026-08-13
+
+### Sicurezza
+
+- **HTTPS e WSS opzionali**, con certificato autofirmato generato all'avvio.
+  Senza cifratura il token viaggia in chiaro dentro l'URL che si apre sul
+  telefono: chiunque sia sulla stessa rete Wi-Fi puo' leggerlo e usare il deck.
+  Si attiva con `--tls`, `WDECK_TLS=1` o `settings.server.tls.enabled`.
+- La struttura X.509 e' **costruita nel progetto**: Node sa generare le chiavi
+  e sa firmare, ma non sa comporre un certificato, e quel pezzo di solito lo
+  mette una libreria o `openssl` come processo esterno. Qui non si poteva fare
+  ne' l'uno ne' l'altro, quindi il DER e' scritto a mano in
+  [`security/selfsigned.mjs`](src/host/security/selfsigned.mjs). Il vincolo di
+  zero dipendenze resta intatto.
+- Il certificato copre `localhost`, `127.0.0.1` e gli indirizzi IPv4 della
+  macchina, e viene **rigenerato** quando scade o quando quegli indirizzi
+  cambiano: dopo un cambio di rete o l'aggancio a una dock, un certificato che
+  non copre il nuovo indirizzo sarebbe inutile proprio dove serve.
+- Chi ha un certificato vero lo indica con `certFile` e `keyFile`: in quel caso
+  l'host non genera nulla.
+- Un errore nella configurazione TLS non lascia l'host spento: viene segnalato
+  e si prosegue in HTTP.
+- Il client WebSocket accetta ora `rejectUnauthorized: false`, che serve a
+  collegarsi a un host con certificato autofirmato.
+
+### Note
+
+Il certificato **non e' fidato da nessuna autorita'**: la prima volta il browser
+mostra un avviso, da accettare una volta per dispositivo. Serve a cifrare il
+traffico in LAN, non a dimostrare l'identita' dell'host - ma il traffico in
+chiaro era il problema piu' grosso rimasto.
+
+I test rileggono il certificato con `crypto.X509Certificate`, cioe' con lo
+stesso parser che useranno i browser, e poi lo usano davvero su un server HTTPS
+con WebSocket sopra: se la struttura ASN.1 fosse sbagliata, nessuna delle due
+cose funzionerebbe.
+
 ## [0.2.7] - 2026-08-13
 
 ### Sicurezza

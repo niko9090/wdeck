@@ -54,14 +54,14 @@ export function loadDeckFile(file, options = {}) {
 /**
  * Applica override provenienti da CLI/env sul deck normalizzato.
  * @param {object} deck
- * @param {{port?: number, host?: string, token?: string, dryRun?: boolean, requireToken?: boolean}} overrides
+ * @param {{port?: number, host?: string, token?: string, dryRun?: boolean, requireToken?: boolean, tls?: boolean}} overrides
  */
 export function applyOverrides(deck, overrides = {}) {
   const merged = {
     ...deck,
     settings: {
       ...deck.settings,
-      server: { ...deck.settings.server },
+      server: { ...deck.settings.server, tls: { ...deck.settings.server.tls } },
       security: { ...deck.settings.security },
       ui: { ...deck.settings.ui }
     }
@@ -71,6 +71,7 @@ export function applyOverrides(deck, overrides = {}) {
   if (overrides.token !== undefined) merged.settings.security.token = String(overrides.token);
   if (overrides.dryRun !== undefined) merged.settings.security.dryRun = overrides.dryRun === true;
   if (overrides.requireToken !== undefined) merged.settings.security.requireToken = overrides.requireToken === true;
+  if (overrides.tls !== undefined) merged.settings.server.tls.enabled = overrides.tls === true;
   return merged;
 }
 
@@ -82,6 +83,7 @@ export function envOverrides(env = process.env) {
   if (env.WDECK_TOKEN) out.token = env.WDECK_TOKEN;
   if (env.WDECK_DRY_RUN !== undefined) out.dryRun = /^(1|true|yes|on)$/i.test(env.WDECK_DRY_RUN);
   if (env.WDECK_REQUIRE_TOKEN !== undefined) out.requireToken = /^(1|true|yes|on)$/i.test(env.WDECK_REQUIRE_TOKEN);
+  if (env.WDECK_TLS !== undefined) out.tls = /^(1|true|yes|on)$/i.test(env.WDECK_TLS);
   return out;
 }
 

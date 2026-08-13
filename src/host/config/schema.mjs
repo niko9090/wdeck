@@ -19,7 +19,7 @@ export const LIMITS = Object.freeze({
 });
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  server: { host: '0.0.0.0', port: 8899, publicName: 'Wdeck Host' },
+  server: { host: '0.0.0.0', port: 8899, publicName: 'Wdeck Host', tls: { enabled: false } },
   security: {
     requireToken: true,
     token: '',
@@ -160,6 +160,19 @@ function validateSettings(ctx, settings) {
       checkString(ctx, 'settings.server.host', server.host);
       if (server.port !== undefined) checkInt(ctx, 'settings.server.port', server.port, { min: 1, max: 65535 });
       checkString(ctx, 'settings.server.publicName', server.publicName, { max: 64 });
+      if (server.tls !== undefined) {
+        if (!isPlainObject(server.tls)) ctx.err('settings.server.tls', 'atteso oggetto');
+        else {
+          checkBool(ctx, 'settings.server.tls.enabled', server.tls.enabled);
+          checkString(ctx, 'settings.server.tls.certFile', server.tls.certFile);
+          checkString(ctx, 'settings.server.tls.keyFile', server.tls.keyFile);
+          if (server.tls.days !== undefined) {
+            checkInt(ctx, 'settings.server.tls.days', server.tls.days, { min: 1, max: 3650 });
+          }
+          const uno = Boolean(server.tls.certFile) !== Boolean(server.tls.keyFile);
+          if (uno) ctx.err('settings.server.tls', 'certFile e keyFile vanno indicati insieme, o nessuno dei due');
+        }
+      }
     }
   }
 

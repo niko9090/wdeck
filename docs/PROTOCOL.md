@@ -106,6 +106,27 @@ node bin/wdeck.mjs --revoke-device d-1a2b3c4d5e
 node bin/wdeck.mjs --prune-devices
 ```
 
+### Cifratura del trasporto
+
+Con `settings.server.tls.enabled` (o `--tls`, o `WDECK_TLS=1`) l'host serve
+**HTTPS e WSS** invece di HTTP e WS. Senza, il token viaggia in chiaro dentro
+l'URL che si apre sul telefono, e chiunque sia sulla stessa rete Wi-Fi puo'
+leggerlo.
+
+Chiave e certificato vengono generati al primo avvio in `.wdeck-tls/` accanto a
+`deck.json`, e rigenerati quando scadono o quando cambiano gli indirizzi della
+macchina (rete diversa, VPN, dock). Il certificato copre `localhost`, `127.0.0.1`
+e ogni indirizzo IPv4 della macchina.
+
+**Non e' fidato da nessuna autorita'**: il browser mostra un avviso la prima
+volta, da accettare una volta sola per dispositivo. Serve a cifrare, non a
+dimostrare l'identita' dell'host. Chi ha un certificato vero lo indica con
+`certFile` e `keyFile`, e l'host non genera nulla:
+
+```json
+"server": { "tls": { "enabled": true, "certFile": "mio.crt", "keyFile": "mio.key", "days": 825 } }
+```
+
 ---
 
 ## 2. Endpoint REST (dialetto full)

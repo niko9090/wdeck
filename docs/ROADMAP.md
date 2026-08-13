@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.7`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.8`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -75,6 +75,10 @@ esegue anche i file `.sh`.
   evento di sicurezza, con l'identita' di chi l'ha chiesta. Token, PIN e
   password sono omessi prima della scrittura. Esposto da `GET /api/audit`.
 - Dry-run globale che **nessun client puo' disattivare** (puo' solo attivarlo).
+- **HTTPS/WSS opzionale** con certificato autofirmato generato all'avvio: la
+  struttura X.509 e' costruita nel progetto (DER a mano su `node:crypto`),
+  quindi resta a dipendenze zero. Si rigenera alla scadenza o al cambio di
+  indirizzi. Accetta anche un certificato fornito dall'utente.
 - Bind configurabile (`0.0.0.0` per la LAN, `127.0.0.1` per il solo locale).
 - Il layout servito ai client non contiene mai token, PIN o whitelist.
 
@@ -133,7 +137,7 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 325 |
+| `npm test` | file di test unitari/integrazione | 347 |
 | `npm run smoke` | end-to-end su host reale | 46 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
@@ -177,7 +181,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 
 ### Sicurezza
 
-- Nessun HTTPS/WSS: il traffico in LAN e' in chiaro (token compreso).
 
 ### Funzionalita'
 
