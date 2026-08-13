@@ -203,8 +203,8 @@ azioni) e un `control`, che vale `button` salvo per le azioni pilotabili con un
 cursore, dove vale `slider`.
 
 Sanno dichiarare il proprio **stato reale** (`readState`): `volume`, `mic`,
-`brightness`, `media` (con `key` `mute`, `volumeup`, `volumedown`), `obs` e
-`hue`.
+`brightness`, `media` (con `key` `mute`, `volumeup`, `volumedown`), `obs`,
+`hue`, `mqtt`, `spotify` e `discord`.
 
 ### Scrivere un'azione multipiattaforma
 
@@ -266,6 +266,42 @@ errore oscuro a ogni pressione.
 | `obs` | tutte | OBS Studio via obs-websocket v5: scene, registrazione, diretta, muto |
 | `homeassistant` | tutte | chiama un servizio di Home Assistant |
 | `hue` | tutte | accende, spegne e regola luci e gruppi Philips Hue |
+| `mqtt` | tutte | pubblica su un broker MQTT e legge lo stato da un topic |
+| `spotify` | tutte | comanda Spotify via Web API: riproduzione, brano, volume, dispositivo |
+| `discord` | tutte | messaggio via webhook, oppure microfono e cuffie via canale locale |
+
+#### Come configurarle
+
+Le credenziali stanno in `settings.integrations`, mai nei parametri
+dell'azione: un deck si condivide senza esportare i propri segreti.
+
+```json
+"integrations": {
+  "mqtt": { "url": "mqtt://192.168.1.10:1883", "username": "wdeck", "password": "..." },
+  "spotify": { "clientId": "...", "clientSecret": "...", "refreshToken": "..." },
+  "discord": { "url": "https://discord.com/api/webhooks/...", "clientId": "...", "accessToken": "..." }
+}
+```
+
+**MQTT**: bastano URL e, se il broker le richiede, le credenziali. `mqtt://` e'
+in chiaro, `mqtts://` cifrato. Un bottone puo' anche mostrare lo stato reale
+indicando `stateTopic` (e `onValue`, se il valore "acceso" non e' `ON`).
+
+**Spotify**: serve registrare un'applicazione su
+[developer.spotify.com](https://developer.spotify.com/dashboard), poi ottenere
+**una volta sola** un refresh token con lo scope
+`user-modify-playback-state user-read-playback-state`. Il refresh token non
+scade; da quello Wdeck ricava da solo l'access token orario. A differenza dei
+tasti multimediali, comanda l'account: funziona anche se la musica sta suonando
+sul telefono o su un altoparlante in un'altra stanza.
+
+**Discord**: il comando `message` ha bisogno solo dell'URL di un webhook, che si
+crea dalle impostazioni del canale, e funziona subito. I comandi su microfono e
+cuffie parlano invece con il client Discord in esecuzione sullo stesso computer
+attraverso il suo canale locale, e richiedono un'applicazione registrata
+(`clientId`) piu' uno scope per la voce che **Discord concede su richiesta**:
+senza, il client risponde con un errore, che Wdeck riporta tale e quale invece
+di far finta di aver funzionato.
 
 ### Base
 

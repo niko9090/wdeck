@@ -15,6 +15,7 @@ import power from './power.mjs';
 import apps from './apps.mjs';
 import productivity from './productivity.mjs';
 import integrations from './integrations.mjs';
+import services from './services.mjs';
 
 /** Tutti gli handler inclusi, in ordine di caricamento. */
 export const builtinHandlers = [
@@ -28,7 +29,8 @@ export const builtinHandlers = [
   ...power,
   ...apps,
   ...productivity,
-  ...integrations
+  ...integrations,
+  ...services
 ];
 
 /**

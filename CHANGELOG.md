@@ -3,6 +3,45 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.10] - 2026-08-13
+
+### Aggiunto
+
+- **MQTT**, **Spotify** e **Discord**: le tre integrazioni che la roadmap
+  dichiarava assenti. Nessuna integrazione inclusa usa piu' l'azione `stub`.
+- **`mqtt`**: client MQTT 3.1.1 scritto sui socket di Node (CONNECT, PUBLISH,
+  SUBSCRIBE, DISCONNECT, QoS 0 e 1, `mqtt://` e `mqtts://`). MQTT e' il modo con
+  cui parla mezza domotica - Home Assistant, Zigbee2MQTT, Tasmota, ESPHome -
+  quindi copre molto piu' di quanto avrebbe coperto un'integrazione per marca.
+  Con `stateTopic` il bottone mostra anche lo stato reale letto dal broker.
+- **`spotify`**: riproduzione, brano, volume, casuale, ripetizione, spostamento
+  su un altro dispositivo, riproduzione di un URI. Passa dalla Web API e non
+  dai tasti multimediali perche' quelli agiscono su qualunque lettore abbia il
+  fuoco: l'API comanda l'account, quindi funziona anche se la musica sta
+  suonando sul telefono o su un altoparlante in un'altra stanza. Il refresh
+  token si configura una volta; l'access token orario resta in memoria.
+- **`discord`**: messaggi in un canale via webhook, e comandi su microfono e
+  cuffie attraverso il canale locale del client Discord (named pipe su Windows,
+  socket unix altrove).
+- Tutte e tre dichiarano `readState`, quindi i loro bottoni mostrano la
+  condizione vera e non l'ultima pressione.
+
+### Corretto
+
+- **Il client MQTT perdeva le risposte piu' veloci di lui.** Le attese venivano
+  registrate dopo aver scritto sul socket: un broker sulla stessa macchina puo'
+  rispondere nello stesso giro di eventi, e un messaggio "retained" arriva
+  spesso nello stesso pacchetto TCP della conferma di iscrizione. Il difetto e'
+  emerso col broker finto dei test, che parla il protocollo vero.
+
+### Note
+
+Sui limiti di Discord il progetto non promette piu' di quanto puo' mantenere:
+il webhook funziona subito, mentre i comandi sulla voce richiedono
+un'applicazione registrata e uno scope che Discord concede su richiesta. Senza,
+il client risponde con un errore, che viene riportato tale e quale invece di far
+finta di aver funzionato.
+
 ## [0.2.9] - 2026-08-13
 
 ### Aggiunto

@@ -60,7 +60,7 @@ funzionano su quale sistema, e cosa serve installare, e' nella tabella
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.2.9 - deck "Wdeck"
+  Wdeck host v0.2.10 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
   azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
@@ -169,7 +169,7 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (381 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (411 verifiche) |
 | `npm run smoke` | smoke test end-to-end su un host reale (49 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
@@ -287,19 +287,19 @@ Cosa serve installare:
 
 ### Azioni disponibili
 
-29 azioni in 12 categorie. L'editor le mostra raggruppate esattamente cosi'.
+32 azioni in 12 categorie. L'editor le mostra raggruppate esattamente cosi'.
 
 | categoria | azioni |
 |---|---|
-| Media e audio | `media`, `volume`, `mic` |
+| Media e audio | `media`, `volume`, `mic`, `spotify` |
 | Tastiera e testo | `hotkey`, `text` |
 | Finestre e desktop | `focus`, `desktop`, `window` |
 | Sistema e alimentazione | `brightness`, `power` |
 | Programmi e giochi | `launch`, `game` |
 | Browser e web | `browser`, `url`, `http` |
 | Desktop remoti | `rdp` |
-| Streaming e OBS | `obs` |
-| Casa intelligente | `homeassistant`, `hue` |
+| Streaming e OBS | `obs`, `discord` |
+| Casa intelligente | `homeassistant`, `hue`, `mqtt` |
 | Produttivita' | `clipboard`, `folder`, `screenshot`, `notify` |
 | Script personalizzati | `script` |
 | Navigazione deck | `navigate`, `sequence`, `delay`, `noop`, `stub` |
@@ -334,7 +334,8 @@ onda). Il valore resta giusto anche quando qualcosa viene cambiato **da
 un'altra applicazione**, che e' proprio il caso in cui un deck "cieco" mente.
 
 Sanno dichiarare il proprio stato: `volume`, `mic`, `brightness`, `media` (con
-`key` `mute`/`volumeup`/`volumedown`), `obs` e `hue`.
+`key` `mute`/`volumeup`/`volumedown`), `obs`, `hue`, `mqtt`, `spotify` e
+`discord`.
 
 ```json
 { "id": "mute", "label": "Muto", "row": 0, "col": 0,

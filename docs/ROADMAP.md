@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.9`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.10`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -41,6 +41,20 @@ L'input sintetico su Windows usa PowerShell con `keybd_event` (P/Invoke) per
 tasti e hotkey e `WScript.Shell.SendKeys` per il testo: nessuna dipendenza
 nativa da compilare. Gli script PowerShell sono passati con `-EncodedCommand`,
 quindi non esistono problemi di quoting o injection dai parametri.
+
+### Integrazioni
+
+- **OBS Studio** (obs-websocket v5), **Home Assistant**, **Philips Hue**.
+- **MQTT**: client 3.1.1 scritto sui socket di Node, con CONNECT, PUBLISH,
+  SUBSCRIBE e lettura dello stato da un topic. E' il modo con cui parla mezza
+  domotica, quindi copre molto piu' delle marche che avrebbe coperto
+  un'integrazione dedicata.
+- **Spotify** via Web API: comanda l'account, quindi funziona anche quando la
+  musica suona sul telefono o su un altoparlante.
+- **Discord**: messaggi via webhook e comandi su microfono e cuffie attraverso
+  il canale locale del client.
+
+Tutte dichiarano `readState`, quindi i loro bottoni mostrano la condizione vera.
 
 ### Windows, macOS e Linux
 
@@ -147,7 +161,7 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 381 |
+| `npm test` | file di test unitari/integrazione | 411 |
 | `npm run smoke` | end-to-end su host reale | 49 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
@@ -163,7 +177,7 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 
 | elemento | stato attuale | cosa manca |
 |---|---|---|
-| azione `stub` | conferma la pressione e restituisce la nota configurata | e' il segnaposto per le integrazioni non ancora scritte (OBS, MQTT, Home Assistant): non esegue nulla |
+| azione `stub` | conferma la pressione e restituisce la nota configurata | resta come segnaposto per chi vuole disegnare un deck prima di scrivere l'azione vera: non esegue nulla, e ora nessuna integrazione inclusa la usa piu' |
 | firmware ESP32 | codice completo e conforme al protocollo, verificato dai test | **non e' mai stato compilato ne' provato su hardware reale**: i pin dichiarati vanno verificati sulla scheda in uso |
 | icone su ESP32 | il campo `n` viene scaricato ma ignorato | il display mostra solo l'etichetta testuale; servono glifi bitmap o LVGL |
 | `holdAction` | supportata da host e client web | non supportata dall'ESP32; nessuna interfaccia per configurarla, va scritta a mano in `deck.json` |
@@ -198,8 +212,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
   dei tre metodi funziona, e l'azione fallisce con un messaggio esplicito.
   Servirebbe un overlay di attenuazione, che e' un processo in piu' da tenere
   vivo.
-- Integrazioni MQTT, Spotify e Discord ancora assenti (OBS, Home Assistant e
-  Hue ci sono).
 - L'aggiornamento viene segnalato ma non applicato: il download e la
   sostituzione dei file restano a carico dell'utente.
 - Nessuna localizzazione: interfaccia e messaggi solo in italiano.
@@ -228,5 +240,6 @@ In ordine di rapporto valore/costo, da decidere insieme:
    **fatto in 0.2.6 e 0.2.9.**
 6. ~~**HTTPS/WSS** con certificato autofirmato generato all'avvio.~~
    **fatto in 0.2.8.**
-7. **Integrazione OBS** al posto dell'azione `stub`.
+7. ~~**Integrazioni** al posto dell'azione `stub`.~~ **fatto: OBS, Home
+   Assistant e Hue in 0.2.0, MQTT, Spotify e Discord in 0.2.10.**
 8. ~~**CI** che esegua `npm run verify` a ogni commit.~~ **fatto in 0.2.1.**
