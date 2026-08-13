@@ -23,6 +23,7 @@ import { createAuth } from './security/auth.mjs';
 import { createRateLimits } from './security/ratelimit.mjs';
 import { createIconStore } from './icons.mjs';
 import { loadTlsOptions } from './security/tls.mjs';
+import { createMdnsResponder } from './discovery.mjs';
 import { createAuditLog, pressEntry } from './audit.mjs';
 import { createApiRouter } from './server/api.mjs';
 import { createHub } from './server/hub.mjs';
@@ -193,7 +194,22 @@ export function createHost(options = {}) {
     hub: null,
     upgrades: null,
     tray: null,
+    mdns: null,
     address: null
+  };
+
+  /**
+   * URL da cui un dispositivo puo' accoppiarsi, con il token dentro.
+   * E' il contenuto del QR code: inquadrarlo apre il deck gia' collegato.
+   * @param {string} [token] token da includere (default: quello principale)
+   */
+  host.pairingUrl = (token = auth.token) => {
+    const port = host.address?.port ?? configStore.get().settings.server.port;
+    const base = buildUrls(host.address?.host ?? configStore.get().settings.server.host, port, host.scheme ?? 'http');
+    // Il primo URL della lista e' 127.0.0.1, che su un telefono non porta da
+    // nessuna parte: si preferisce il primo indirizzo di rete vero.
+    const url = base.find((u) => !u.includes('127.0.0.1')) ?? base[0];
+    return auth.required ? `${url}?token=${encodeURIComponent(token)}` : url;
   };
 
   // Dopo una pressione lo stato va riletto: e' il momento in cui l'utente si
@@ -391,6 +407,21 @@ export function createHost(options = {}) {
       host.updates.start();
       status.start();
 
+      // Un indirizzo numerico non si ricorda e cambia con il DHCP: annunciarsi
+      // come "<nome>.local" da' un indirizzo stabile che macOS, iOS, Windows e
+      // Android sanno risolvere senza installare nulla.
+      const discovery = configStore.get().settings.discovery ?? {};
+      if (discovery.enabled !== false && options.discovery !== false && bindHost !== '127.0.0.1') {
+        host.mdns = createMdnsResponder({
+          name: discovery.name ?? configStore.get().settings.server.publicName,
+          port: addr.port,
+          scheme: host.scheme,
+          txt: { version: host.version, deck: configStore.get().name },
+          logger
+        });
+        host.mdns.start().catch(() => {});
+      }
+
       const settings = configStore.get().settings;
       if (settings.tray?.enabled !== false && options.tray !== false) {
         const urls = buildUrls(bindHost, addr.port, host.scheme);
@@ -408,6 +439,7 @@ export function createHost(options = {}) {
         port: addr.port,
         scheme: host.scheme,
         tls: Boolean(tls),
+        mdns: host.mdns?.hostname ?? null,
         urls: buildUrls(bindHost, addr.port, host.scheme)
       });
     });
@@ -418,6 +450,7 @@ export function createHost(options = {}) {
     configStore.close();
     host.updates.stop();
     status.stop();
+    host.mdns?.stop();
     host.tray?.stop();
     hub.close();
     upgrades.closeAll();

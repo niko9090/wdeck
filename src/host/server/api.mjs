@@ -6,6 +6,7 @@
 import { ENDPOINTS, ERROR_CODES, PROTOCOL_VERSION, LITE_PROTOCOL_VERSION, LITE_FIELDS, toLitePage } from '../../../shared/protocol.mjs';
 import { CATEGORIES } from '../actions/registry.mjs';
 import { normalizeAddress } from '../security/ratelimit.mjs';
+import { qrSvg } from '../../../shared/qr.mjs';
 import {
   ICON_TYPES as ICON_FORMATS,
   MAX_ICONS as MAX_ICON_COUNT,
@@ -263,6 +264,42 @@ export function createApiRouter(host) {
         enabled: host.audit.enabled,
         file: host.audit.file,
         entries: host.audit.tail({ limit, event: url.searchParams.get('event') ?? undefined })
+      });
+    },
+
+    /**
+     * QR code per accoppiare un dispositivo inquadrando lo schermo.
+     *
+     * Di norma contiene un token **nuovo e dedicato**, non quello principale:
+     * mostrarlo a qualcuno che passa non deve regalargli la chiave di casa, e
+     * cio' che si e' inquadrato una volta si revoca da solo.
+     */
+    [`GET ${ENDPOINTS.pairQr}`]: (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+
+      const nuovo = url.searchParams.get('device') !== '0';
+      let token = auth.token;
+      let device = null;
+      if (nuovo) {
+        const giorni = url.searchParams.get('days');
+        const created = auth.createDevice({
+          name: url.searchParams.get('name') ?? 'accoppiato con QR',
+          days: giorni === null ? undefined : Number(giorni)
+        });
+        token = created.token;
+        device = { id: created.id, name: created.name, expiresAt: created.expiresAt };
+        host.audit.write('device-created', { device: created.id, name: created.name, via: 'qr', address: addressOf(req) });
+      }
+
+      const target = host.pairingUrl(token);
+      // Il QR non contiene il token in chiaro nella risposta JSON per caso: e'
+      // l'URL stesso a portarlo, ed e' quello che il telefono deve aprire.
+      sendJson(res, 200, {
+        ok: true,
+        url: target,
+        device,
+        mdns: host.mdns ? `${host.scheme}://${host.mdns.hostname}:${host.address?.port}/` : null,
+        svg: qrSvg(target, { level: 'M', scale: 6, margin: 4 })
       });
     },
 

@@ -1231,6 +1231,11 @@ async function openSettings() {
       </div>
       <button class="btn" type="button" id="set-add-host">Aggiungi un altro computer</button>
 
+      <h3 class="sheet-section">Collega un altro dispositivo</h3>
+      <p class="sheet-hint">Inquadra il codice con l'altro telefono: si apre gia' collegato, con un token
+        dedicato che puoi revocare da solo. Il codice vale finche' non ne generi un altro.</p>
+      <div class="qr-box" id="set-qr"><button class="btn" type="button" id="set-qr-show">Mostra il codice QR</button></div>
+
       <h3 class="sheet-section">Dispositivi accoppiati su questo host</h3>
       <div class="host-list" id="set-devices"><p class="sheet-hint">caricamento...</p></div>
       <p class="sheet-hint">Ogni accoppiamento con PIN crea un token dedicato: revocarne uno non scollega gli altri.</p>
@@ -1258,10 +1263,32 @@ async function openSettings() {
   });
   el('set-check-update').addEventListener('click', () => checkUpdate({ force: true }));
   el('set-rotate').addEventListener('click', rotateHostToken);
+  el('set-qr-show').addEventListener('click', showPairingQr);
   renderDevices();
   for (const btn of ui.sheetBody.querySelectorAll('[data-forget]')) {
     btn.addEventListener('click', () => forgetHost(btn.dataset.forget));
   }
+}
+
+/**
+ * Mostra il QR di accoppiamento.
+ *
+ * Non viene caricato all'apertura delle impostazioni ma solo su richiesta:
+ * ogni chiamata crea un token nuovo, e non ha senso crearne uno ogni volta che
+ * qualcuno apre il pannello per cambiare il PIN.
+ */
+async function showPairingQr() {
+  const box = el('set-qr');
+  box.innerHTML = '<p class="sheet-hint">generazione in corso...</p>';
+  const res = await api(`${ENDPOINTS.pairQr}?name=${encodeURIComponent('accoppiato con QR')}`);
+  if (!res.ok) {
+    box.innerHTML = `<p class="sheet-hint">${escapeHtml(res.data?.error?.message ?? 'codice non disponibile')}</p>`;
+    return;
+  }
+  box.innerHTML = `<div class="qr">${res.data.svg}</div>`
+    + `<p class="sheet-hint">${escapeHtml(res.data.url.replace(/token=[^&]+/, 'token=...'))}</p>`
+    + (res.data.mdns ? `<p class="sheet-hint">Oppure apri <code>${escapeHtml(res.data.mdns)}</code></p>` : '');
+  renderDevices();
 }
 
 /** Elenco dei dispositivi accoppiati sull'host attivo. */

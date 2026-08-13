@@ -40,6 +40,7 @@ export const ENDPOINTS = {
   iconFile: '/api/icons/file',
   devices: '/api/devices',
   audit: '/api/audit',
+  pairQr: '/api/pair/qr',
   tokenRotate: '/api/token/rotate',
   ws: '/ws',
   // --- lite API (ESP32) ---

@@ -13,6 +13,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { createHost, PROJECT_ROOT } from '../src/host/index.mjs';
 import { addDevice, listDevices, pruneExpiredDevices, revokeDevice, rotateToken } from '../src/host/security/manage.mjs';
+import { qrText } from '../shared/qr.mjs';
 
 const HELP = `
 Wdeck host - Stream Deck software
@@ -28,6 +29,7 @@ Opzioni:
   --no-token          disattiva l'autenticazione (SOLO per test in locale)
   --no-watch          disattiva la ricarica a caldo di deck.json
   --tls               attiva HTTPS/WSS con certificato autofirmato
+  --no-qr             non stampa il QR code di accoppiamento all'avvio
   --quiet             riduce i log
   -h, --help          mostra questo aiuto
 
@@ -134,6 +136,7 @@ function main() {
         'no-token': { type: 'boolean', default: false },
         'no-watch': { type: 'boolean', default: false },
         tls: { type: 'boolean', default: false },
+        'no-qr': { type: 'boolean', default: false },
         quiet: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
         'rotate-token': { type: 'boolean', default: false },

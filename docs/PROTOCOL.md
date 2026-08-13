@@ -61,6 +61,51 @@ risposta, di lui resta soltanto l'impronta.
 Il PIN e' in `settings.security.pin`; se vuoto, il pairing e' disabilitato e
 `POST /api/pair` risponde `401`. I tentativi sono limitati (vedi sezione 2).
 
+### `GET /api/pair/qr`
+
+QR code da inquadrare col telefono: contiene l'URL del deck con dentro un token
+gia' valido, quindi apre l'app **gia' collegata**, senza digitare indirizzo ne'
+PIN.
+
+```json
+{
+  "ok": true,
+  "url": "http://192.168.1.79:8899/?token=...",
+  "device": { "id": "d-1a2b3c4d5e", "name": "accoppiato con QR", "expiresAt": null },
+  "mdns": "http://wdeck-host.local:8899/",
+  "svg": "<svg ...>"
+}
+```
+
+Ogni chiamata crea un **token dedicato**, non consegna quello principale:
+mostrare il codice a qualcuno che passa non deve regalargli la chiave di casa,
+e cio' che e' stato inquadrato una volta si revoca da solo. Con `?device=0` si
+usa invece il token principale, `?name=` e `?days=` governano il dispositivo
+creato.
+
+Il QR e' generato dal progetto ([`shared/qr.mjs`](../shared/qr.mjs)): modalita'
+byte, versioni 1-10, correzione a scelta. Nessuna libreria.
+
+### Scoperta in rete locale (mDNS)
+
+Con `settings.discovery.enabled` (predefinito) l'host si annuncia su
+224.0.0.251:5353 come:
+
+| record | contenuto |
+|---|---|
+| `A` | `<nome>.local` -> indirizzi IPv4 della macchina |
+| `PTR` | `_wdeck._tcp.local` -> istanza del servizio |
+| `SRV` | porta e nome host dell'istanza |
+| `TXT` | `path`, `scheme`, `version`, `deck` |
+
+Serve a una cosa concreta: `http://wdeck-host.local:8899` **non cambia** quando
+il router riassegna gli indirizzi, e macOS, iOS, Windows 10+ e Android recente
+lo risolvono senza installare nulla. Il nome si imposta con
+`settings.discovery.name`.
+
+L'annuncio non parte quando l'host e' in ascolto solo su `127.0.0.1`, e se la
+porta 5353 e' gia' occupata (Bonjour, avahi) l'host lo segnala e prosegue senza.
+
 ### `GET /api/devices`
 
 ```json

@@ -248,6 +248,17 @@ async function main() {
     const ancoraPrincipale = await fetch(`${base}${ENDPOINTS.deck}?token=${TOKEN}`);
     check('la revoca non tocca il token principale', ancoraPrincipale.status === 200, `status=${ancoraPrincipale.status}`);
 
+    const qrRes = await fetch(`${base}${ENDPOINTS.pairQr}?token=${TOKEN}`);
+    const qrBody = await qrRes.json();
+    check('/api/pair/qr produce un codice e un URL', qrRes.status === 200 && typeof qrBody.svg === 'string'
+      && qrBody.svg.startsWith('<svg') && typeof qrBody.url === 'string', `status=${qrRes.status}`);
+    check('il QR accoppia un dispositivo nuovo, non regala il token principale',
+      qrBody.device?.id && !qrBody.url.includes(TOKEN), JSON.stringify(qrBody.device));
+
+    const qrToken = new URL(qrBody.url).searchParams.get('token');
+    const conQr = await fetch(`${base}${ENDPOINTS.deck}`, { headers: { 'x-wdeck-token': qrToken } });
+    check('il token dentro il QR funziona davvero', conQr.status === 200, `status=${conQr.status}`);
+
     // ---------------------------------------------------------------
     console.log('\n6) Client web servito dall\'host');
     const indexRes = await fetch(`${base}/`);

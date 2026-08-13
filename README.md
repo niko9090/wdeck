@@ -60,7 +60,7 @@ funzionano su quale sistema, e cosa serve installare, e' nella tabella
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.2.8 - deck "Wdeck"
+  Wdeck host v0.2.9 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
   azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
@@ -76,10 +76,21 @@ All'avvio la console stampa gli URL da aprire e il token:
   PIN   : configurato (pairing via POST /api/pair)
 ```
 
-Dal telefono, sulla stessa rete, apri l'indirizzo `192.168.x.x` e inserisci il
-**PIN** (`settings.security.pin` in `deck.json`); in alternativa apri
-direttamente l'URL con `?token=...`. Da Chrome/Edge: menu -> *Installa app* per
-averlo a schermo intero come app nativa.
+**Il modo piu' rapido di collegare il telefono e' inquadrare il QR code** che
+l'host stampa nel terminale all'avvio: si apre il deck gia' collegato, senza
+digitare indirizzo ne' PIN. Ogni codice porta con se' un token dedicato a quel
+dispositivo, revocabile da solo. Lo stesso codice si trova in *Impostazioni ->
+Collega un altro dispositivo*.
+
+In alternativa apri l'indirizzo `192.168.x.x` e inserisci il **PIN**
+(`settings.security.pin` in `deck.json`), oppure usa l'URL con `?token=...`.
+
+L'host si annuncia anche in rete locale come **`wdeck-host.local`**: quel nome
+non cambia quando il router riassegna gli indirizzi, e macOS, iOS, Windows 10+
+e Android recente lo risolvono senza installare nulla.
+
+Da Chrome/Edge: menu -> *Installa app* per averlo a schermo intero come app
+nativa.
 
 Mentre l'host gira, un'**icona nell'area di notifica** (vicino all'orologio) da'
 accesso a: apri il deck, copia gli indirizzi per il telefono, ricarica
@@ -158,8 +169,8 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (347 verifiche) |
-| `npm run smoke` | smoke test end-to-end su un host reale (46 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (381 verifiche) |
+| `npm run smoke` | smoke test end-to-end su un host reale (49 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
 | `npm run check:deps` | verifica il vincolo di zero dipendenze (package.json e import) |

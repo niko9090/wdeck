@@ -3,6 +3,41 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.9] - 2026-08-13
+
+### Aggiunto
+
+- **QR code per accoppiare il telefono.** Si inquadra e il deck si apre gia'
+  collegato: niente indirizzo da digitare, niente PIN. Il codice compare nel
+  terminale all'avvio e in *Impostazioni -> Collega un altro dispositivo*.
+  Nuovo endpoint `GET /api/pair/qr`.
+- Ogni codice porta con se' un **token dedicato**, non quello principale:
+  mostrarlo a qualcuno che passa non regala la chiave di casa, e cio' che e'
+  stato inquadrato una volta si revoca da solo.
+- **Generatore di QR scritto nel progetto** ([`shared/qr.mjs`](shared/qr.mjs)):
+  modalita' byte, versioni 1-10, quattro livelli di correzione, scelta
+  automatica della maschera fra le otto previste. Reed-Solomon su GF(256),
+  informazioni di formato con BCH, resa in SVG e in caratteri a blocchi per il
+  terminale. Nessuna libreria.
+- **Scoperta in rete locale (mDNS)**: l'host si annuncia come `<nome>.local` e
+  come servizio `_wdeck._tcp.local`. Serve a una cosa concreta: quel nome non
+  cambia quando il router riassegna gli indirizzi, e macOS, iOS, Windows 10+ e
+  Android recente lo risolvono senza installare nulla.
+- `--no-qr` per non stampare il codice all'avvio; `settings.discovery` per il
+  nome annunciato e per spegnere l'annuncio.
+
+### Note
+
+Il QR e' scritto da zero, quindi e' verificato contro riferimenti esterni e non
+solo contro se stesso: il polinomio generatore di Reed-Solomon coincide con i
+coefficienti elencati dalla norma, le codeword di correzione coincidono con
+l'esempio della norma (`01234567` in versione 1 livello M), e la tabella dei
+blocchi e' confrontata con le codeword ricavate dalla geometria per tutte e
+quaranta le combinazioni versione/livello. Un errore di trascrizione non passa.
+
+Se la porta 5353 e' gia' occupata da Bonjour o avahi, l'host lo segnala e
+prosegue senza annuncio: non e' un motivo per non partire.
+
 ## [0.2.8] - 2026-08-13
 
 ### Sicurezza

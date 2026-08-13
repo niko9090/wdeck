@@ -40,6 +40,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   },
   ui: { theme: 'dark', accent: '#4c8dff', showLabels: true },
   status: { enabled: true, intervalMs: 8000 },
+  discovery: { enabled: true },
   tray: { enabled: true },
   updates: { check: true, repository: 'niko9090/wdeck' },
   integrations: {}
@@ -112,7 +113,20 @@ function validateSettings(ctx, settings) {
     return;
   }
 
-  const { server, security, ui, tray, updates, integrations, status } = settings;
+  const { server, security, ui, tray, updates, integrations, status, discovery } = settings;
+
+  if (discovery !== undefined) {
+    if (!isPlainObject(discovery)) ctx.err('settings.discovery', 'atteso oggetto');
+    else {
+      checkBool(ctx, 'settings.discovery.enabled', discovery.enabled);
+      if (discovery.name !== undefined) {
+        checkString(ctx, 'settings.discovery.name', discovery.name, {
+          pattern: /^[a-z0-9][a-z0-9-]{0,31}$/,
+          label: 'minuscole, cifre e trattini'
+        });
+      }
+    }
+  }
 
   if (status !== undefined) {
     if (!isPlainObject(status)) ctx.err('settings.status', 'atteso oggetto');

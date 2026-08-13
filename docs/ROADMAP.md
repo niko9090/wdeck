@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.8`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.9`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -108,6 +108,16 @@ esegue anche i file `.sh`.
   modifica che romperebbe la configurazione viene rifiutata con la ragione, e la
   versione precedente resta in `.wdeck-backup/`.
 
+### Pairing e scoperta
+
+- **QR code** generato dal progetto ([`shared/qr.mjs`](../shared/qr.mjs)):
+  modalita' byte, versioni 1-10, quattro livelli di correzione, scelta
+  automatica della maschera. Stampato nel terminale all'avvio e mostrato dal
+  client; contiene un token dedicato, revocabile da solo.
+- **Annuncio mDNS** (`<nome>.local` piu' il servizio `_wdeck._tcp.local`), cosi'
+  l'indirizzo non cambia quando il router riassegna gli IP. Se la porta 5353 e'
+  gia' occupata l'host lo segnala e prosegue.
+
 ### Client web PWA
 
 - Griglia responsive con proporzioni corrette su telefono, tablet e desktop.
@@ -137,8 +147,8 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 347 |
-| `npm run smoke` | end-to-end su host reale | 46 |
+| `npm test` | file di test unitari/integrazione | 381 |
+| `npm run smoke` | end-to-end su host reale | 49 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
 | `npm run check:docs` | coerenza della documentazione | - |
@@ -192,7 +202,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
   Hue ci sono).
 - L'aggiornamento viene segnalato ma non applicato: il download e la
   sostituzione dei file restano a carico dell'utente.
-- Nessuna scoperta automatica dell'host (mDNS/Bonjour) ne' QR code per il pairing.
 - Nessuna localizzazione: interfaccia e messaggi solo in italiano.
 - Nessun bundling/minificazione del JavaScript della PWA (viene servito come
   moduli ES; solo il CSS e' minificato).
@@ -215,7 +224,9 @@ In ordine di rapporto valore/costo, da decidere insieme:
    **fatto in 0.2.2.**
 3. ~~**Adattatore Linux/macOS** per hotkey e tasti media.~~ **fatto in 0.2.3.**
 4. ~~**Editor grafico del deck** completo nella PWA.~~ **fatto in 0.2.4.**
-5. **Token per dispositivo + revoca**, con QR code per il pairing.
-6. **HTTPS/WSS** con certificato autofirmato generato all'avvio.
+5. ~~**Token per dispositivo + revoca**, con QR code per il pairing.~~
+   **fatto in 0.2.6 e 0.2.9.**
+6. ~~**HTTPS/WSS** con certificato autofirmato generato all'avvio.~~
+   **fatto in 0.2.8.**
 7. **Integrazione OBS** al posto dell'azione `stub`.
 8. ~~**CI** che esegua `npm run verify` a ogni commit.~~ **fatto in 0.2.1.**
