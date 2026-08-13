@@ -16,6 +16,7 @@ import {
 } from '../../../shared/protocol.mjs';
 import { publicDeck } from './api.mjs';
 import { normalizeAddress } from '../security/ratelimit.mjs';
+import { extractToken } from '../security/auth.mjs';
 
 const AUTH_TIMEOUT_MS = 8000;
 const MAX_MESSAGE_BYTES = 64 * 1024;
@@ -100,6 +101,9 @@ export function createHub(host) {
     fullClients.add(conn);
     conn.data.authenticated = false;
     conn.data.address = normalizeAddress(req.socket?.remoteAddress);
+    // Il token usato resta sulla connessione per poterlo rivalutare quando un
+    // dispositivo viene revocato: senza, una revoca non scollegherebbe nessuno.
+    conn.data.token = extractToken(req);
 
     const { ok: preAuthenticated } = auth.verifyRequest(req);
 
@@ -157,11 +161,14 @@ export function createHub(host) {
           conn.close(1008, 'troppi tentativi');
           return;
         }
-        if (!auth.verify(msg.token)) {
-          conn.send({ type: MSG.error, code: ERROR_CODES.unauthorized, message: 'token non valido' });
+        const identity = auth.identify(msg.token);
+        if (!identity.ok) {
+          conn.send({ type: MSG.error, code: ERROR_CODES.unauthorized, message: identity.reason ?? 'token non valido' });
           conn.close(1008, 'token non valido');
           return;
         }
+        conn.data.token = msg.token;
+        conn.data.deviceId = identity.device?.id ?? null;
         host.limits.clearAuth({ address: conn.data.address });
         completeAuth();
         return;
@@ -240,6 +247,7 @@ export function createHub(host) {
     liteClients.add(conn);
     conn.data.authenticated = true;
     conn.data.address = normalizeAddress(req?.socket?.remoteAddress);
+    conn.data.token = extractToken(req ?? {});
     state.addClient(conn);
 
     conn.send({
@@ -351,6 +359,27 @@ export function createHub(host) {
     broadcastStatus(snapshot, changes) {
       broadcastFull({ type: MSG.status, states: snapshot, changed: changes ?? null });
       broadcastLite(liteStatusPayload());
+    },
+
+    /**
+     * Scollega i client il cui token non e' piu' valido.
+     *
+     * Va chiamata dopo una revoca o una rotazione: senza, un dispositivo
+     * revocato resterebbe collegato e capace di premere bottoni fino a quando
+     * non chiude lui la connessione, che e' esattamente cio' che la revoca
+     * dovrebbe impedire.
+     * @returns {number} quanti client sono stati scollegati
+     */
+    disconnectRevoked() {
+      let chiusi = 0;
+      for (const conn of [...fullClients, ...liteClients]) {
+        if (!conn.data.authenticated) continue;
+        if (auth.identify(conn.data.token).ok) continue;
+        conn.close(1008, 'credenziale revocata');
+        chiusi += 1;
+      }
+      if (chiusi > 0) logger.warn?.(`[wdeck] ${chiusi} client scollegati: credenziale non piu' valida`);
+      return chiusi;
     },
 
     /** Segnala a tutti i client che esiste una versione piu' recente. */

@@ -38,6 +38,8 @@ export const ENDPOINTS = {
   update: '/api/update',
   icons: '/api/icons',
   iconFile: '/api/icons/file',
+  devices: '/api/devices',
+  tokenRotate: '/api/token/rotate',
   ws: '/ws',
   // --- lite API (ESP32) ---
   liteDeck: '/api/lite/deck',

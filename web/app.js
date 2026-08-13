@@ -218,6 +218,23 @@ function showGate(message = '') {
   ui.gateError.textContent = message;
 }
 
+/**
+ * Nome con cui questo dispositivo si presenta all'host.
+ *
+ * Non c'e' modo di leggere il nome vero del telefono da una pagina web: si
+ * ricava dallo user agent, che almeno distingue un Android da un iPad da un PC.
+ */
+function deviceName() {
+  const ua = navigator.userAgent ?? '';
+  if (/iPad/i.test(ua)) return 'iPad';
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/Android/i.test(ua)) return /Mobile/i.test(ua) ? 'Telefono Android' : 'Tablet Android';
+  if (/Macintosh/i.test(ua)) return 'Mac';
+  if (/Windows/i.test(ua)) return 'PC Windows';
+  if (/Linux/i.test(ua)) return 'PC Linux';
+  return 'Browser';
+}
+
 async function pairWithPin() {
   const base = ui.gateHost.value.trim().replace(/\/+$/, '') || location.origin;
   const pin = ui.gatePin.value.trim();
@@ -230,7 +247,9 @@ async function pairWithPin() {
     const res = await fetch(`${base}${ENDPOINTS.pair}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin })
+      // Il nome serve a riconoscere questo dispositivo nell'elenco dell'host,
+      // per poterlo revocare da solo se un giorno va perso.
+      body: JSON.stringify({ pin, name: deviceName() })
     });
     const data = await res.json();
     if (!res.ok || !data.token) {
@@ -1212,6 +1231,15 @@ async function openSettings() {
       </div>
       <button class="btn" type="button" id="set-add-host">Aggiungi un altro computer</button>
 
+      <h3 class="sheet-section">Dispositivi accoppiati su questo host</h3>
+      <div class="host-list" id="set-devices"><p class="sheet-hint">caricamento...</p></div>
+      <p class="sheet-hint">Ogni accoppiamento con PIN crea un token dedicato: revocarne uno non scollega gli altri.</p>
+
+      <h3 class="sheet-section">Token principale</h3>
+      <p class="sheet-hint">Rigenerarlo scollega chi lo usa (compresi gli URL con <code>?token=</code>).
+        Questo dispositivo verra' aggiornato da solo. I dispositivi accoppiati restano validi.</p>
+      <button class="btn ghost" type="button" id="set-rotate">Rigenera il token principale</button>
+
       <h3 class="sheet-section">Aggiornamenti</h3>
       <p class="sheet-hint" id="set-update">${update?.available
     ? `Disponibile la versione ${escapeHtml(update.latest?.version ?? '')} (in uso la ${escapeHtml(update.current ?? '')}).`
@@ -1229,9 +1257,68 @@ async function openSettings() {
     showGate('Inserisci indirizzo e PIN del computer da aggiungere.');
   });
   el('set-check-update').addEventListener('click', () => checkUpdate({ force: true }));
+  el('set-rotate').addEventListener('click', rotateHostToken);
+  renderDevices();
   for (const btn of ui.sheetBody.querySelectorAll('[data-forget]')) {
     btn.addEventListener('click', () => forgetHost(btn.dataset.forget));
   }
+}
+
+/** Elenco dei dispositivi accoppiati sull'host attivo. */
+async function renderDevices() {
+  const box = el('set-devices');
+  if (!box) return;
+  const res = await api(ENDPOINTS.devices);
+  if (!res.ok) {
+    box.innerHTML = '<p class="sheet-hint">Elenco non disponibile.</p>';
+    return;
+  }
+
+  const devices = res.data.devices ?? [];
+  if (devices.length === 0) {
+    box.innerHTML = '<p class="sheet-hint">Nessun dispositivo accoppiato.</p>';
+    return;
+  }
+
+  box.innerHTML = devices.map((d) => {
+    const scadenza = d.expiresAt ? new Date(d.expiresAt).toLocaleDateString() : 'nessuna scadenza';
+    const nota = d.id === res.data.current ? ' - questo dispositivo' : '';
+    return `<div class="host-row">
+      <span>${escapeHtml(d.name)}<small>${d.expired ? 'scaduto' : scadenza}${nota}</small></span>
+      <button class="btn ghost small danger" type="button" data-revoke="${d.id}">Revoca</button>
+    </div>`;
+  }).join('');
+
+  for (const button of box.querySelectorAll('[data-revoke]')) {
+    button.addEventListener('click', () => revokeDevice(button.dataset.revoke));
+  }
+}
+
+async function revokeDevice(id) {
+  const res = await api(`${ENDPOINTS.devices}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    toast(res.data?.error?.message ?? 'revoca rifiutata', 'err');
+    return;
+  }
+  toast('Dispositivo revocato', 'ok');
+  renderDevices();
+}
+
+/** Rigenera il token principale e aggiorna quello salvato qui. */
+async function rotateHostToken() {
+  const res = await api(ENDPOINTS.tokenRotate, { method: 'POST', body: {} });
+  if (!res.ok) {
+    toast(res.data?.error?.message ?? 'rotazione rifiutata', 'err');
+    return;
+  }
+  // Se questo client stava usando proprio il token principale, deve adottare
+  // il nuovo subito: altrimenti si scollegherebbe da solo.
+  const host = activeHost();
+  if (host && res.data.token) {
+    host.token = res.data.token;
+    saveHosts();
+  }
+  toast('Token principale rigenerato', 'ok');
 }
 
 async function saveSettings() {

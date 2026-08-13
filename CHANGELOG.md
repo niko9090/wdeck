@@ -3,6 +3,50 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.6] - 2026-08-13
+
+### Sicurezza
+
+- **Un token per dispositivo, revocabile da solo.** Il pairing con PIN non
+  consegna piu' il token principale: crea una credenziale dedicata a quel
+  telefono. Prima bastava un telefono perso per dover cambiare il token a
+  tutti.
+- **Scadenza facoltativa**: `days` alla creazione, oppure
+  `settings.security.deviceTokenDays` come predefinito. `--prune-devices` toglie
+  i scaduti.
+- In `deck.json` resta la sola **impronta SHA-256**: chi legge il file non puo'
+  ricavare le credenziali dei dispositivi. Il token si vede una volta sola, in
+  risposta a chi lo ha chiesto.
+- **La revoca scollega subito** i client che stavano usando quella credenziale.
+  Lasciarli collegati fino alla disconnessione avrebbe significato non revocare
+  niente per tutta la durata della sessione.
+- **Rotazione del token principale** finalmente esposta: `POST /api/token/rotate`,
+  il bottone in *Impostazioni* del client, e da riga di comando **senza avviare
+  l'host** - che e' proprio il caso in cui serve, se il token e' andato perduto.
+- Nuovi comandi CLI: `--rotate-token` (con `--revoke-devices`), `--list-devices`,
+  `--add-device <nome>` (con `--days`), `--revoke-device <id>`, `--prune-devices`.
+  `--add-device` serve all'ESP32, che il PIN non sa digitarlo.
+- Nuovi endpoint `GET`/`POST`/`DELETE /api/devices`.
+- Una revoca **scritta a mano** in `deck.json` vale alla ricarica a caldo: prima
+  un token tolto dal file continuava a funzionare fino al riavvio.
+
+### Corretto
+
+- **Lo smoke test scriveva nel `deck.json` dell'utente.** Da quando il pairing
+  crea un dispositivo, la verifica lasciava una voce nella configurazione di chi
+  la lanciava. Ora gira su una copia temporanea: prova la configurazione vera,
+  che e' il senso di uno smoke test, senza toccarla.
+
+### Note
+
+Ruotare il token principale **non** revoca i dispositivi accoppiati, a meno di
+chiederlo con `revokeDevices`: cambiare la chiave di casa non deve buttare fuori
+chi ha gia' la sua.
+
+Il token principale finisce in `deck.json` solo quando viene davvero ruotato:
+accoppiare un telefono non deve scrivere nel file una credenziale che l'utente
+non ci aveva messo.
+
 ## [0.2.5] - 2026-08-13
 
 ### Sicurezza

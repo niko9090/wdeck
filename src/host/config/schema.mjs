@@ -29,6 +29,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     allowedExtensions: ['.exe', '.bat', '.cmd', '.ps1', '.py', '.sh'],
     allowExec: [],
     maxSequenceSteps: 32,
+    devices: [],
+    deviceTokenDays: null,
     rateLimit: {
       enabled: true,
       press: { windowMs: 10000, max: 60 },
@@ -180,6 +182,40 @@ function validateSettings(ctx, settings) {
       if (security.maxSequenceSteps !== undefined) {
         checkInt(ctx, 'settings.security.maxSequenceSteps', security.maxSequenceSteps, { min: 1, max: 256 });
       }
+      // Ogni dispositivo accoppiato lascia qui la sola impronta del proprio
+      // token: chi legge deck.json non puo' ricavarne la credenziale.
+      if (security.devices !== undefined) {
+        if (!Array.isArray(security.devices)) ctx.err('settings.security.devices', 'atteso array di dispositivi');
+        else {
+          const ids = new Set();
+          security.devices.forEach((device, i) => {
+            const dpath = `settings.security.devices[${i}]`;
+            if (!isPlainObject(device)) {
+              ctx.err(dpath, 'atteso oggetto dispositivo');
+              return;
+            }
+            checkString(ctx, `${dpath}.id`, device.id, { required: true, max: 64 });
+            checkString(ctx, `${dpath}.name`, device.name, { max: 64 });
+            checkString(ctx, `${dpath}.hash`, device.hash, {
+              required: true,
+              pattern: /^[0-9a-f]{64}$/i,
+              label: 'sha256 esadecimale'
+            });
+            if (device.createdAt !== undefined) checkInt(ctx, `${dpath}.createdAt`, device.createdAt, { min: 0 });
+            if (device.expiresAt !== undefined && device.expiresAt !== null) {
+              checkInt(ctx, `${dpath}.expiresAt`, device.expiresAt, { min: 0 });
+            }
+            if (typeof device.id === 'string') {
+              if (ids.has(device.id)) ctx.err(`${dpath}.id`, `id dispositivo duplicato: "${device.id}"`);
+              else ids.add(device.id);
+            }
+          });
+        }
+      }
+      if (security.deviceTokenDays !== undefined && security.deviceTokenDays !== null) {
+        checkInt(ctx, 'settings.security.deviceTokenDays', security.deviceTokenDays, { min: 1, max: 3650 });
+      }
+
       if (security.rateLimit !== undefined) {
         if (!isPlainObject(security.rateLimit)) ctx.err('settings.security.rateLimit', 'atteso oggetto');
         else {

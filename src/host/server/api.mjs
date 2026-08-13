@@ -153,7 +153,7 @@ export function createApiRouter(host) {
       }
 
       const body = await readJsonBody(req);
-      const result = auth.pair(body.pin);
+      const result = auth.pair(body.pin, { name: body.name, days: body.days });
       if (!result.ok) {
         sendError(res, 401, ERROR_CODES.unauthorized, result.reason ?? 'pairing rifiutato');
         return;
@@ -161,8 +161,9 @@ export function createApiRouter(host) {
       // Chi ha dimostrato di conoscere il PIN non e' un attaccante: i suoi
       // tentativi precedenti non devono pesare sui prossimi accessi.
       host.limits.clearAuth({ address });
-      host.logger.info?.(`[wdeck] pairing riuscito da ${address}`);
-      sendJson(res, 200, { ok: true, token: result.token });
+      host.logger.info?.(`[wdeck] pairing riuscito da ${address}: "${result.device.name}" (${result.device.id})`);
+      // Il token viaggia una volta sola: dopo, di lui resta la sola impronta.
+      sendJson(res, 200, { ok: true, token: result.token, device: result.device });
     },
 
     [`GET ${ENDPOINTS.deck}`]: (req, res) => {
@@ -249,6 +250,57 @@ export function createApiRouter(host) {
         return;
       }
       sendJson(res, 200, { ok: true, changed: result.changed });
+    },
+
+    // ---------------- dispositivi accoppiati ----------------
+
+    [`GET ${ENDPOINTS.devices}`]: (req, res) => {
+      if (!requireAuth(req, res)) return;
+      sendJson(res, 200, {
+        ok: true,
+        devices: auth.listDevices(),
+        deviceTokenDays: auth.deviceTokenDays,
+        // Il chiamante deve sapere se sta usando il token principale o quello
+        // di un dispositivo: revocare il proprio si puo', ma va detto prima.
+        current: auth.verifyRequest(req).device?.id ?? null
+      });
+    },
+
+    [`POST ${ENDPOINTS.devices}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const body = await readJsonBody(req);
+      if (body.days !== undefined && body.days !== null
+        && (!Number.isInteger(body.days) || body.days < 1 || body.days > 3650)) {
+        sendError(res, 400, ERROR_CODES.badRequest, 'parametro "days" non valido: intero fra 1 e 3650, oppure null');
+        return;
+      }
+      const created = auth.createDevice({ name: body.name, days: body.days });
+      host.logger.info?.(`[wdeck] nuovo dispositivo "${created.name}" (${created.id})`);
+      // Il token si vede una volta sola: dopo, di lui resta solo l'impronta.
+      sendJson(res, 200, { ok: true, device: created });
+    },
+
+    [`DELETE ${ENDPOINTS.devices}`]: (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      const id = url.searchParams.get('id');
+      if (!auth.revokeDevice(id)) {
+        sendError(res, 404, ERROR_CODES.notFound, `dispositivo sconosciuto: "${id}"`);
+        return;
+      }
+      host.logger.info?.(`[wdeck] dispositivo revocato: ${id}`);
+      host.hub?.disconnectRevoked?.();
+      sendJson(res, 200, { ok: true, revoked: id, devices: auth.listDevices() });
+    },
+
+    [`POST ${ENDPOINTS.tokenRotate}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const body = await readJsonBody(req);
+      const revokeDevices = body.revokeDevices === true;
+      const next = auth.rotate({ revokeDevices });
+      host.logger.warn?.(`[wdeck] token principale rigenerato${revokeDevices ? ' e dispositivi revocati' : ''}`);
+      host.hub?.disconnectRevoked?.();
+      // Il nuovo token viaggia una volta sola, in risposta a chi lo ha chiesto.
+      sendJson(res, 200, { ok: true, token: next, revokedDevices: revokeDevices });
     },
 
     // ---------------- icone personalizzate ----------------

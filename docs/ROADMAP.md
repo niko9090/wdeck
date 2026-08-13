@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.5`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.6`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -56,7 +56,14 @@ esegue anche i file `.sh`.
 
 - Token obbligatorio (query, header `x-wdeck-token` o `Bearer`), confronto a
   tempo costante, generazione automatica se non configurato.
-- Pairing tramite PIN (`POST /api/pair`).
+- **Token per dispositivo**: il pairing con PIN crea una credenziale dedicata,
+  revocabile da sola e con scadenza facoltativa. Nel file resta la sola
+  impronta SHA-256. Revocare scollega subito i client interessati.
+- **Rotazione del token principale** da client, endpoint e riga di comando
+  (`--rotate-token`, `--list-devices`, `--add-device`, `--revoke-device`,
+  `--prune-devices`), anche a host spento.
+- Una revoca scritta a mano in `deck.json` vale alla ricarica a caldo, senza
+  riavviare l'host.
 - Whitelist `allowExec` (glob `*` e `**`) + whitelist di estensioni: a
   whitelist vuota **non si esegue nulla**; il path traversal e' neutralizzato.
 - Whitelist degli schemi URL.
@@ -123,8 +130,8 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 278 |
-| `npm run smoke` | end-to-end su host reale | 41 |
+| `npm test` | file di test unitari/integrazione | 306 |
+| `npm run smoke` | end-to-end su host reale | 46 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
 | `npm run check:docs` | coerenza della documentazione | - |
@@ -145,8 +152,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 | `holdAction` | supportata da host e client web | non supportata dall'ESP32; nessuna interfaccia per configurarla, va scritta a mano in `deck.json` |
 | tema chiaro | CSS presente, attivo con `ui.theme: "auto"` + preferenza di sistema | `ui.theme: "light"` non forza ancora il tema chiaro |
 | `ui.showLabels` | rispettato dal client web | ignorato dall'ESP32 |
-| rotazione token | `auth.rotate()` esiste ed e' testata | non e' esposta da nessun endpoint o comando CLI |
-| token e ricarica a caldo | `deck.json` si ricarica a caldo | un token modificato nel file richiede il riavvio dell'host (i client collegati non vengono invalidati a meta' sessione) |
 
 ---
 
@@ -170,8 +175,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 ### Sicurezza
 
 - Nessun HTTPS/WSS: il traffico in LAN e' in chiaro (token compreso).
-- Un solo token valido per tutti i client: niente identita' per dispositivo,
-  niente revoca selettiva, niente scadenza.
 - Nessun audit log persistente delle azioni eseguite.
 
 ### Funzionalita'

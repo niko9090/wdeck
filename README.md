@@ -60,7 +60,7 @@ funzionano su quale sistema, e cosa serve installare, e' nella tabella
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.2.5 - deck "Wdeck"
+  Wdeck host v0.2.6 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
   azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
@@ -158,8 +158,8 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (278 verifiche) |
-| `npm run smoke` | smoke test end-to-end su un host reale (41 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (306 verifiche) |
+| `npm run smoke` | smoke test end-to-end su un host reale (46 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
 | `npm run check:deps` | verifica il vincolo di zero dipendenze (package.json e import) |
@@ -372,7 +372,15 @@ protezioni non sono un dettaglio.
 
 - **Token obbligatorio** su ogni endpoint tranne `/api/health` e `/api/pair`;
   confronto a tempo costante; generato automaticamente se non lo configuri.
-- **Pairing con PIN**, per non digitare il token sul telefono.
+- **Un token per dispositivo.** Il pairing con PIN non consegna piu' la chiave
+  di casa: crea una credenziale dedicata a quel telefono, che si **revoca da
+  sola** e puo' **scadere**. In `deck.json` ne resta la sola impronta SHA-256,
+  quindi chi legge il file non puo' ricavarla. Un telefono perso si toglie
+  senza riaccoppiare tutti gli altri, e chi era collegato viene scollegato
+  subito, non alla prossima richiesta.
+- **Rotazione del token principale** da *Impostazioni* nel client, da
+  `POST /api/token/rotate`, o da riga di comando **senza avviare l'host**
+  (`--rotate-token`), che e' cio' che serve quando il token e' andato perduto.
 - **Whitelist `allowExec`**: se e' vuota, *nessun* programma puo' essere
   lanciato. Supporta i glob `*` e `**`; i percorsi relativi sono risolti
   rispetto alla cartella di `deck.json`; il path traversal non la aggira.
@@ -386,7 +394,16 @@ protezioni non sono un dettaglio.
 - **Bind**: `127.0.0.1` per l'uso solo locale, `0.0.0.0` per la LAN.
 - Il layout inviato ai client **non contiene mai** token, PIN o whitelist.
 
-Limiti noti: nessun HTTPS, un solo token condiviso.
+Gestione da riga di comando (non avvia l'host, lavora su `deck.json`):
+
+```bash
+node bin/wdeck.mjs --list-devices
+node bin/wdeck.mjs --add-device "ESP32 salotto" --days 365
+node bin/wdeck.mjs --revoke-device d-1a2b3c4d5e
+node bin/wdeck.mjs --rotate-token
+```
+
+Limiti noti: nessun HTTPS.
 Vedi la sezione *Mancante* di [`docs/ROADMAP.md`](docs/ROADMAP.md).
 Usare solo su una rete di cui ti fidi.
 

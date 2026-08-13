@@ -30,21 +30,81 @@ Puo' essere trasmesso in tre modi, equivalenti:
 Se l'header e la querystring sono entrambi presenti, vince l'header.
 Il confronto e' a tempo costante (`crypto.timingSafeEqual`).
 
-Chi non ha il token puo' ottenerlo con il **pairing tramite PIN**:
+### Due generi di credenziale
+
+| | **token principale** | **token per dispositivo** |
+|---|---|---|
+| dove sta | `settings.security.token` | creato dal pairing, nel file resta la sola impronta SHA-256 |
+| a che serve | la chiave di casa: console, URL con `?token=`, script | uno per telefono o tablet |
+| scade | mai | quando si vuole (`deviceTokenDays`, oppure `days` alla creazione) |
+| si revoca | rigenerandolo (`POST /api/token/rotate`) | uno alla volta, senza toccare gli altri |
+
+Chi legge `deck.json` **non puo' ricavare** i token dei dispositivi: c'e' solo
+l'impronta. Un telefono perso si toglie da solo, senza dover riaccoppiare tutti.
+
+### Pairing tramite PIN
 
 ```http
 POST /api/pair
 Content-Type: application/json
 
-{ "pin": "246810" }
+{ "pin": "246810", "name": "Telefono di Nicola", "days": 90 }
 ```
 
 ```json
-{ "ok": true, "token": "abc123..." }
+{ "ok": true, "token": "abc123...", "device": { "id": "d-1a2b3c4d5e", "name": "Telefono di Nicola", "expiresAt": 1793788800000 } }
 ```
 
+`name` e `days` sono opzionali. **Il token si vede una volta sola**: dopo la
+risposta, di lui resta soltanto l'impronta.
+
 Il PIN e' in `settings.security.pin`; se vuoto, il pairing e' disabilitato e
-`POST /api/pair` risponde `401`.
+`POST /api/pair` risponde `401`. I tentativi sono limitati (vedi sezione 2).
+
+### `GET /api/devices`
+
+```json
+{
+  "ok": true,
+  "deviceTokenDays": null,
+  "current": "d-1a2b3c4d5e",
+  "devices": [
+    { "id": "d-1a2b3c4d5e", "name": "Telefono di Nicola", "createdAt": 1786012800000, "expiresAt": null, "expired": false, "lastSeenAt": 1786013000000 }
+  ]
+}
+```
+
+`current` e' l'id del dispositivo che sta facendo la richiesta (`null` se sta
+usando il token principale): serve al client per avvisare prima che qualcuno
+revochi se stesso.
+
+### `POST /api/devices`
+
+`{ "name": "ESP32 salotto", "days": 365 }` crea un token senza passare dal PIN:
+un microcontrollore non sa digitarlo. Restituisce il token una volta sola.
+
+### `DELETE /api/devices?id=<id>`
+
+Revoca il dispositivo. I client collegati con quella credenziale vengono
+**scollegati subito**: una revoca che lasciasse la sessione aperta fino alla
+disconnessione non sarebbe una revoca.
+
+### `POST /api/token/rotate`
+
+Rigenera il token principale e lo restituisce. Con `{ "revokeDevices": true }`
+revoca anche tutti i dispositivi. Senza, i dispositivi accoppiati restano
+validi: ruotare la chiave di casa non deve buttare fuori chi ha gia' la sua.
+
+Le stesse operazioni si fanno **senza avviare l'host**, che e' cio' che serve
+quando il token e' andato perduto:
+
+```bash
+node bin/wdeck.mjs --rotate-token
+node bin/wdeck.mjs --list-devices
+node bin/wdeck.mjs --add-device "ESP32 salotto" --days 365
+node bin/wdeck.mjs --revoke-device d-1a2b3c4d5e
+node bin/wdeck.mjs --prune-devices
+```
 
 ---
 

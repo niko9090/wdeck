@@ -9,8 +9,10 @@
  *   node bin/wdeck.mjs --config ./mio-deck.json
  */
 
+import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { createHost } from '../src/host/index.mjs';
+import { createHost, PROJECT_ROOT } from '../src/host/index.mjs';
+import { addDevice, listDevices, pruneExpiredDevices, revokeDevice, rotateToken } from '../src/host/security/manage.mjs';
 
 const HELP = `
 Wdeck host - Stream Deck software
@@ -28,9 +30,95 @@ Opzioni:
   --quiet             riduce i log
   -h, --help          mostra questo aiuto
 
+Sicurezza (non avviano l'host: lavorano su deck.json e terminano)
+  --rotate-token          rigenera il token principale
+  --revoke-devices        con --rotate-token, revoca anche tutti i dispositivi
+  --list-devices          elenca i dispositivi accoppiati
+  --add-device <nome>     crea un token per un dispositivo (utile per l'ESP32)
+  --revoke-device <id>    revoca un dispositivo
+  --prune-devices         toglie i dispositivi scaduti
+  --days <n>              con --add-device, giorni di validita'
+
 Variabili d'ambiente equivalenti: WDECK_PORT, WDECK_HOST, WDECK_TOKEN,
 WDECK_DRY_RUN, WDECK_REQUIRE_TOKEN.
 `;
+
+/** Data leggibile, o un trattino se assente. */
+const quando = (ms) => (Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString().slice(0, 16).replace('T', ' ') : '-');
+
+/**
+ * Esegue i comandi di sicurezza che non richiedono l'host acceso.
+ * @param {object} args opzioni gia' interpretate
+ * @param {string} configFile
+ * @returns {boolean} true se un comando e' stato eseguito (il processo termina)
+ */
+function runSecurityCommand(args, configFile) {
+  const fine = (result, onOk) => {
+    if (!result.ok) {
+      console.error(`\n[wdeck] ${result.message}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    onOk(result);
+  };
+
+  if (args['rotate-token']) {
+    fine(rotateToken(configFile, { revokeDevices: args['revoke-devices'] }), (r) => {
+      console.log('\n  Token principale rigenerato.\n');
+      console.log(`  token : ${r.token}`);
+      if (r.revokedDevices > 0) console.log(`  revocati ${r.revokedDevices} dispositivi accoppiati`);
+      console.log('\n  I client collegati vanno riaccoppiati.'
+        + ' Riavvia l\'host se e\' gia\' in esecuzione.\n');
+    });
+    return true;
+  }
+
+  if (args['list-devices']) {
+    fine(listDevices(configFile), (r) => {
+      if (r.devices.length === 0) {
+        console.log('\n  Nessun dispositivo accoppiato.\n');
+        return;
+      }
+      console.log('\n  Dispositivi accoppiati:\n');
+      console.log('  id              nome                      creato            scade');
+      for (const d of r.devices) {
+        console.log(`  ${d.id.padEnd(15)} ${d.name.padEnd(25)} ${quando(d.createdAt).padEnd(17)} `
+          + `${d.expiresAt ? quando(d.expiresAt) : 'mai'}${d.expired ? '  (SCADUTO)' : ''}`);
+      }
+      console.log('');
+    });
+    return true;
+  }
+
+  if (args['add-device']) {
+    const days = args.days === undefined ? null : Number(args.days);
+    fine(addDevice(configFile, { name: args['add-device'], days }), (r) => {
+      console.log(`\n  Dispositivo "${r.device.name}" creato (${r.device.id}).\n`);
+      console.log(`  token : ${r.token}`);
+      console.log(`  scade : ${r.device.expiresAt ? quando(r.device.expiresAt) : 'mai'}`);
+      console.log('\n  Il token si vede solo adesso: nel file ne resta la sola impronta.\n');
+    });
+    return true;
+  }
+
+  if (args['revoke-device']) {
+    fine(revokeDevice(configFile, args['revoke-device']), (r) => {
+      console.log(`\n  Dispositivo revocato: ${r.revoked}\n`);
+    });
+    return true;
+  }
+
+  if (args['prune-devices']) {
+    fine(pruneExpiredDevices(configFile), (r) => {
+      console.log(r.removed.length === 0
+        ? '\n  Nessun dispositivo scaduto.\n'
+        : `\n  Rimossi ${r.removed.length} dispositivi scaduti: ${r.removed.join(', ')}\n`);
+    });
+    return true;
+  }
+
+  return false;
+}
 
 function main() {
   let parsed;
@@ -45,7 +133,14 @@ function main() {
         'no-token': { type: 'boolean', default: false },
         'no-watch': { type: 'boolean', default: false },
         quiet: { type: 'boolean', default: false },
-        help: { type: 'boolean', short: 'h', default: false }
+        help: { type: 'boolean', short: 'h', default: false },
+        'rotate-token': { type: 'boolean', default: false },
+        'revoke-devices': { type: 'boolean', default: false },
+        'list-devices': { type: 'boolean', default: false },
+        'add-device': { type: 'string' },
+        'revoke-device': { type: 'string' },
+        'prune-devices': { type: 'boolean', default: false },
+        days: { type: 'string' }
       },
       allowPositionals: false
     });
@@ -61,6 +156,11 @@ function main() {
     console.log(HELP);
     return;
   }
+
+  // I comandi di sicurezza lavorano sul file e terminano: non serve (e non
+  // conviene) tenere l'host acceso e raggiungibile per revocare un telefono.
+  const configFile = path.resolve(args.config ?? path.join(PROJECT_ROOT, 'deck.json'));
+  if (runSecurityCommand(args, configFile)) return;
 
   const overrides = {};
   if (args.port) overrides.port = Number(args.port);

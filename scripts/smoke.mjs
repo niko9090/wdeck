@@ -8,12 +8,32 @@
  * Uso: npm run smoke
  */
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { createHost } from '../src/host/index.mjs';
 import { connectWebSocket, waitForMessage } from '../src/host/ws/client.mjs';
 import { ENDPOINTS, MSG, LITE_FIELDS, LITE_MSG } from '../shared/protocol.mjs';
 
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.WDECK_SMOKE_PORT ?? 8971);
 const TOKEN = 'smoke-token-0123456789';
+
+/**
+ * Copia di lavoro della configurazione dell'utente.
+ *
+ * Il test prova la `deck.json` vera - e' il punto di uno smoke test - ma su una
+ * copia: accoppiare un dispositivo scrive nel file, e una verifica non deve
+ * lasciare tracce nella configurazione di chi la lancia.
+ */
+function copiaConfigurazione() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wdeck-smoke-'));
+  const file = path.join(dir, 'deck.json');
+  fs.copyFileSync(path.join(ROOT, 'deck.json'), file);
+  return { dir, file, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
 
 let passed = 0;
 const failures = [];
@@ -33,10 +53,13 @@ const quietLogger = { ...console, info: () => {}, debug: () => {}, warn: () => {
 async function main() {
   console.log('\nWdeck - smoke test end-to-end\n');
 
+  const config = copiaConfigurazione();
   const host = createHost({
+    configFile: config.file,
     overrides: { port: PORT, host: '127.0.0.1', token: TOKEN, dryRun: true },
     logger: quietLogger,
-    watch: false
+    watch: false,
+    tray: false
   });
 
   const info = await host.start();
@@ -206,10 +229,24 @@ async function main() {
     const goodPin = await fetch(`${base}${ENDPOINTS.pair}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: host.configStore.get().settings.security.pin })
+      body: JSON.stringify({ pin: host.configStore.get().settings.security.pin, name: 'Smoke test' })
     });
     const pairBody = await goodPin.json();
-    check('PIN corretto -> token restituito', goodPin.status === 200 && pairBody.token === TOKEN, JSON.stringify(pairBody));
+    check('PIN corretto -> token restituito', goodPin.status === 200 && typeof pairBody.token === 'string', JSON.stringify(pairBody));
+    check('il pairing crea un token dedicato, non consegna quello principale',
+      pairBody.token !== TOKEN && pairBody.device?.name === 'Smoke test', JSON.stringify(pairBody));
+
+    const conNuovo = await fetch(`${base}${ENDPOINTS.deck}`, { headers: { 'x-wdeck-token': pairBody.token } });
+    check('il token del dispositivo apre le rotte protette', conNuovo.status === 200, `status=${conNuovo.status}`);
+
+    const revoca = await fetch(`${base}${ENDPOINTS.devices}?id=${pairBody.device.id}&token=${TOKEN}`, { method: 'DELETE' });
+    check('il dispositivo si revoca da solo', revoca.status === 200, `status=${revoca.status}`);
+
+    const dopoRevoca = await fetch(`${base}${ENDPOINTS.deck}`, { headers: { 'x-wdeck-token': pairBody.token } });
+    check('dopo la revoca il token del dispositivo non vale piu\'', dopoRevoca.status === 401, `status=${dopoRevoca.status}`);
+
+    const ancoraPrincipale = await fetch(`${base}${ENDPOINTS.deck}?token=${TOKEN}`);
+    check('la revoca non tocca il token principale', ancoraPrincipale.status === 200, `status=${ancoraPrincipale.status}`);
 
     // ---------------------------------------------------------------
     console.log('\n6) Client web servito dall\'host');

@@ -88,8 +88,49 @@ export function createHost(options = {}) {
   });
 
   const state = createState(deck);
-  const auth = createAuth(deck.settings.security);
   const baseDir = path.dirname(configFile);
+
+  /**
+   * Scrive su deck.json una modifica del blocco sicurezza.
+   *
+   * Passa dal file cosi' com'e' su disco, come ogni altra scrittura: il deck in
+   * memoria porta con se' gli override di avvio, e salvarli li renderebbe
+   * permanenti.
+   * @param {object} patch porzioni di settings.security da sostituire
+   */
+  function persistSecurity(patch) {
+    const current = configStore.snapshot();
+    const next = {
+      ...current,
+      settings: {
+        ...(current.settings ?? {}),
+        security: { ...(current.settings?.security ?? {}), ...patch }
+      }
+    };
+    const validation = validateDeck(next, { actionTypes: registry.types() });
+    if (!validation.valid) {
+      logger.error?.(`[wdeck] impossibile salvare la sicurezza:\n${formatErrors(validation.errors)}`);
+      return false;
+    }
+    writeAtomic(configFile, `${JSON.stringify(next, null, 2)}\n`);
+    configStore.reload();
+    return true;
+  }
+
+  // Il token principale imposto da --token o WDECK_TOKEN vale per quell'avvio
+  // soltanto: non va scritto nel file, e una modifica del file non deve
+  // sovrascriverlo a caldo.
+  const tokenIsOverridden = overrides.token !== undefined;
+
+  const auth = createAuth(deck.settings.security, {
+    onChange: ({ token, devices, reason }) => {
+      // Il token principale finisce nel file solo quando e' stato davvero
+      // ruotato: accoppiare un telefono non deve scriverci dentro una
+      // credenziale che l'utente non aveva messo.
+      const scriviToken = reason === 'rotate' && !tokenIsOverridden;
+      persistSecurity({ devices, ...(scriviToken ? { token } : {}) });
+    }
+  });
 
   const dispatcher = createDispatcher({
     registry,
@@ -154,6 +195,9 @@ export function createHost(options = {}) {
     const result = configStore.reload();
     if (result.ok) {
       state.replaceDeck(result.deck);
+      // Una revoca scritta a mano in deck.json deve valere subito: prima un
+      // token tolto dal file continuava a funzionare fino al riavvio.
+      auth.syncFromConfig(result.deck.settings.security, { allowTokenChange: !tokenIsOverridden });
       logger.info?.('[wdeck] configurazione ricaricata');
     }
     return result;
@@ -295,7 +339,10 @@ export function createHost(options = {}) {
       host.address = { host: bindHost, port: addr.port };
       if (options.watch !== false) {
         configStore.watch();
-        configStore.on('change', (next) => state.replaceDeck(next));
+        configStore.on('change', (next) => {
+          state.replaceDeck(next);
+          auth.syncFromConfig(next.settings.security, { allowTokenChange: !tokenIsOverridden });
+        });
       }
       host.updates.start();
       status.start();
