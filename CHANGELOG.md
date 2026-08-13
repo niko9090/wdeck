@@ -3,6 +3,35 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.5] - 2026-08-13
+
+### Sicurezza
+
+- **Limiti di frequenza**, con il codice `rate_limited` che il protocollo
+  definiva da sempre senza che nulla lo usasse. Due limiti indipendenti a
+  finestra scorrevole: 60 comandi ogni 10 secondi e 10 tentativi di accesso
+  ogni 5 minuti. Oltre il tetto la risposta e' `429` con `Retry-After`, e sul
+  WebSocket un messaggio `error` con lo stesso codice.
+- Un PIN di quattro cifre sono diecimila combinazioni: senza limite si provano
+  in pochi secondi, ed era il punto piu' debole del pairing.
+- **Anche i token rifiutati contano come tentativi di accesso**: tenere due
+  contatori separati avrebbe lasciato aperta la via di provare direttamente i
+  token invece del PIN.
+- Un accesso riuscito azzera i tentativi di quell'indirizzo: chi conosce il PIN
+  non deve pagare per i tentativi di chi non lo conosce.
+- La tabella dei contatori ha un tetto di chiavi: senza, sarebbe stata a sua
+  volta una via per esaurire la memoria dell'host.
+- Taratura da `settings.security.rateLimit` (`enabled`, `press`, `auth`).
+
+### Note
+
+Il limite si conta per dispositivo autenticato quando c'e', altrimenti per
+indirizzo: dietro un NAT tutti i telefoni di casa condividono l'indirizzo, e
+limitarli insieme punirebbe l'innocente per il vicino.
+
+`test/ratelimit.test.mjs` inietta l'orologio: aspettare davvero cinque minuti
+per vedere scadere una finestra avrebbe reso la suite inservibile.
+
 ## [0.2.4] - 2026-08-13
 
 ### Aggiunto

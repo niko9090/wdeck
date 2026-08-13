@@ -28,7 +28,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
     allowUrlSchemes: ['http', 'https'],
     allowedExtensions: ['.exe', '.bat', '.cmd', '.ps1', '.py', '.sh'],
     allowExec: [],
-    maxSequenceSteps: 32
+    maxSequenceSteps: 32,
+    rateLimit: {
+      enabled: true,
+      press: { windowMs: 10000, max: 60 },
+      auth: { windowMs: 300000, max: 10 }
+    }
   },
   ui: { theme: 'dark', accent: '#4c8dff', showLabels: true },
   status: { enabled: true, intervalMs: 8000 },
@@ -174,6 +179,26 @@ function validateSettings(ctx, settings) {
       checkStringArray(ctx, 'settings.security.allowExec', security.allowExec);
       if (security.maxSequenceSteps !== undefined) {
         checkInt(ctx, 'settings.security.maxSequenceSteps', security.maxSequenceSteps, { min: 1, max: 256 });
+      }
+      if (security.rateLimit !== undefined) {
+        if (!isPlainObject(security.rateLimit)) ctx.err('settings.security.rateLimit', 'atteso oggetto');
+        else {
+          checkBool(ctx, 'settings.security.rateLimit.enabled', security.rateLimit.enabled);
+          for (const bucket of ['press', 'auth']) {
+            const value = security.rateLimit[bucket];
+            if (value === undefined) continue;
+            if (!isPlainObject(value)) {
+              ctx.err(`settings.security.rateLimit.${bucket}`, 'atteso oggetto');
+              continue;
+            }
+            if (value.windowMs !== undefined) {
+              checkInt(ctx, `settings.security.rateLimit.${bucket}.windowMs`, value.windowMs, { min: 100, max: 3600000 });
+            }
+            if (value.max !== undefined) {
+              checkInt(ctx, `settings.security.rateLimit.${bucket}.max`, value.max, { min: 1, max: 100000 });
+            }
+          }
+        }
       }
       if (security.requireToken !== false && (security.token === undefined || security.token === '')) {
         ctx.warn('settings.security.token', "nessun token configurato: ne verra' generato uno automaticamente all'avvio");

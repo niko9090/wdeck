@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.4`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.5`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -60,6 +60,10 @@ esegue anche i file `.sh`.
 - Whitelist `allowExec` (glob `*` e `**`) + whitelist di estensioni: a
   whitelist vuota **non si esegue nulla**; il path traversal e' neutralizzato.
 - Whitelist degli schemi URL.
+- **Limiti di frequenza** a finestra scorrevole su comandi (60 / 10 s) e
+  tentativi di accesso (10 / 5 min), con codice `rate_limited` e `Retry-After`.
+  I token rifiutati contano come tentativi di accesso: i due contatori non sono
+  separabili, altrimenti il limite sul PIN si aggirerebbe provando i token.
 - Dry-run globale che **nessun client puo' disattivare** (puo' solo attivarlo).
 - Bind configurabile (`0.0.0.0` per la LAN, `127.0.0.1` per il solo locale).
 - Il layout servito ai client non contiene mai token, PIN o whitelist.
@@ -119,7 +123,7 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 259 |
+| `npm test` | file di test unitari/integrazione | 278 |
 | `npm run smoke` | end-to-end su host reale | 41 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
@@ -143,7 +147,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 | `ui.showLabels` | rispettato dal client web | ignorato dall'ESP32 |
 | rotazione token | `auth.rotate()` esiste ed e' testata | non e' esposta da nessun endpoint o comando CLI |
 | token e ricarica a caldo | `deck.json` si ricarica a caldo | un token modificato nel file richiede il riavvio dell'host (i client collegati non vengono invalidati a meta' sessione) |
-| codice errore `rate_limited` | definito nel protocollo | nessun rate limiting implementato |
 
 ---
 
@@ -167,8 +170,6 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 ### Sicurezza
 
 - Nessun HTTPS/WSS: il traffico in LAN e' in chiaro (token compreso).
-- Nessun limite ai tentativi di PIN/token (brute force possibile) e nessun
-  rate limiting sulle pressioni.
 - Un solo token valido per tutti i client: niente identita' per dispositivo,
   niente revoca selettiva, niente scadenza.
 - Nessun audit log persistente delle azioni eseguite.

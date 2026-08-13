@@ -60,7 +60,7 @@ funzionano su quale sistema, e cosa serve installare, e' nella tabella
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.2.4 - deck "Wdeck"
+  Wdeck host v0.2.5 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
   azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
@@ -158,7 +158,7 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (259 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (278 verifiche) |
 | `npm run smoke` | smoke test end-to-end su un host reale (41 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
@@ -377,11 +377,16 @@ protezioni non sono un dettaglio.
   lanciato. Supporta i glob `*` e `**`; i percorsi relativi sono risolti
   rispetto alla cartella di `deck.json`; il path traversal non la aggira.
 - **Whitelist di estensioni** e **whitelist degli schemi URL**.
+- **Limiti di frequenza**: 60 comandi ogni 10 secondi e 10 tentativi di accesso
+  ogni 5 minuti, a finestra scorrevole. Un PIN di quattro cifre sono diecimila
+  combinazioni: senza limite si provano in pochi secondi. Anche i token
+  rifiutati contano come tentativi, altrimenti il limite si aggirerebbe
+  provando quelli. Si tara da `settings.security.rateLimit`.
 - **Dry-run**: i client possono attivarlo ma **non disattivarlo**.
 - **Bind**: `127.0.0.1` per l'uso solo locale, `0.0.0.0` per la LAN.
 - Il layout inviato ai client **non contiene mai** token, PIN o whitelist.
 
-Limiti noti: nessun HTTPS, un solo token condiviso, nessun rate limiting.
+Limiti noti: nessun HTTPS, un solo token condiviso.
 Vedi la sezione *Mancante* di [`docs/ROADMAP.md`](docs/ROADMAP.md).
 Usare solo su una rete di cui ti fidi.
 

@@ -59,6 +59,29 @@ Tutti gli endpoint restituiscono JSON. In caso di errore il formato e' sempre:
 Codici possibili: `unauthorized`, `bad_request`, `not_found`, `forbidden`,
 `action_failed`, `unsupported_action`, `rate_limited`, `internal`.
 
+### Limiti di frequenza
+
+Due limiti indipendenti, entrambi a finestra scorrevole:
+
+| limite | predefinito | si applica a |
+|---|---|---|
+| comandi | 60 ogni 10 s | `POST /api/press`, `POST /api/lite/press`, messaggio WebSocket `press` |
+| tentativi di accesso | 10 ogni 5 min | `POST /api/pair`, token rifiutati su qualunque rotta, messaggio WebSocket `auth` |
+
+Superato il limite la risposta e' `429` con codice `rate_limited` e l'header
+`Retry-After` in secondi; sul WebSocket arriva un messaggio `error` con lo
+stesso codice, e il canale `auth` viene chiuso.
+
+I due contatori **non sono separabili**: anche un token rifiutato conta come
+tentativo di accesso, altrimenti il limite sul PIN si aggirerebbe provando
+direttamente i token. Un accesso riuscito azzera i tentativi di quell'indirizzo.
+
+Si tarano da `settings.security.rateLimit`:
+
+```json
+{ "enabled": true, "press": { "windowMs": 10000, "max": 60 }, "auth": { "windowMs": 300000, "max": 10 } }
+```
+
 ### `GET /api/health`
 
 Pubblico (nessun token). Serve alla scoperta dell'host e alla diagnostica.

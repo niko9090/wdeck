@@ -15,6 +15,7 @@ import {
   toLiteStates
 } from '../../../shared/protocol.mjs';
 import { publicDeck } from './api.mjs';
+import { normalizeAddress } from '../security/ratelimit.mjs';
 
 const AUTH_TIMEOUT_MS = 8000;
 const MAX_MESSAGE_BYTES = 64 * 1024;
@@ -98,6 +99,7 @@ export function createHub(host) {
   function handleFull(conn, req) {
     fullClients.add(conn);
     conn.data.authenticated = false;
+    conn.data.address = normalizeAddress(req.socket?.remoteAddress);
 
     const { ok: preAuthenticated } = auth.verifyRequest(req);
 
@@ -143,11 +145,24 @@ export function createHub(host) {
           conn.send({ type: MSG.error, code: ERROR_CODES.unauthorized, message: 'autenticazione richiesta' });
           return;
         }
+        // Su un canale aperto si potrebbero provare token a raffica senza mai
+        // riaprire la connessione: il limite vale anche qui.
+        const attempt = host.limits.checkAuth({ address: conn.data.address });
+        if (!attempt.allowed) {
+          conn.send({
+            type: MSG.error,
+            code: ERROR_CODES.rateLimited,
+            message: `troppi tentativi di accesso: riprova fra ${Math.max(1, Math.ceil(attempt.retryAfterMs / 1000))} secondi`
+          });
+          conn.close(1008, 'troppi tentativi');
+          return;
+        }
         if (!auth.verify(msg.token)) {
           conn.send({ type: MSG.error, code: ERROR_CODES.unauthorized, message: 'token non valido' });
           conn.close(1008, 'token non valido');
           return;
         }
+        host.limits.clearAuth({ address: conn.data.address });
         completeAuth();
         return;
       }
@@ -158,6 +173,16 @@ export function createHub(host) {
           break;
 
         case MSG.press: {
+          const limit = host.limits.checkPress({ address: conn.data.address });
+          if (!limit.allowed) {
+            conn.send({
+              type: MSG.error,
+              code: ERROR_CODES.rateLimited,
+              message: `troppi comandi: riprova fra ${Math.max(1, Math.ceil(limit.retryAfterMs / 1000))} secondi`,
+              requestId: msg.requestId ?? null
+            });
+            break;
+          }
           const result = await dispatcher.press({
             buttonId: msg.buttonId,
             profileId: msg.profileId,
@@ -211,9 +236,10 @@ export function createHub(host) {
   // ------------------------------------------------------------------
   // client "lite" (ESP32): token obbligatorio gia' nell'handshake
   // ------------------------------------------------------------------
-  function handleLite(conn) {
+  function handleLite(conn, req) {
     liteClients.add(conn);
     conn.data.authenticated = true;
+    conn.data.address = normalizeAddress(req?.socket?.remoteAddress);
     state.addClient(conn);
 
     conn.send({
@@ -242,6 +268,11 @@ export function createHub(host) {
           break;
 
         case LITE_MSG.press: {
+          const limit = host.limits.checkPress({ address: conn.data.address });
+          if (!limit.allowed) {
+            conn.send({ [F.type]: LITE_MSG.error, [F.error]: ERROR_CODES.rateLimited, [F.message]: 'troppi comandi' });
+            break;
+          }
           const result = await dispatcher.press({
             buttonId: msg[F.id],
             dryRun: state.dryRun,

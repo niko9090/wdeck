@@ -5,6 +5,7 @@
 
 import { ENDPOINTS, ERROR_CODES, PROTOCOL_VERSION, LITE_PROTOCOL_VERSION, LITE_FIELDS, toLitePage } from '../../../shared/protocol.mjs';
 import { CATEGORIES } from '../actions/registry.mjs';
+import { normalizeAddress } from '../security/ratelimit.mjs';
 import {
   ICON_TYPES as ICON_FORMATS,
   MAX_ICONS as MAX_ICON_COUNT,
@@ -97,13 +98,32 @@ export function publicDeck(deck) {
 export function createApiRouter(host) {
   const { auth, state, dispatcher, registry, configStore, version } = host;
 
+  /** Indirizzo del richiedente, usato come identita' per i limiti. */
+  const addressOf = (req) => normalizeAddress(req.socket?.remoteAddress);
+
   const requireAuth = (req, res) => {
     const { ok } = auth.verifyRequest(req);
     if (!ok) {
+      // Anche un token sbagliato e' un tentativo di indovinare: va contato,
+      // altrimenti il limite sul PIN si aggira provando direttamente i token.
+      host.limits.checkAuth({ address: addressOf(req) });
       sendError(res, 401, ERROR_CODES.unauthorized, 'token mancante o non valido');
       return false;
     }
     return true;
+  };
+
+  /**
+   * Applica un limite e, se superato, risponde 429.
+   * @returns {boolean} true se la richiesta puo' proseguire
+   */
+  const allow = (res, result, what) => {
+    if (result.allowed) return true;
+    const seconds = Math.ceil(result.retryAfterMs / 1000);
+    res.setHeader('Retry-After', String(Math.max(1, seconds)));
+    sendError(res, 429, ERROR_CODES.rateLimited,
+      `troppi ${what}: riprova fra ${Math.max(1, seconds)} secondi`);
+    return false;
   };
 
   const routes = {
@@ -124,13 +144,24 @@ export function createApiRouter(host) {
     },
 
     [`POST ${ENDPOINTS.pair}`]: async (req, res) => {
+      const address = addressOf(req);
+      // Il controllo viene prima della lettura del PIN: e' proprio il tentativo
+      // a dover essere contato, riuscito o no.
+      if (!allow(res, host.limits.checkAuth({ address }), 'tentativi di accesso')) {
+        host.logger.warn?.(`[wdeck] pairing bloccato dal limite: ${address}`);
+        return;
+      }
+
       const body = await readJsonBody(req);
       const result = auth.pair(body.pin);
       if (!result.ok) {
         sendError(res, 401, ERROR_CODES.unauthorized, result.reason ?? 'pairing rifiutato');
         return;
       }
-      host.logger.info?.(`[wdeck] pairing riuscito da ${req.socket.remoteAddress}`);
+      // Chi ha dimostrato di conoscere il PIN non e' un attaccante: i suoi
+      // tentativi precedenti non devono pesare sui prossimi accessi.
+      host.limits.clearAuth({ address });
+      host.logger.info?.(`[wdeck] pairing riuscito da ${address}`);
       sendJson(res, 200, { ok: true, token: result.token });
     },
 
@@ -298,6 +329,7 @@ export function createApiRouter(host) {
 
     [`POST ${ENDPOINTS.press}`]: async (req, res) => {
       if (!requireAuth(req, res)) return;
+      if (!allow(res, host.limits.checkPress({ address: addressOf(req) }), 'comandi')) return;
       const body = await readJsonBody(req);
       const result = await dispatcher.press({
         buttonId: body.buttonId,
@@ -353,6 +385,7 @@ export function createApiRouter(host) {
 
     [`POST ${ENDPOINTS.litePress}`]: async (req, res) => {
       if (!requireAuth(req, res)) return;
+      if (!allow(res, host.limits.checkPress({ address: addressOf(req) }), 'comandi')) return;
       const body = await readJsonBody(req);
       const buttonId = body[LITE_FIELDS.id];
       const result = await dispatcher.press({

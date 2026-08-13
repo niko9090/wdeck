@@ -19,6 +19,7 @@ import { createDispatcher } from './actions/dispatcher.mjs';
 import { createState } from './state.mjs';
 import { createStatusTracker } from './status.mjs';
 import { createAuth } from './security/auth.mjs';
+import { createRateLimits } from './security/ratelimit.mjs';
 import { createIconStore } from './icons.mjs';
 import { createApiRouter } from './server/api.mjs';
 import { createHub } from './server/hub.mjs';
@@ -124,6 +125,10 @@ export function createHost(options = {}) {
     auth,
     dispatcher,
     status,
+    // Le pressioni sono limitate per non trasformare un client impazzito in
+    // decine di processi al secondo; i tentativi di autenticazione perche' un
+    // PIN di quattro cifre, senza limite, si indovina in pochi secondi.
+    limits: createRateLimits(deck.settings.security.rateLimit ?? {}),
     // Le icone caricate dall'utente stanno accanto a deck.json, non dentro:
     // un file di configurazione pieno di base64 non sarebbe piu' modificabile
     // a mano, che e' una delle cose che il progetto promette.
