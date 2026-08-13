@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.2.0`.
+Ultimo aggiornamento: 2026-08-13 - versione `0.2.1`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -78,15 +78,19 @@ quindi non esistono problemi di quoting o injection dai parametri.
 - Tre ambienti di scheda preconfigurati (ILI9341 generico, "cheap yellow
   display" ESP32-2432S028R, ESP32-S3 + ST7789).
 
-### Test automatici
+### Test automatici e integrazione continua
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | 8 file di test unitari/integrazione | 150 |
+| `npm test` | file di test unitari/integrazione | 159 |
 | `npm run smoke` | end-to-end su host reale | 36 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 109 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
-| `node scripts/check-docs.mjs` | coerenza della documentazione | - |
+| `npm run check:docs` | coerenza della documentazione | - |
+| `npm run check:deps` | vincolo di zero dipendenze | - |
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) esegue `npm run verify`
+a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 
 ---
 
@@ -155,7 +159,6 @@ quindi non esistono problemi di quoting o injection dai parametri.
 
 ### Qualita'
 
-- Nessuna pipeline CI (i comandi vanno eseguiti a mano).
 - Nessun test su hardware ESP32 reale, nessun test del client web in browser
   (niente Playwright/Puppeteer): la PWA e' verificata solo lato server.
 - Nessuna misura di copertura del codice.
@@ -177,4 +180,4 @@ In ordine di rapporto valore/costo, da decidere insieme:
 5. **Token per dispositivo + revoca**, con QR code per il pairing.
 6. **HTTPS/WSS** con certificato autofirmato generato all'avvio.
 7. **Integrazione OBS** al posto dell'azione `stub`.
-8. **CI** che esegua `npm run verify` a ogni commit.
+8. ~~**CI** che esegua `npm run verify` a ogni commit.~~ **fatto in 0.2.1.**

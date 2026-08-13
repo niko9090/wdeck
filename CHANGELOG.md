@@ -3,6 +3,25 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.2.1] - 2026-08-13
+
+### Aggiunto
+
+- **Integrazione continua** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+  `npm run verify` a ogni push e pull request, su Linux, Windows e macOS con
+  Node 20.10 e 22. Prima i comandi andavano ricordati ed eseguiti a mano.
+- `npm run check:deps`: guardia automatica del vincolo di zero dipendenze.
+  Fallisce se `package.json` acquista dipendenze o se un sorgente importa un
+  pacchetto che non sia un modulo built-in di Node.
+- `test/project.test.mjs`: sei verifiche sull'impianto del progetto (assenza di
+  dipendenze, presenza e trigger del workflow, completezza di `verify`).
+
+### Note
+
+`npm run check:deps` fa ora parte di `npm run verify`, quindi la violazione del
+vincolo di zero dipendenze interrompe la catena di verifica come qualunque test
+fallito. Il resto dei limiti noti e' in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
 ## [0.2.0] - 2026-08-13
 
 Prima versione installabile, con l'editor visuale e 17 azioni in piu'.

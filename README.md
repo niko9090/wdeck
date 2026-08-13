@@ -125,6 +125,7 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm run smoke` | smoke test end-to-end su un host reale (36 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (109 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
+| `npm run check:deps` | verifica il vincolo di zero dipendenze (package.json e import) |
 | `npm run verify` | tutti i controlli sopra, in sequenza |
 | `node scripts/gen-icons.mjs` | rigenera le icone PNG della PWA |
 
@@ -139,6 +140,13 @@ node bin/wdeck.mjs --config .\deck-lavoro.json
 
 Equivalenti come variabili d'ambiente: `WDECK_PORT`, `WDECK_HOST`,
 `WDECK_TOKEN`, `WDECK_DRY_RUN`, `WDECK_REQUIRE_TOKEN`.
+
+### Integrazione continua
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) esegue `npm run verify` a
+ogni push e a ogni pull request, su Linux, Windows e macOS con Node 20.10 e 22.
+E' la stessa catena che si lancia in locale: test unitari, smoke end-to-end,
+build della PWA, conformita' del firmware e coerenza della documentazione.
 
 ---
 
@@ -313,6 +321,7 @@ Scelte di fondo:
 - **Zero dipendenze runtime.** Solo moduli built-in di Node: niente pacchetti
   nativi da compilare, `npm install` immediato, nulla che invecchi male.
   Il WebSocket e la validazione dello schema sono implementati nel progetto.
+  `npm run check:deps` fa fallire la build se qualcuno aggiunge un pacchetto.
 - **Il protocollo e' un file solo.** `shared/protocol.mjs` e' importato
   dall'host e dal client web, e replicato in C in `wdeck_protocol.h`; un test
   automatico impedisce che i due divergano.
