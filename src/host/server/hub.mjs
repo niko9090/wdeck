@@ -11,9 +11,12 @@ import {
   LITE_FIELDS,
   PROTOCOL_VERSION,
   LITE_PROTOCOL_VERSION,
-  toLitePage
+  toLitePage,
+  toLiteStates
 } from '../../../shared/protocol.mjs';
 import { publicDeck } from './api.mjs';
+import { normalizeAddress } from '../security/ratelimit.mjs';
+import { extractToken } from '../security/auth.mjs';
 
 const AUTH_TIMEOUT_MS = 8000;
 const MAX_MESSAGE_BYTES = 64 * 1024;
@@ -23,6 +26,7 @@ const MAX_MESSAGE_BYTES = 64 * 1024;
  */
 export function createHub(host) {
   const { auth, state, dispatcher, configStore, logger } = host;
+  const statusSnapshot = () => host.status?.snapshot() ?? {};
 
   /** @type {Set<import('../ws/connection.mjs').WebSocketConnection>} */
   const fullClients = new Set();
@@ -38,6 +42,17 @@ export function createHub(host) {
     [F.page]: state.activePageId,
     [F.dryRun]: state.dryRun ? 1 : 0,
     [F.timestamp]: Date.now()
+  });
+
+  /**
+   * Stato dei bottoni nella forma lite: id -> 0/1, nient'altro.
+   * Un ESP32 non ha spazio per livelli ed etichette, ma puo' disegnare
+   * diversamente un bottone acceso.
+   */
+  const liteStatusPayload = () => ({
+    [F.type]: LITE_MSG.status,
+    [F.version]: LITE_PROTOCOL_VERSION,
+    [F.states]: toLiteStates(statusSnapshot())
   });
 
   function broadcastFull(message) {
@@ -85,6 +100,10 @@ export function createHub(host) {
   function handleFull(conn, req) {
     fullClients.add(conn);
     conn.data.authenticated = false;
+    conn.data.address = normalizeAddress(req.socket?.remoteAddress);
+    // Il token usato resta sulla connessione per poterlo rivalutare quando un
+    // dispositivo viene revocato: senza, una revoca non scollegherebbe nessuno.
+    conn.data.token = extractToken(req);
 
     const { ok: preAuthenticated } = auth.verifyRequest(req);
 
@@ -108,6 +127,10 @@ export function createHub(host) {
       conn.send({ type: MSG.authOk, protocol: PROTOCOL_VERSION });
       conn.send({ type: MSG.deck, deck: publicDeck(configStore.get()), state: state.snapshot() });
       conn.send({ type: MSG.state, state: state.snapshot() });
+      conn.send({ type: MSG.status, states: statusSnapshot() });
+      // Il primo client collegato trova la cache vuota: una lettura subito, cosi'
+      // i bottoni a due stati partono gia' con l'aspetto giusto.
+      host.status?.refresh({ force: true }).catch(() => {});
     }
 
     if (preAuthenticated) completeAuth();
@@ -126,11 +149,27 @@ export function createHub(host) {
           conn.send({ type: MSG.error, code: ERROR_CODES.unauthorized, message: 'autenticazione richiesta' });
           return;
         }
-        if (!auth.verify(msg.token)) {
-          conn.send({ type: MSG.error, code: ERROR_CODES.unauthorized, message: 'token non valido' });
+        // Su un canale aperto si potrebbero provare token a raffica senza mai
+        // riaprire la connessione: il limite vale anche qui.
+        const attempt = host.limits.checkAuth({ address: conn.data.address });
+        if (!attempt.allowed) {
+          conn.send({
+            type: MSG.error,
+            code: ERROR_CODES.rateLimited,
+            message: `troppi tentativi di accesso: riprova fra ${Math.max(1, Math.ceil(attempt.retryAfterMs / 1000))} secondi`
+          });
+          conn.close(1008, 'troppi tentativi');
+          return;
+        }
+        const identity = auth.identify(msg.token);
+        if (!identity.ok) {
+          conn.send({ type: MSG.error, code: ERROR_CODES.unauthorized, message: identity.reason ?? 'token non valido' });
           conn.close(1008, 'token non valido');
           return;
         }
+        conn.data.token = msg.token;
+        conn.data.deviceId = identity.device?.id ?? null;
+        host.limits.clearAuth({ address: conn.data.address });
         completeAuth();
         return;
       }
@@ -141,6 +180,16 @@ export function createHub(host) {
           break;
 
         case MSG.press: {
+          const limit = host.limits.checkPress({ address: conn.data.address });
+          if (!limit.allowed) {
+            conn.send({
+              type: MSG.error,
+              code: ERROR_CODES.rateLimited,
+              message: `troppi comandi: riprova fra ${Math.max(1, Math.ceil(limit.retryAfterMs / 1000))} secondi`,
+              requestId: msg.requestId ?? null
+            });
+            break;
+          }
           const result = await dispatcher.press({
             buttonId: msg.buttonId,
             profileId: msg.profileId,
@@ -148,7 +197,9 @@ export function createHub(host) {
             hold: msg.hold === true,
             value: msg.value,
             dryRun: state.dryRun || msg.dryRun === true,
-            source: 'ws'
+            source: 'ws',
+            deviceId: conn.data.deviceId ?? null,
+            address: conn.data.address
           });
           conn.send({ type: MSG.ack, requestId: msg.requestId ?? null, ok: result.ok, result });
           break;
@@ -194,9 +245,11 @@ export function createHub(host) {
   // ------------------------------------------------------------------
   // client "lite" (ESP32): token obbligatorio gia' nell'handshake
   // ------------------------------------------------------------------
-  function handleLite(conn) {
+  function handleLite(conn, req) {
     liteClients.add(conn);
     conn.data.authenticated = true;
+    conn.data.address = normalizeAddress(req?.socket?.remoteAddress);
+    conn.data.token = extractToken(req ?? {});
     state.addClient(conn);
 
     conn.send({
@@ -207,6 +260,8 @@ export function createHub(host) {
       [F.dryRun]: state.dryRun ? 1 : 0
     });
     conn.send(liteStatePayload());
+    conn.send(liteStatusPayload());
+    host.status?.refresh({ force: true }).catch(() => {});
 
     conn.on('message', async (raw) => {
       let msg;
@@ -223,10 +278,17 @@ export function createHub(host) {
           break;
 
         case LITE_MSG.press: {
+          const limit = host.limits.checkPress({ address: conn.data.address });
+          if (!limit.allowed) {
+            conn.send({ [F.type]: LITE_MSG.error, [F.error]: ERROR_CODES.rateLimited, [F.message]: 'troppi comandi' });
+            break;
+          }
           const result = await dispatcher.press({
             buttonId: msg[F.id],
             dryRun: state.dryRun,
-            source: 'lite-ws'
+            source: 'lite-ws',
+            deviceId: conn.data.deviceId ?? null,
+            address: conn.data.address
           });
           conn.send({
             [F.type]: LITE_MSG.ack,
@@ -291,6 +353,37 @@ export function createHub(host) {
     broadcastDeck() {
       broadcastFull({ type: MSG.deck, deck: publicDeck(configStore.get()), state: state.snapshot() });
       broadcastLite(liteStatePayload());
+    },
+
+    /**
+     * Rimanda a tutti i client lo stato reale dei controlli.
+     * @param {Record<string, object>} snapshot stato completo
+     * @param {Record<string, object|null>} [changes] sole voci cambiate
+     */
+    broadcastStatus(snapshot, changes) {
+      broadcastFull({ type: MSG.status, states: snapshot, changed: changes ?? null });
+      broadcastLite(liteStatusPayload());
+    },
+
+    /**
+     * Scollega i client il cui token non e' piu' valido.
+     *
+     * Va chiamata dopo una revoca o una rotazione: senza, un dispositivo
+     * revocato resterebbe collegato e capace di premere bottoni fino a quando
+     * non chiude lui la connessione, che e' esattamente cio' che la revoca
+     * dovrebbe impedire.
+     * @returns {number} quanti client sono stati scollegati
+     */
+    disconnectRevoked() {
+      let chiusi = 0;
+      for (const conn of [...fullClients, ...liteClients]) {
+        if (!conn.data.authenticated) continue;
+        if (auth.identify(conn.data.token).ok) continue;
+        conn.close(1008, 'credenziale revocata');
+        chiusi += 1;
+      }
+      if (chiusi > 0) logger.warn?.(`[wdeck] ${chiusi} client scollegati: credenziale non piu' valida`);
+      return chiusi;
     },
 
     /** Segnala a tutti i client che esiste una versione piu' recente. */

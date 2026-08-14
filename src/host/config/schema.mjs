@@ -19,18 +19,28 @@ export const LIMITS = Object.freeze({
 });
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  server: { host: '0.0.0.0', port: 8899, publicName: 'Wdeck Host' },
+  server: { host: '0.0.0.0', port: 8899, publicName: 'Wdeck Host', tls: { enabled: false } },
   security: {
     requireToken: true,
     token: '',
     pin: '',
     dryRun: false,
     allowUrlSchemes: ['http', 'https'],
-    allowedExtensions: ['.exe', '.bat', '.cmd', '.ps1', '.py'],
+    allowedExtensions: ['.exe', '.bat', '.cmd', '.ps1', '.py', '.sh'],
     allowExec: [],
-    maxSequenceSteps: 32
+    maxSequenceSteps: 32,
+    devices: [],
+    deviceTokenDays: null,
+    audit: { enabled: true, maxBytes: 1048576, keep: 3 },
+    rateLimit: {
+      enabled: true,
+      press: { windowMs: 10000, max: 60 },
+      auth: { windowMs: 300000, max: 10 }
+    }
   },
-  ui: { theme: 'dark', accent: '#4c8dff', showLabels: true },
+  ui: { theme: 'dark', accent: '#4c8dff', showLabels: true, language: 'auto' },
+  status: { enabled: true, intervalMs: 8000 },
+  discovery: { enabled: true },
   tray: { enabled: true },
   updates: { check: true, repository: 'niko9090/wdeck' },
   integrations: {}
@@ -103,7 +113,31 @@ function validateSettings(ctx, settings) {
     return;
   }
 
-  const { server, security, ui, tray, updates, integrations } = settings;
+  const { server, security, ui, tray, updates, integrations, status, discovery } = settings;
+
+  if (discovery !== undefined) {
+    if (!isPlainObject(discovery)) ctx.err('settings.discovery', 'atteso oggetto');
+    else {
+      checkBool(ctx, 'settings.discovery.enabled', discovery.enabled);
+      if (discovery.name !== undefined) {
+        checkString(ctx, 'settings.discovery.name', discovery.name, {
+          pattern: /^[a-z0-9][a-z0-9-]{0,31}$/,
+          label: 'minuscole, cifre e trattini'
+        });
+      }
+    }
+  }
+
+  if (status !== undefined) {
+    if (!isPlainObject(status)) ctx.err('settings.status', 'atteso oggetto');
+    else {
+      checkBool(ctx, 'settings.status.enabled', status.enabled);
+      if (status.intervalMs !== undefined) {
+        // Sotto il secondo si tratterebbe di un polling continuo del sistema.
+        checkInt(ctx, 'settings.status.intervalMs', status.intervalMs, { min: 1000, max: 600000 });
+      }
+    }
+  }
 
   if (tray !== undefined) {
     if (!isPlainObject(tray)) ctx.err('settings.tray', 'atteso oggetto');
@@ -140,6 +174,19 @@ function validateSettings(ctx, settings) {
       checkString(ctx, 'settings.server.host', server.host);
       if (server.port !== undefined) checkInt(ctx, 'settings.server.port', server.port, { min: 1, max: 65535 });
       checkString(ctx, 'settings.server.publicName', server.publicName, { max: 64 });
+      if (server.tls !== undefined) {
+        if (!isPlainObject(server.tls)) ctx.err('settings.server.tls', 'atteso oggetto');
+        else {
+          checkBool(ctx, 'settings.server.tls.enabled', server.tls.enabled);
+          checkString(ctx, 'settings.server.tls.certFile', server.tls.certFile);
+          checkString(ctx, 'settings.server.tls.keyFile', server.tls.keyFile);
+          if (server.tls.days !== undefined) {
+            checkInt(ctx, 'settings.server.tls.days', server.tls.days, { min: 1, max: 3650 });
+          }
+          const uno = Boolean(server.tls.certFile) !== Boolean(server.tls.keyFile);
+          if (uno) ctx.err('settings.server.tls', 'certFile e keyFile vanno indicati insieme, o nessuno dei due');
+        }
+      }
     }
   }
 
@@ -163,6 +210,74 @@ function validateSettings(ctx, settings) {
       if (security.maxSequenceSteps !== undefined) {
         checkInt(ctx, 'settings.security.maxSequenceSteps', security.maxSequenceSteps, { min: 1, max: 256 });
       }
+      // Ogni dispositivo accoppiato lascia qui la sola impronta del proprio
+      // token: chi legge deck.json non puo' ricavarne la credenziale.
+      if (security.devices !== undefined) {
+        if (!Array.isArray(security.devices)) ctx.err('settings.security.devices', 'atteso array di dispositivi');
+        else {
+          const ids = new Set();
+          security.devices.forEach((device, i) => {
+            const dpath = `settings.security.devices[${i}]`;
+            if (!isPlainObject(device)) {
+              ctx.err(dpath, 'atteso oggetto dispositivo');
+              return;
+            }
+            checkString(ctx, `${dpath}.id`, device.id, { required: true, max: 64 });
+            checkString(ctx, `${dpath}.name`, device.name, { max: 64 });
+            checkString(ctx, `${dpath}.hash`, device.hash, {
+              required: true,
+              pattern: /^[0-9a-f]{64}$/i,
+              label: 'sha256 esadecimale'
+            });
+            if (device.createdAt !== undefined) checkInt(ctx, `${dpath}.createdAt`, device.createdAt, { min: 0 });
+            if (device.expiresAt !== undefined && device.expiresAt !== null) {
+              checkInt(ctx, `${dpath}.expiresAt`, device.expiresAt, { min: 0 });
+            }
+            if (typeof device.id === 'string') {
+              if (ids.has(device.id)) ctx.err(`${dpath}.id`, `id dispositivo duplicato: "${device.id}"`);
+              else ids.add(device.id);
+            }
+          });
+        }
+      }
+      if (security.deviceTokenDays !== undefined && security.deviceTokenDays !== null) {
+        checkInt(ctx, 'settings.security.deviceTokenDays', security.deviceTokenDays, { min: 1, max: 3650 });
+      }
+
+      if (security.audit !== undefined) {
+        if (!isPlainObject(security.audit)) ctx.err('settings.security.audit', 'atteso oggetto');
+        else {
+          checkBool(ctx, 'settings.security.audit.enabled', security.audit.enabled);
+          checkString(ctx, 'settings.security.audit.file', security.audit.file);
+          if (security.audit.maxBytes !== undefined) {
+            checkInt(ctx, 'settings.security.audit.maxBytes', security.audit.maxBytes, { min: 4096, max: 268435456 });
+          }
+          if (security.audit.keep !== undefined) {
+            checkInt(ctx, 'settings.security.audit.keep', security.audit.keep, { min: 0, max: 20 });
+          }
+        }
+      }
+
+      if (security.rateLimit !== undefined) {
+        if (!isPlainObject(security.rateLimit)) ctx.err('settings.security.rateLimit', 'atteso oggetto');
+        else {
+          checkBool(ctx, 'settings.security.rateLimit.enabled', security.rateLimit.enabled);
+          for (const bucket of ['press', 'auth']) {
+            const value = security.rateLimit[bucket];
+            if (value === undefined) continue;
+            if (!isPlainObject(value)) {
+              ctx.err(`settings.security.rateLimit.${bucket}`, 'atteso oggetto');
+              continue;
+            }
+            if (value.windowMs !== undefined) {
+              checkInt(ctx, `settings.security.rateLimit.${bucket}.windowMs`, value.windowMs, { min: 100, max: 3600000 });
+            }
+            if (value.max !== undefined) {
+              checkInt(ctx, `settings.security.rateLimit.${bucket}.max`, value.max, { min: 1, max: 100000 });
+            }
+          }
+        }
+      }
       if (security.requireToken !== false && (security.token === undefined || security.token === '')) {
         ctx.warn('settings.security.token', "nessun token configurato: ne verra' generato uno automaticamente all'avvio");
       }
@@ -177,6 +292,9 @@ function validateSettings(ctx, settings) {
       }
       if (ui.accent !== undefined) checkString(ctx, 'settings.ui.accent', ui.accent, { pattern: HEX_COLOR_RE, label: 'colore hex' });
       checkBool(ctx, 'settings.ui.showLabels', ui.showLabels);
+      if (ui.language !== undefined && !['it', 'en', 'auto'].includes(ui.language)) {
+        ctx.err('settings.ui.language', 'valore ammesso: it | en | auto');
+      }
     }
   }
 }
@@ -214,12 +332,23 @@ function validateButton(ctx, path, button, page, seen, actionTypes) {
   checkString(ctx, `${path}.label`, button.label, { max: LIMITS.maxLabel });
   checkInt(ctx, `${path}.row`, button.row, { required: true, min: 0, max: LIMITS.maxRows - 1 });
   checkInt(ctx, `${path}.col`, button.col, { required: true, min: 0, max: LIMITS.maxCols - 1 });
-  if (button.icon !== undefined) checkString(ctx, `${path}.icon`, button.icon, { pattern: /^[a-z0-9][a-z0-9-]{0,23}$/, label: 'nome icona' });
+  // Un'icona e' un glifo incluso ("play") oppure un file caricato
+  // dall'utente ("custom:mio-logo", vedi src/host/icons.mjs).
+  if (button.icon !== undefined) {
+    checkString(ctx, `${path}.icon`, button.icon, {
+      pattern: /^(?:[a-z0-9][a-z0-9-]{0,23}|custom:[a-z0-9][a-z0-9-]{0,31})$/,
+      label: 'nome icona oppure "custom:nome"'
+    });
+  }
 
   if (button.kind !== undefined && !CONTROL_KINDS.includes(button.kind)) {
     ctx.err(`${path}.kind`, `valore ammesso: ${CONTROL_KINDS.join(' | ')}`);
   }
   checkBool(ctx, `${path}.confirm`, button.confirm);
+  // `status: false` spegne la lettura periodica dello stato reale per questo
+  // controllo: assente vale true, quindi le configurazioni esistenti guadagnano
+  // il feedback senza modifiche.
+  checkBool(ctx, `${path}.status`, button.status);
 
   // Uno slider occupa piu' celle in orizzontale e ha un proprio intervallo.
   if (button.span !== undefined) checkInt(ctx, `${path}.span`, button.span, { min: 1, max: LIMITS.maxCols });
@@ -428,6 +557,7 @@ export function normalizeDeck(raw) {
         kind: button.kind ?? 'button',
         span: button.span ?? (button.kind === 'slider' ? 2 : 1),
         confirm: button.confirm === true,
+        status: button.status !== false,
         ...(button.kind === 'slider'
           ? { min: button.min ?? 0, max: button.max ?? 100, step: button.step ?? 1 }
           : {}),

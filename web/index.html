@@ -19,27 +19,27 @@
   <section id="gate" class="gate" hidden>
     <div class="gate-card">
       <h1>Wdeck</h1>
-      <p class="gate-sub">Collega questo dispositivo all'host.</p>
+      <p class="gate-sub" data-i18n="gate.subtitle">Collega questo dispositivo all'host.</p>
 
       <label class="field">
-        <span>Indirizzo host</span>
+        <span data-i18n="gate.host">Indirizzo host</span>
         <input id="gate-host" type="text" inputmode="url" autocomplete="off" placeholder="http://192.168.1.10:8899" />
       </label>
 
       <label class="field">
-        <span>PIN di pairing</span>
+        <span data-i18n="gate.pin">PIN di accoppiamento</span>
         <input id="gate-pin" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="es. 246810" />
       </label>
 
-      <button id="gate-pair" class="btn primary" type="button">Associa con PIN</button>
+      <button id="gate-pair" class="btn primary" type="button" data-i18n="gate.pair">Associa con PIN</button>
 
       <details class="gate-advanced">
-        <summary>Ho gia' un token</summary>
+        <summary data-i18n="gate.haveToken">Ho gia' un token</summary>
         <label class="field">
-          <span>Token</span>
+          <span data-i18n="gate.token">Token</span>
           <input id="gate-token" type="text" autocomplete="off" placeholder="token dell'host" />
         </label>
-        <button id="gate-token-save" class="btn" type="button">Usa questo token</button>
+        <button id="gate-token-save" class="btn" type="button" data-i18n="gate.useToken">Usa questo token</button>
       </details>
 
       <p id="gate-error" class="gate-error" role="alert"></p>
@@ -53,14 +53,14 @@
         <span id="status-dot" class="dot" data-state="offline" title="stato connessione"></span>
         <strong id="deck-name">Wdeck</strong>
         <span id="dry-badge" class="badge warn" hidden>DRY-RUN</span>
-        <button id="btn-update" class="badge update" type="button" hidden>Aggiornamento</button>
+        <button id="btn-update" class="badge update" type="button" hidden data-i18n="top.update">Aggiornamento</button>
       </div>
       <nav class="topbar-right">
-        <select id="profile-select" class="select" aria-label="Profilo"></select>
-        <button id="btn-edit" class="icon-btn" type="button" title="Modifica il deck" aria-pressed="false">&#9998;</button>
-        <button id="btn-simulate" class="icon-btn" type="button" title="Simula le azioni (dry-run lato client)" aria-pressed="false">SIM</button>
-        <button id="btn-fullscreen" class="icon-btn" type="button" title="Schermo intero">&#9974;</button>
-        <button id="btn-settings" class="icon-btn" type="button" title="Impostazioni">&#9881;</button>
+        <select id="profile-select" class="select" aria-label="Profilo" data-i18n-label="top.profile"></select>
+        <button id="btn-edit" class="icon-btn" type="button" title="Modifica il deck" data-i18n-title="top.edit" aria-pressed="false">&#9998;</button>
+        <button id="btn-simulate" class="icon-btn" type="button" title="Simula le azioni (dry-run lato client)" data-i18n-title="top.simulate" aria-pressed="false">SIM</button>
+        <button id="btn-fullscreen" class="icon-btn" type="button" title="Schermo intero" data-i18n-title="top.fullscreen">&#9974;</button>
+        <button id="btn-settings" class="icon-btn" type="button" title="Impostazioni" data-i18n-title="top.settings">&#9881;</button>
       </nav>
     </header>
 
@@ -72,7 +72,7 @@
     <section id="grid" class="grid" aria-label="Griglia bottoni"></section>
 
     <footer class="statusbar">
-      <span id="status-text">non connesso</span>
+      <span id="status-text" data-i18n="status.offline">non connesso</span>
       <span id="last-action" class="last-action"></span>
     </footer>
   </main>
@@ -83,7 +83,7 @@
     <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
       <header class="sheet-head">
         <h2 id="sheet-title">Titolo</h2>
-        <button id="sheet-close" class="icon-btn" type="button" data-close="1" title="Chiudi">&#10005;</button>
+        <button id="sheet-close" class="icon-btn" type="button" data-close="1" title="Chiudi" data-i18n-title="sheet.close">&#10005;</button>
       </header>
       <div id="sheet-body" class="sheet-body"></div>
       <footer id="sheet-foot" class="sheet-foot"></footer>

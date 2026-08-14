@@ -24,7 +24,7 @@ export class ConfigError extends Error {
  * Legge e valida un file deck.json.
  * @param {string} file
  * @param {{actionTypes?: string[], overrides?: object}} [options]
- * @returns {{deck: object, warnings: Array<{path:string,message:string}>, file: string}}
+ * @returns {{deck: object, raw: object, warnings: Array<{path:string,message:string}>, file: string}}
  */
 export function loadDeckFile(file, options = {}) {
   const resolved = path.resolve(file);
@@ -46,20 +46,22 @@ export function loadDeckFile(file, options = {}) {
   if (!valid) throw new ConfigError(`configurazione non valida in "${resolved}":`, errors);
 
   const deck = applyOverrides(normalizeDeck(raw), options.overrides ?? {});
-  return { deck, warnings, file: resolved };
+  // `raw` e' il contenuto del file cosi' com'e': senza default espansi e senza
+  // gli override di CLI e ambiente. E' la base giusta per riscriverlo.
+  return { deck, raw, warnings, file: resolved };
 }
 
 /**
  * Applica override provenienti da CLI/env sul deck normalizzato.
  * @param {object} deck
- * @param {{port?: number, host?: string, token?: string, dryRun?: boolean, requireToken?: boolean}} overrides
+ * @param {{port?: number, host?: string, token?: string, dryRun?: boolean, requireToken?: boolean, tls?: boolean}} overrides
  */
 export function applyOverrides(deck, overrides = {}) {
   const merged = {
     ...deck,
     settings: {
       ...deck.settings,
-      server: { ...deck.settings.server },
+      server: { ...deck.settings.server, tls: { ...deck.settings.server.tls } },
       security: { ...deck.settings.security },
       ui: { ...deck.settings.ui }
     }
@@ -69,6 +71,7 @@ export function applyOverrides(deck, overrides = {}) {
   if (overrides.token !== undefined) merged.settings.security.token = String(overrides.token);
   if (overrides.dryRun !== undefined) merged.settings.security.dryRun = overrides.dryRun === true;
   if (overrides.requireToken !== undefined) merged.settings.security.requireToken = overrides.requireToken === true;
+  if (overrides.tls !== undefined) merged.settings.server.tls.enabled = overrides.tls === true;
   return merged;
 }
 
@@ -80,6 +83,7 @@ export function envOverrides(env = process.env) {
   if (env.WDECK_TOKEN) out.token = env.WDECK_TOKEN;
   if (env.WDECK_DRY_RUN !== undefined) out.dryRun = /^(1|true|yes|on)$/i.test(env.WDECK_DRY_RUN);
   if (env.WDECK_REQUIRE_TOKEN !== undefined) out.requireToken = /^(1|true|yes|on)$/i.test(env.WDECK_REQUIRE_TOKEN);
+  if (env.WDECK_TLS !== undefined) out.tls = /^(1|true|yes|on)$/i.test(env.WDECK_TLS);
   return out;
 }
 
@@ -98,6 +102,8 @@ export class ConfigStore extends EventEmitter {
     this.overrides = overrides;
     this.logger = logger;
     this.deck = null;
+    /** @type {object|null} contenuto del file cosi' com'e' su disco */
+    this.rawDeck = null;
     this.warnings = [];
     this.watcher = null;
     this.debounce = null;
@@ -105,13 +111,29 @@ export class ConfigStore extends EventEmitter {
 
   /** Carica (o ricarica) la configurazione. @returns {object} deck normalizzato */
   load() {
-    const { deck, warnings } = loadDeckFile(this.file, {
+    const { deck, raw, warnings } = loadDeckFile(this.file, {
       actionTypes: this.actionTypes,
       overrides: this.overrides
     });
     this.deck = deck;
+    this.rawDeck = raw;
     this.warnings = warnings;
     return deck;
+  }
+
+  /**
+   * Copia del file cosi' com'e' su disco, senza default espansi e senza gli
+   * override di CLI e ambiente.
+   *
+   * E' la base da cui riscrivere `deck.json`: partire dal deck normalizzato
+   * scriverebbe nel file anche cio' che arriva da `--port`, `--token` o dalle
+   * variabili WDECK_*, rendendo permanente qualcosa che l'utente aveva chiesto
+   * solo per quell'avvio.
+   * @returns {object}
+   */
+  snapshot() {
+    if (!this.rawDeck) throw new Error('configurazione non ancora caricata: chiamare load()');
+    return JSON.parse(JSON.stringify(this.rawDeck));
   }
 
   /** @returns {object} deck corrente (lancia se non ancora caricato) */

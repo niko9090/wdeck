@@ -226,6 +226,56 @@ body {
   color: var(--warn);
 }
 
+/* ---------------- stato reale dei controlli ----------------
+   Un bottone a due stati (muto, scena OBS in onda, luce accesa) mostra la
+   condizione letta dal PC, non l'ultima pressione. Acceso = bordo e alone di
+   colore accento piu' una spia in alto a sinistra; spento = spia scura. */
+
+.deck-btn[data-on] { border-color: var(--border); }
+
+.deck-btn[data-on]::before {
+  content: '';
+  position: absolute;
+  top: 6px; left: 6px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  opacity: 0.5;
+  transition: background 140ms ease, opacity 140ms ease, box-shadow 140ms ease;
+}
+
+.deck-btn[data-on='1'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-btn));
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.deck-btn[data-on='1']::before {
+  background: var(--accent);
+  opacity: 1;
+  box-shadow: 0 0 6px var(--accent);
+}
+
+/* La spia occuperebbe lo stesso angolo del segnale di conferma. */
+.deck-btn[data-on] .confirm-tag { left: 18px; }
+
+.deck-btn .state-tag,
+.deck-slider .state-tag {
+  position: absolute;
+  bottom: 3px; right: 6px;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.deck-btn[data-on='0'] .state-tag { color: var(--text-dim); }
+
 /* ---------------- modalita' modifica ---------------- */
 
 .grid.editing .deck-btn.empty {
@@ -239,6 +289,90 @@ body {
   outline: 2px dashed var(--accent);
   outline-offset: -3px;
 }
+
+/* trascinamento di un controllo in un'altra cella */
+.grid.editing .deck-btn.dragging,
+.grid.editing .deck-slider.dragging {
+  opacity: 0.55;
+  transform: scale(0.92);
+  z-index: 2;
+}
+
+.grid.editing .deck-btn.empty.drop-target {
+  opacity: 1;
+  border-style: solid;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* scheda "+" e matita sulle schede pagina, solo in modifica */
+.page-tab .page-edit {
+  margin-left: 6px;
+  opacity: 0.65;
+  font-size: 0.9em;
+}
+.page-tab .page-edit:hover { opacity: 1; }
+.page-tab.add { font-weight: 700; }
+
+/* ---------------- scelta dell'icona nell'editor ---------------- */
+
+.icon-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 6px;
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.icon-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 6px;
+  color: var(--text);
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.icon-choice svg,
+.icon-choice img { width: 100%; height: 100%; object-fit: contain; }
+.icon-choice .icon-auto { font-size: 10px; color: var(--text-dim); }
+.icon-choice.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+.icon-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* icona caricata dall'utente: stessa misura del glifo che sostituisce */
+.deck-btn .icon-img { width: clamp(20px, 4.5vmin, 42px); height: clamp(20px, 4.5vmin, 42px); object-fit: contain; }
+.deck-slider .icon-img { width: clamp(18px, 3.4vmin, 30px); height: clamp(18px, 3.4vmin, 30px); flex: 0 0 auto; object-fit: contain; }
+
+.field.disabled { opacity: 0.5; }
+
+/* ---------------- codice QR di accoppiamento ---------------- */
+
+.qr-box { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.qr {
+  display: inline-block;
+  padding: 8px;
+  background: #ffffff;
+  border-radius: 10px;
+  line-height: 0;
+}
+.qr svg { width: min(240px, 60vw); height: auto; }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn.ghost.small.danger { color: var(--err); }
 
 /* ---------------- cursori (volume, luminosita') ---------------- */
 
@@ -449,6 +583,20 @@ body {
   .grid { max-width: 1300px; margin: 0 auto; width: 100%; }
 }
 
+/* ---------------- tema chiaro ----------------
+   Due strade, stessa tavolozza: "light" lo impone, "auto" lo segue solo se il
+   sistema lo chiede. Prima esisteva solo la seconda, quindi
+   ui.theme: "light" non aveva alcun effetto. */
+
+:root.theme-light {
+  --bg: #f2f4f8;
+  --bg-elev: #ffffff;
+  --bg-btn: #ffffff;
+  --border: #d7dde7;
+  --text: #16202c;
+  --text-dim: #5d6b7d;
+}
+
 @media (prefers-color-scheme: light) {
   :root.theme-auto {
     --bg: #f2f4f8;
@@ -458,4 +606,16 @@ body {
     --text: #16202c;
     --text-dim: #5d6b7d;
   }
+}
+
+/* Sul chiaro il campo di testo scuro resterebbe scuro, e i tag bianchi
+   sparirebbero sul fondo bianco. */
+:root.theme-light .field input,
+:root.theme-light .field textarea { background: #f7f9fc; }
+:root.theme-light .deck-btn .type-tag { color: rgba(0, 0, 0, 0.35); }
+
+@media (prefers-color-scheme: light) {
+  :root.theme-auto .field input,
+  :root.theme-auto .field textarea { background: #f7f9fc; }
+  :root.theme-auto .deck-btn .type-tag { color: rgba(0, 0, 0, 0.35); }
 }

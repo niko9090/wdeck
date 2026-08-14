@@ -5,8 +5,21 @@
 
 import { ENDPOINTS, ERROR_CODES, PROTOCOL_VERSION, LITE_PROTOCOL_VERSION, LITE_FIELDS, toLitePage } from '../../../shared/protocol.mjs';
 import { CATEGORIES } from '../actions/registry.mjs';
+import { normalizeAddress } from '../security/ratelimit.mjs';
+import { qrSvg } from '../../../shared/qr.mjs';
+import {
+  ICON_TYPES as ICON_FORMATS,
+  MAX_ICONS as MAX_ICON_COUNT,
+  MAX_ICON_BYTES as MAX_ICON_BYTES_PER_FILE
+} from '../icons.mjs';
 
 const MAX_BODY = 64 * 1024;
+
+/**
+ * Limite piu' alto per il caricamento delle icone: un PNG da 192 KB diventa
+ * circa 256 KB una volta codificato in base64.
+ */
+const MAX_ICON_BODY = 384 * 1024;
 
 /** Invia una risposta JSON. */
 export function sendJson(res, status, payload) {
@@ -29,13 +42,13 @@ export function sendError(res, status, code, message) {
  * @param {import('node:http').IncomingMessage} req
  * @returns {Promise<object>}
  */
-export function readJsonBody(req) {
+export function readJsonBody(req, { limit = MAX_BODY } = {}) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
         reject(Object.assign(new Error('corpo della richiesta troppo grande'), { status: 413 }));
         req.destroy();
         return;
@@ -86,13 +99,32 @@ export function publicDeck(deck) {
 export function createApiRouter(host) {
   const { auth, state, dispatcher, registry, configStore, version } = host;
 
+  /** Indirizzo del richiedente, usato come identita' per i limiti. */
+  const addressOf = (req) => normalizeAddress(req.socket?.remoteAddress);
+
   const requireAuth = (req, res) => {
     const { ok } = auth.verifyRequest(req);
     if (!ok) {
+      // Anche un token sbagliato e' un tentativo di indovinare: va contato,
+      // altrimenti il limite sul PIN si aggira provando direttamente i token.
+      host.limits.checkAuth({ address: addressOf(req) });
       sendError(res, 401, ERROR_CODES.unauthorized, 'token mancante o non valido');
       return false;
     }
     return true;
+  };
+
+  /**
+   * Applica un limite e, se superato, risponde 429.
+   * @returns {boolean} true se la richiesta puo' proseguire
+   */
+  const allow = (res, result, what) => {
+    if (result.allowed) return true;
+    const seconds = Math.ceil(result.retryAfterMs / 1000);
+    res.setHeader('Retry-After', String(Math.max(1, seconds)));
+    sendError(res, 429, ERROR_CODES.rateLimited,
+      `troppi ${what}: riprova fra ${Math.max(1, seconds)} secondi`);
+    return false;
   };
 
   const routes = {
@@ -113,14 +145,29 @@ export function createApiRouter(host) {
     },
 
     [`POST ${ENDPOINTS.pair}`]: async (req, res) => {
+      const address = addressOf(req);
+      // Il controllo viene prima della lettura del PIN: e' proprio il tentativo
+      // a dover essere contato, riuscito o no.
+      if (!allow(res, host.limits.checkAuth({ address }), 'tentativi di accesso')) {
+        host.logger.warn?.(`[wdeck] pairing bloccato dal limite: ${address}`);
+        host.audit.write('rate-limited', { what: 'pair', address });
+        return;
+      }
+
       const body = await readJsonBody(req);
-      const result = auth.pair(body.pin);
+      const result = auth.pair(body.pin, { name: body.name, days: body.days });
       if (!result.ok) {
+        host.audit.write('pair-failed', { address, reason: result.reason ?? null });
         sendError(res, 401, ERROR_CODES.unauthorized, result.reason ?? 'pairing rifiutato');
         return;
       }
-      host.logger.info?.(`[wdeck] pairing riuscito da ${req.socket.remoteAddress}`);
-      sendJson(res, 200, { ok: true, token: result.token });
+      // Chi ha dimostrato di conoscere il PIN non e' un attaccante: i suoi
+      // tentativi precedenti non devono pesare sui prossimi accessi.
+      host.limits.clearAuth({ address });
+      host.audit.write('pair', { address, device: result.device.id, name: result.device.name });
+      host.logger.info?.(`[wdeck] pairing riuscito da ${address}: "${result.device.name}" (${result.device.id})`);
+      // Il token viaggia una volta sola: dopo, di lui resta la sola impronta.
+      sendJson(res, 200, { ok: true, token: result.token, device: result.device });
     },
 
     [`GET ${ENDPOINTS.deck}`]: (req, res) => {
@@ -136,6 +183,15 @@ export function createApiRouter(host) {
     [`GET ${ENDPOINTS.state}`]: (req, res) => {
       if (!requireAuth(req, res)) return;
       sendJson(res, 200, { ok: true, state: state.snapshot() });
+    },
+
+    [`GET ${ENDPOINTS.status}`]: async (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      // ?refresh=1 forza una rilettura dal sistema invece di usare la cache.
+      if (url.searchParams.get('refresh') === '1') {
+        await host.status.refresh({ force: true });
+      }
+      sendJson(res, 200, { ok: true, states: host.status.snapshot() });
     },
 
     [`GET ${ENDPOINTS.actions}`]: (req, res) => {
@@ -200,6 +256,175 @@ export function createApiRouter(host) {
       sendJson(res, 200, { ok: true, changed: result.changed });
     },
 
+    [`GET ${ENDPOINTS.audit}`]: (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get('limit')) || 100));
+      sendJson(res, 200, {
+        ok: true,
+        enabled: host.audit.enabled,
+        file: host.audit.file,
+        entries: host.audit.tail({ limit, event: url.searchParams.get('event') ?? undefined })
+      });
+    },
+
+    /**
+     * QR code per accoppiare un dispositivo inquadrando lo schermo.
+     *
+     * Di norma contiene un token **nuovo e dedicato**, non quello principale:
+     * mostrarlo a qualcuno che passa non deve regalargli la chiave di casa, e
+     * cio' che si e' inquadrato una volta si revoca da solo.
+     */
+    [`GET ${ENDPOINTS.pairQr}`]: (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+
+      const nuovo = url.searchParams.get('device') !== '0';
+      let token = auth.token;
+      let device = null;
+      if (nuovo) {
+        const giorni = url.searchParams.get('days');
+        const created = auth.createDevice({
+          name: url.searchParams.get('name') ?? 'accoppiato con QR',
+          days: giorni === null ? undefined : Number(giorni)
+        });
+        token = created.token;
+        device = { id: created.id, name: created.name, expiresAt: created.expiresAt };
+        host.audit.write('device-created', { device: created.id, name: created.name, via: 'qr', address: addressOf(req) });
+      }
+
+      const target = host.pairingUrl(token);
+      // Il QR non contiene il token in chiaro nella risposta JSON per caso: e'
+      // l'URL stesso a portarlo, ed e' quello che il telefono deve aprire.
+      sendJson(res, 200, {
+        ok: true,
+        url: target,
+        device,
+        mdns: host.mdns ? `${host.scheme}://${host.mdns.hostname}:${host.address?.port}/` : null,
+        svg: qrSvg(target, { level: 'M', scale: 6, margin: 4 })
+      });
+    },
+
+    // ---------------- dispositivi accoppiati ----------------
+
+    [`GET ${ENDPOINTS.devices}`]: (req, res) => {
+      if (!requireAuth(req, res)) return;
+      sendJson(res, 200, {
+        ok: true,
+        devices: auth.listDevices(),
+        deviceTokenDays: auth.deviceTokenDays,
+        // Il chiamante deve sapere se sta usando il token principale o quello
+        // di un dispositivo: revocare il proprio si puo', ma va detto prima.
+        current: auth.verifyRequest(req).device?.id ?? null
+      });
+    },
+
+    [`POST ${ENDPOINTS.devices}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const body = await readJsonBody(req);
+      if (body.days !== undefined && body.days !== null
+        && (!Number.isInteger(body.days) || body.days < 1 || body.days > 3650)) {
+        sendError(res, 400, ERROR_CODES.badRequest, 'parametro "days" non valido: intero fra 1 e 3650, oppure null');
+        return;
+      }
+      const created = auth.createDevice({ name: body.name, days: body.days });
+      host.audit.write('device-created', { device: created.id, name: created.name, address: addressOf(req) });
+      host.logger.info?.(`[wdeck] nuovo dispositivo "${created.name}" (${created.id})`);
+      // Il token si vede una volta sola: dopo, di lui resta solo l'impronta.
+      sendJson(res, 200, { ok: true, device: created });
+    },
+
+    [`DELETE ${ENDPOINTS.devices}`]: (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      const id = url.searchParams.get('id');
+      if (!auth.revokeDevice(id)) {
+        sendError(res, 404, ERROR_CODES.notFound, `dispositivo sconosciuto: "${id}"`);
+        return;
+      }
+      host.audit.write('device-revoked', { device: id, address: addressOf(req) });
+      host.logger.info?.(`[wdeck] dispositivo revocato: ${id}`);
+      host.hub?.disconnectRevoked?.();
+      sendJson(res, 200, { ok: true, revoked: id, devices: auth.listDevices() });
+    },
+
+    [`POST ${ENDPOINTS.tokenRotate}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const body = await readJsonBody(req);
+      const revokeDevices = body.revokeDevices === true;
+      const next = auth.rotate({ revokeDevices });
+      host.audit.write('token-rotated', { revokeDevices, address: addressOf(req) });
+      host.logger.warn?.(`[wdeck] token principale rigenerato${revokeDevices ? ' e dispositivi revocati' : ''}`);
+      host.hub?.disconnectRevoked?.();
+      // Il nuovo token viaggia una volta sola, in risposta a chi lo ha chiesto.
+      sendJson(res, 200, { ok: true, token: next, revokedDevices: revokeDevices });
+    },
+
+    // ---------------- icone personalizzate ----------------
+
+    [`GET ${ENDPOINTS.icons}`]: (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const deck = configStore.get();
+      sendJson(res, 200, {
+        ok: true,
+        icons: host.icons.list().map((icon) => ({
+          ...icon,
+          usedBy: host.icons.usedBy(deck, icon.name)
+        })),
+        limits: { maxBytes: MAX_ICON_BYTES_PER_FILE, maxCount: MAX_ICON_COUNT, formats: ICON_FORMATS }
+      });
+    },
+
+    [`POST ${ENDPOINTS.icons}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const body = await readJsonBody(req, { limit: MAX_ICON_BODY });
+      try {
+        const saved = host.icons.save({ name: body.name, content: body.content });
+        sendJson(res, 200, { ok: true, icon: saved });
+      } catch (err) {
+        sendError(res, 400, ERROR_CODES.badRequest, err.message);
+      }
+    },
+
+    [`DELETE ${ENDPOINTS.icons}`]: (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      const name = url.searchParams.get('name');
+      const usedBy = host.icons.usedBy(configStore.get(), name);
+      if (usedBy.length > 0 && url.searchParams.get('force') !== '1') {
+        sendJson(res, 409, {
+          ok: false,
+          error: {
+            code: ERROR_CODES.badRequest,
+            message: `l'icona "${name}" e' usata da ${usedBy.length} controllo/i: ripeti con force=1 per eliminarla comunque`
+          },
+          usedBy
+        });
+        return;
+      }
+      if (!host.icons.remove(name)) {
+        sendError(res, 404, ERROR_CODES.notFound, `icona sconosciuta: "${name}"`);
+        return;
+      }
+      sendJson(res, 200, { ok: true, removed: name, usedBy });
+    },
+
+    [`GET ${ENDPOINTS.iconFile}`]: (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      const icon = host.icons.read(url.searchParams.get('name'));
+      if (!icon) {
+        sendError(res, 404, ERROR_CODES.notFound, 'icona non trovata');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': icon.contentType,
+        'Content-Length': icon.buffer.length,
+        // Un'icona caricata dall'utente puo' essere sostituita in qualunque
+        // momento con lo stesso nome: la cache va rivalidata.
+        'Cache-Control': 'no-cache',
+        // Difesa in profondita' sugli SVG, che sono gia' ripuliti al caricamento.
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+        'X-Content-Type-Options': 'nosniff'
+      });
+      res.end(icon.buffer);
+    },
+
     [`GET ${ENDPOINTS.update}`]: async (req, res, url) => {
       if (!requireAuth(req, res)) return;
       const status = url.searchParams.get('check') === '1'
@@ -210,7 +435,9 @@ export function createApiRouter(host) {
 
     [`POST ${ENDPOINTS.press}`]: async (req, res) => {
       if (!requireAuth(req, res)) return;
+      if (!allow(res, host.limits.checkPress({ address: addressOf(req) }), 'comandi')) return;
       const body = await readJsonBody(req);
+      const chi = auth.verifyRequest(req);
       const result = await dispatcher.press({
         buttonId: body.buttonId,
         profileId: body.profileId,
@@ -219,7 +446,9 @@ export function createApiRouter(host) {
         value: body.value,
         // il client puo' solo rendere l'esecuzione piu' prudente, mai meno
         dryRun: state.dryRun || body.dryRun === true,
-        source: 'rest'
+        source: 'rest',
+        deviceId: chi.device?.id ?? null,
+        address: addressOf(req)
       });
       sendJson(res, result.ok ? 200 : statusForError(result.error), { ok: result.ok, result });
     },
@@ -265,12 +494,15 @@ export function createApiRouter(host) {
 
     [`POST ${ENDPOINTS.litePress}`]: async (req, res) => {
       if (!requireAuth(req, res)) return;
+      if (!allow(res, host.limits.checkPress({ address: addressOf(req) }), 'comandi')) return;
       const body = await readJsonBody(req);
       const buttonId = body[LITE_FIELDS.id];
       const result = await dispatcher.press({
         buttonId,
         dryRun: state.dryRun,
-        source: 'lite-rest'
+        source: 'lite-rest',
+        deviceId: auth.verifyRequest(req).device?.id ?? null,
+        address: addressOf(req)
       });
       sendJson(res, result.ok ? 200 : statusForError(result.error), {
         [LITE_FIELDS.version]: LITE_PROTOCOL_VERSION,

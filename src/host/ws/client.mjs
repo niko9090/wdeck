@@ -15,7 +15,7 @@ import { acceptKey, generateKey } from './frame.mjs';
  * @param {{headers?: object, timeoutMs?: number, maxPayload?: number}} [options]
  * @returns {Promise<WebSocketConnection>}
  */
-export function connectWebSocket(url, { headers = {}, timeoutMs = 5000, maxPayload = 1024 * 1024 } = {}) {
+export function connectWebSocket(url, { headers = {}, timeoutMs = 5000, maxPayload = 1024 * 1024, rejectUnauthorized } = {}) {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const secure = target.protocol === 'wss:';
@@ -27,6 +27,10 @@ export function connectWebSocket(url, { headers = {}, timeoutMs = 5000, maxPaylo
       port: target.port || (secure ? 443 : 80),
       path: `${target.pathname}${target.search}`,
       method: 'GET',
+      // Un host con certificato autofirmato non e' verificabile da nessuna
+      // autorita': chi si collega deve poterlo accettare esplicitamente, come
+      // fa l'utente davanti all'avviso del browser.
+      ...(secure && rejectUnauthorized !== undefined ? { rejectUnauthorized } : {}),
       headers: {
         Connection: 'Upgrade',
         Upgrade: 'websocket',

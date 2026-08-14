@@ -1,0 +1,37 @@
+name: CI
+
+# La catena di verifica del progetto e' un comando solo (`npm run verify`):
+# test unitari, smoke end-to-end su host reale, build della PWA, conformita'
+# del firmware al protocollo e coerenza della documentazione.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # L'host gira su Windows, macOS e Linux: la verifica gira su tutti e tre.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['20.10', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # Nessuna cache: il progetto non ha dipendenze da scaricare.
+      - name: npm install
+        run: npm install --no-audit --no-fund
+
+      - name: Zero dipendenze runtime
+        run: node scripts/check-deps.mjs
+
+      - name: npm run verify
+        run: npm run verify

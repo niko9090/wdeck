@@ -108,6 +108,10 @@ export class HostState extends EventEmitter {
       at: Date.now()
     };
     this.emit('press', this.lastAction);
+    // L'evento 'action' porta la voce completa - chi ha premuto, da dove, con
+    // quale esito - e serve al registro di audit. Ai client va invece la forma
+    // ridotta: l'identificativo del dispositivo di un altro non li riguarda.
+    this.emit('action', entry);
     this.emit('state', this.snapshot());
     return this.lastAction;
   }

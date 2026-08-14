@@ -8,6 +8,13 @@ Thumbs.db
 .wdeck-runtime.json
 # backup automatici creati dall'editor visuale
 .wdeck-backup/
+# icone caricate dall'utente accanto a deck.json
+/icons/
+# registro di audit e sue rotazioni
+wdeck-audit.log
+wdeck-audit.log.*
+# certificato autofirmato generato all'avvio
+.wdeck-tls/
 # archivi di distribuzione
 release/
 # PlatformIO

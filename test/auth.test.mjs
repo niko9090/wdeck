@@ -64,7 +64,11 @@ test('auth: requireToken=false accetta qualunque richiesta', () => {
 
 test('auth: verifyRequest usa la richiesta completa', () => {
   const auth = createAuth({ token: 'token-segreto-1234' });
-  assert.deepEqual(auth.verifyRequest({ url: '/ws?token=token-segreto-1234' }), { ok: true, token: 'token-segreto-1234' });
+  const riuscita = auth.verifyRequest({ url: '/ws?token=token-segreto-1234' });
+  assert.equal(riuscita.ok, true);
+  assert.equal(riuscita.token, 'token-segreto-1234');
+  assert.equal(riuscita.kind, 'master');
+  assert.equal(riuscita.device, null);
   assert.equal(auth.verifyRequest({ url: '/ws?token=nope' }).ok, false);
   assert.equal(auth.verifyRequest({ headers: {} }).ok, false);
   assert.equal(auth.verifyRequest({ headers: { [TOKEN_HEADER]: 'token-segreto-1234' } }).ok, true);
@@ -73,7 +77,14 @@ test('auth: verifyRequest usa la richiesta completa', () => {
 test('auth: pairing con PIN', () => {
   const auth = createAuth({ token: 'token-segreto-1234', pin: '246810' });
   assert.equal(auth.pinEnabled, true);
-  assert.deepEqual(auth.pair('246810'), { ok: true, token: 'token-segreto-1234' });
+
+  // Il pairing non consegna piu' il token principale: ne crea uno dedicato a
+  // quel dispositivo, revocabile da solo.
+  const riuscito = auth.pair('246810', { name: 'Telefono' });
+  assert.equal(riuscito.ok, true);
+  assert.notEqual(riuscito.token, 'token-segreto-1234');
+  assert.equal(riuscito.device.name, 'Telefono');
+  assert.equal(auth.verify(riuscito.token), true);
 
   const errato = auth.pair('000000');
   assert.equal(errato.ok, false);

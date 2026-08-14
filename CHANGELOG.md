@@ -3,6 +3,445 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.4.0] - 2026-08-14
+
+### Aggiunto
+
+- **`wdeck.exe`, eseguibile singolo per Windows** (`npm run exe`). Un file solo,
+  ~84 MB, che parte con un doppio clic su un PC dove Node.js **non e'
+  installato**: il runtime viaggia dentro, tramite le *Single Executable
+  Applications* di Node 20+. Serviva per poter dare Wdeck a qualcuno senza
+  chiedergli di installare nulla.
+  Alla prima esecuzione riversa i moduli in
+  `%LOCALAPPDATA%\Wdeck\runtime\<impronta>\` e semina `deck.json` un livello
+  sopra, **fuori** dai file estratti, cosi' un exe piu' recente non porta via la
+  configurazione. L'impronta e' l'hash del contenuto: due versioni convivono e
+  un exe identico non ripete l'estrazione.
+- **Firmware ESP32 gia' compilato** (`npm run firmware`): produce
+  `release/firmware/*.bin` — firmware, bootloader e tabella delle partizioni —
+  per tutte e tre le schede supportate. Prima il firmware era solo sorgente.
+
+### Corretto
+
+- **L'ambiente `esp32s3-st7789` non compilava.** `handleTouch()` chiamava
+  `tft.getTouch()` senza condizioni, ma TFT_eSPI genera quella funzione solo
+  quando `TOUCH_CS` e' definito — e quell'ambiente e' proprio quello del display
+  **senza** touch. Il codice del tocco ora sta dietro `#ifdef TOUCH_CS`.
+  Un errore rimasto invisibile finche' nessuno ha compilato: i test di
+  conformita' al protocollo leggono il sorgente, non lo compilano.
+
+- **La CI falliva su Node 20.10** (e solo li'): `scripts/sea-entry.cjs` chiedeva
+  `node:sea` all'apertura, ma quel modulo esiste dalla 20.12, e il test che lo
+  importa esplodeva. Ora il `require` e' dentro un try/catch: fuori da un
+  eseguibile il file resta una libreria importabile ovunque. `npm run exe`
+  controlla la versione e lo dice chiaro; l'host continua a girare dalla 20.10.
+  Trovato dalla CI al suo primo giro vero, su una versione di Node che in locale
+  non c'e'.
+
+- **`npm test` non trovava nulla su Windows con Node 20.10.** Lo script era
+  `node --test test/*.test.mjs`, e quel glob lo espande la shell: `cmd` e
+  PowerShell non lo fanno, e Node ha imparato a farlo da se' solo dalla 21. Su
+  quella combinazione la suite usciva con "Could not find" invece di eseguire
+  443 verifiche — e nessuno se n'era accorto perche' la CI non era mai girata.
+  Ora l'elenco dei file lo costruisce `scripts/test.mjs`, e un test impedisce a
+  qualunque script di package.json di tornare a dipendere dal glob della shell.
+
+### Note
+
+Compilare non e' collaudare. Il firmware ora si costruisce per tre schede, ma
+non e' mai stato **eseguito** su hardware: pin, rotazione e taratura del touch
+restano da verificare su una scheda accesa.
+
+`postject`, usato per scrivere il blob dentro il binario, e' uno strumento da
+banco di lavoro scaricato da `npx` solo durante `npm run exe`: non e' una
+dipendenza, non compare in `package.json` e l'host non lo importa mai. Il
+vincolo di zero dipendenze a runtime resta verificato da `npm run check:deps`.
+
+## [0.3.0] - 2026-08-13
+
+### Aggiunto
+
+- **Italiano e inglese.** L'interfaccia si traduce da `settings.ui.language`
+  (`it`, `en`, `auto` per seguire il browser) e dal pannello Impostazioni. Le
+  due lingue sono tenute allineate da un test: una chiave presente in una sola
+  comparirebbe nella lingua sbagliata senza che nessuno se ne accorga.
+- **Pressione prolungata configurabile dall'editor.** `holdAction` esisteva da
+  sempre ma andava scritta a mano in `deck.json`; ora ha la sua sezione, con
+  l'azione e i suoi parametri. E' comoda per mettere l'opposto sullo stesso
+  tasto - accendi e spegni - senza occupare due celle.
+- Tema e lingua si cambiano da *Impostazioni -> Aspetto*, senza toccare il file.
+
+### Corretto
+
+- **`ui.theme: "light"` non forzava il tema chiaro.** Il CSS aveva la tavolozza
+  chiara solo dentro `prefers-color-scheme`, quindi valeva unicamente con
+  `"auto"` e con un sistema impostato su chiaro. Ora `light` la impone e `auto`
+  la segue, come dicevano entrambi di fare.
+
+### Note
+
+Sull'ESP32 la pressione prolungata resta non supportata: il firmware non
+distingue un tocco lungo da uno breve, e aggiungerlo richiederebbe di provarlo
+su hardware vero.
+
+## [0.2.10] - 2026-08-13
+
+### Aggiunto
+
+- **MQTT**, **Spotify** e **Discord**: le tre integrazioni che la roadmap
+  dichiarava assenti. Nessuna integrazione inclusa usa piu' l'azione `stub`.
+- **`mqtt`**: client MQTT 3.1.1 scritto sui socket di Node (CONNECT, PUBLISH,
+  SUBSCRIBE, DISCONNECT, QoS 0 e 1, `mqtt://` e `mqtts://`). MQTT e' il modo con
+  cui parla mezza domotica - Home Assistant, Zigbee2MQTT, Tasmota, ESPHome -
+  quindi copre molto piu' di quanto avrebbe coperto un'integrazione per marca.
+  Con `stateTopic` il bottone mostra anche lo stato reale letto dal broker.
+- **`spotify`**: riproduzione, brano, volume, casuale, ripetizione, spostamento
+  su un altro dispositivo, riproduzione di un URI. Passa dalla Web API e non
+  dai tasti multimediali perche' quelli agiscono su qualunque lettore abbia il
+  fuoco: l'API comanda l'account, quindi funziona anche se la musica sta
+  suonando sul telefono o su un altoparlante in un'altra stanza. Il refresh
+  token si configura una volta; l'access token orario resta in memoria.
+- **`discord`**: messaggi in un canale via webhook, e comandi su microfono e
+  cuffie attraverso il canale locale del client Discord (named pipe su Windows,
+  socket unix altrove).
+- Tutte e tre dichiarano `readState`, quindi i loro bottoni mostrano la
+  condizione vera e non l'ultima pressione.
+
+### Corretto
+
+- **Il client MQTT perdeva le risposte piu' veloci di lui.** Le attese venivano
+  registrate dopo aver scritto sul socket: un broker sulla stessa macchina puo'
+  rispondere nello stesso giro di eventi, e un messaggio "retained" arriva
+  spesso nello stesso pacchetto TCP della conferma di iscrizione. Il difetto e'
+  emerso col broker finto dei test, che parla il protocollo vero.
+
+### Note
+
+Sui limiti di Discord il progetto non promette piu' di quanto puo' mantenere:
+il webhook funziona subito, mentre i comandi sulla voce richiedono
+un'applicazione registrata e uno scope che Discord concede su richiesta. Senza,
+il client risponde con un errore, che viene riportato tale e quale invece di far
+finta di aver funzionato.
+
+## [0.2.9] - 2026-08-13
+
+### Aggiunto
+
+- **QR code per accoppiare il telefono.** Si inquadra e il deck si apre gia'
+  collegato: niente indirizzo da digitare, niente PIN. Il codice compare nel
+  terminale all'avvio e in *Impostazioni -> Collega un altro dispositivo*.
+  Nuovo endpoint `GET /api/pair/qr`.
+- Ogni codice porta con se' un **token dedicato**, non quello principale:
+  mostrarlo a qualcuno che passa non regala la chiave di casa, e cio' che e'
+  stato inquadrato una volta si revoca da solo.
+- **Generatore di QR scritto nel progetto** ([`shared/qr.mjs`](shared/qr.mjs)):
+  modalita' byte, versioni 1-10, quattro livelli di correzione, scelta
+  automatica della maschera fra le otto previste. Reed-Solomon su GF(256),
+  informazioni di formato con BCH, resa in SVG e in caratteri a blocchi per il
+  terminale. Nessuna libreria.
+- **Scoperta in rete locale (mDNS)**: l'host si annuncia come `<nome>.local` e
+  come servizio `_wdeck._tcp.local`. Serve a una cosa concreta: quel nome non
+  cambia quando il router riassegna gli indirizzi, e macOS, iOS, Windows 10+ e
+  Android recente lo risolvono senza installare nulla.
+- `--no-qr` per non stampare il codice all'avvio; `settings.discovery` per il
+  nome annunciato e per spegnere l'annuncio.
+
+### Note
+
+Il QR e' scritto da zero, quindi e' verificato contro riferimenti esterni e non
+solo contro se stesso: il polinomio generatore di Reed-Solomon coincide con i
+coefficienti elencati dalla norma, le codeword di correzione coincidono con
+l'esempio della norma (`01234567` in versione 1 livello M), e la tabella dei
+blocchi e' confrontata con le codeword ricavate dalla geometria per tutte e
+quaranta le combinazioni versione/livello. Un errore di trascrizione non passa.
+
+Se la porta 5353 e' gia' occupata da Bonjour o avahi, l'host lo segnala e
+prosegue senza annuncio: non e' un motivo per non partire.
+
+## [0.2.8] - 2026-08-13
+
+### Sicurezza
+
+- **HTTPS e WSS opzionali**, con certificato autofirmato generato all'avvio.
+  Senza cifratura il token viaggia in chiaro dentro l'URL che si apre sul
+  telefono: chiunque sia sulla stessa rete Wi-Fi puo' leggerlo e usare il deck.
+  Si attiva con `--tls`, `WDECK_TLS=1` o `settings.server.tls.enabled`.
+- La struttura X.509 e' **costruita nel progetto**: Node sa generare le chiavi
+  e sa firmare, ma non sa comporre un certificato, e quel pezzo di solito lo
+  mette una libreria o `openssl` come processo esterno. Qui non si poteva fare
+  ne' l'uno ne' l'altro, quindi il DER e' scritto a mano in
+  [`security/selfsigned.mjs`](src/host/security/selfsigned.mjs). Il vincolo di
+  zero dipendenze resta intatto.
+- Il certificato copre `localhost`, `127.0.0.1` e gli indirizzi IPv4 della
+  macchina, e viene **rigenerato** quando scade o quando quegli indirizzi
+  cambiano: dopo un cambio di rete o l'aggancio a una dock, un certificato che
+  non copre il nuovo indirizzo sarebbe inutile proprio dove serve.
+- Chi ha un certificato vero lo indica con `certFile` e `keyFile`: in quel caso
+  l'host non genera nulla.
+- Un errore nella configurazione TLS non lascia l'host spento: viene segnalato
+  e si prosegue in HTTP.
+- Il client WebSocket accetta ora `rejectUnauthorized: false`, che serve a
+  collegarsi a un host con certificato autofirmato.
+
+### Note
+
+Il certificato **non e' fidato da nessuna autorita'**: la prima volta il browser
+mostra un avviso, da accettare una volta per dispositivo. Serve a cifrare il
+traffico in LAN, non a dimostrare l'identita' dell'host - ma il traffico in
+chiaro era il problema piu' grosso rimasto.
+
+I test rileggono il certificato con `crypto.X509Certificate`, cioe' con lo
+stesso parser che useranno i browser, e poi lo usano davvero su un server HTTPS
+con WebSocket sopra: se la struttura ASN.1 fosse sbagliata, nessuna delle due
+cose funzionerebbe.
+
+## [0.2.7] - 2026-08-13
+
+### Sicurezza
+
+- **Registro di audit persistente.** Wdeck esegue programmi sul PC su richiesta
+  della rete locale: se qualcosa va storto, i log della console non aiutano
+  perche' spariscono alla chiusura. Ora ogni azione lascia una riga accanto a
+  `deck.json` con chi l'ha chiesta, da dove, con quale esito e in quanto tempo.
+- Registrati anche gli eventi di sicurezza: `pair`, `pair-failed`,
+  `device-created`, `device-revoked`, `token-rotated`, `rate-limited`.
+- Formato JSONL, una riga per evento: si legge con `tail`, si filtra con `grep`,
+  e un file troncato da un arresto improvviso costa una riga, non il registro.
+  Rotazione a 1 MB con tre copie conservate.
+- **Token, PIN e password non ci finiscono mai**: i campi con quei nomi sono
+  sostituiti da `[omesso]` prima della scrittura, anche dentro i parametri
+  liberi di un'azione, dove un header di autorizzazione puo' capitare.
+- `GET /api/audit` (con `limit` ed `event`) e `settings.security.audit`.
+
+### Corretto
+
+- **Anche `npm run test:esp32` girava sulla `deck.json` dell'utente.** Come lo
+  smoke test, ora usa una copia temporanea: da questa versione l'host scrive
+  accanto alla configurazione, e una verifica non deve lasciarci nulla.
+- Due difetti trovati dai test appena scritti: una riga rimasta a meta' per un
+  arresto improvviso si portava via anche la riga successiva (che le veniva
+  appesa di seguito), e subito dopo una rotazione la scrittura falliva perche'
+  cercava di leggere la fine di un file appena spostato.
+
+### Note
+
+Ai client il registro non arriva: l'evento WebSocket `press` continua a portare
+la forma ridotta di sempre. L'identificativo del dispositivo di un altro non
+riguarda chi sta guardando il deck.
+
+## [0.2.6] - 2026-08-13
+
+### Sicurezza
+
+- **Un token per dispositivo, revocabile da solo.** Il pairing con PIN non
+  consegna piu' il token principale: crea una credenziale dedicata a quel
+  telefono. Prima bastava un telefono perso per dover cambiare il token a
+  tutti.
+- **Scadenza facoltativa**: `days` alla creazione, oppure
+  `settings.security.deviceTokenDays` come predefinito. `--prune-devices` toglie
+  i scaduti.
+- In `deck.json` resta la sola **impronta SHA-256**: chi legge il file non puo'
+  ricavare le credenziali dei dispositivi. Il token si vede una volta sola, in
+  risposta a chi lo ha chiesto.
+- **La revoca scollega subito** i client che stavano usando quella credenziale.
+  Lasciarli collegati fino alla disconnessione avrebbe significato non revocare
+  niente per tutta la durata della sessione.
+- **Rotazione del token principale** finalmente esposta: `POST /api/token/rotate`,
+  il bottone in *Impostazioni* del client, e da riga di comando **senza avviare
+  l'host** - che e' proprio il caso in cui serve, se il token e' andato perduto.
+- Nuovi comandi CLI: `--rotate-token` (con `--revoke-devices`), `--list-devices`,
+  `--add-device <nome>` (con `--days`), `--revoke-device <id>`, `--prune-devices`.
+  `--add-device` serve all'ESP32, che il PIN non sa digitarlo.
+- Nuovi endpoint `GET`/`POST`/`DELETE /api/devices`.
+- Una revoca **scritta a mano** in `deck.json` vale alla ricarica a caldo: prima
+  un token tolto dal file continuava a funzionare fino al riavvio.
+
+### Corretto
+
+- **Lo smoke test scriveva nel `deck.json` dell'utente.** Da quando il pairing
+  crea un dispositivo, la verifica lasciava una voce nella configurazione di chi
+  la lanciava. Ora gira su una copia temporanea: prova la configurazione vera,
+  che e' il senso di uno smoke test, senza toccarla.
+
+### Note
+
+Ruotare il token principale **non** revoca i dispositivi accoppiati, a meno di
+chiederlo con `revokeDevices`: cambiare la chiave di casa non deve buttare fuori
+chi ha gia' la sua.
+
+Il token principale finisce in `deck.json` solo quando viene davvero ruotato:
+accoppiare un telefono non deve scrivere nel file una credenziale che l'utente
+non ci aveva messo.
+
+## [0.2.5] - 2026-08-13
+
+### Sicurezza
+
+- **Limiti di frequenza**, con il codice `rate_limited` che il protocollo
+  definiva da sempre senza che nulla lo usasse. Due limiti indipendenti a
+  finestra scorrevole: 60 comandi ogni 10 secondi e 10 tentativi di accesso
+  ogni 5 minuti. Oltre il tetto la risposta e' `429` con `Retry-After`, e sul
+  WebSocket un messaggio `error` con lo stesso codice.
+- Un PIN di quattro cifre sono diecimila combinazioni: senza limite si provano
+  in pochi secondi, ed era il punto piu' debole del pairing.
+- **Anche i token rifiutati contano come tentativi di accesso**: tenere due
+  contatori separati avrebbe lasciato aperta la via di provare direttamente i
+  token invece del PIN.
+- Un accesso riuscito azzera i tentativi di quell'indirizzo: chi conosce il PIN
+  non deve pagare per i tentativi di chi non lo conosce.
+- La tabella dei contatori ha un tetto di chiavi: senza, sarebbe stata a sua
+  volta una via per esaurire la memoria dell'host.
+- Taratura da `settings.security.rateLimit` (`enabled`, `press`, `auth`).
+
+### Note
+
+Il limite si conta per dispositivo autenticato quando c'e', altrimenti per
+indirizzo: dietro un NAT tutti i telefoni di casa condividono l'indirizzo, e
+limitarli insieme punirebbe l'innocente per il vicino.
+
+`test/ratelimit.test.mjs` inietta l'orologio: aspettare davvero cinque minuti
+per vedere scadere una finestra avrebbe reso la suite inservibile.
+
+## [0.2.4] - 2026-08-13
+
+### Aggiunto
+
+- **L'editor visuale copre tutto il deck.** Oltre a bottoni e cursori si possono
+  ora creare, rinominare, riordinare ed eliminare **pagine e profili**, cambiare
+  la dimensione della griglia, scegliere pagina e profilo iniziali e **spostare
+  i controlli trascinandoli** in un'altra cella. Prima per queste cose serviva
+  aprire `deck.json` a mano.
+- **Icone personalizzate** caricate dall'utente: PNG, JPEG, WebP, GIF o SVG,
+  fino a 192 KB e 64 in tutto. Finiscono in `icons/` accanto a `deck.json` e si
+  usano come `"icon": "custom:mio-logo"`. Nuovi endpoint `GET`/`POST`/`DELETE
+  /api/icons` e `GET /api/icons/file`.
+- Nell'editor si sceglie l'icona da una griglia che mostra insieme i glifi
+  inclusi e quelli caricati, e si puo' decidere se un controllo debba mostrare
+  lo stato reale.
+
+### Corretto
+
+- **Gli override di avvio finivano dentro `deck.json`.** Il salvataggio partiva
+  dal deck in memoria, che porta con se' `--port`, `--token` e le variabili
+  `WDECK_*`: al primo salvataggio dall'editor quei valori diventavano
+  permanenti, e chi avviava su una porta effimera si ritrovava una
+  configurazione perfino invalida. Ora la base e' il file cosi' com'e' su disco
+  ([`ConfigStore.snapshot()`](src/host/config/loader.mjs)). Vale anche per
+  `POST /api/settings`. Il difetto e' emerso scrivendo i test dell'editor, ed e'
+  coperto da due test di regressione.
+- Un salvataggio riuscito da `POST /api/settings` non avvisava i client
+  collegati: ora rimanda il deck aggiornato come fa `POST /api/deck/save`.
+
+### Sicurezza
+
+Il formato di un'icona e' riconosciuto **dai byte**, non da quanto dichiara il
+client. Gli SVG - l'unico formato accettato che possa contenere codice -
+passano da una pulizia che toglie `<script>`, `<foreignObject>`, i gestori
+`on*`, gli URL `javascript:`, i riferimenti esterni e le entita' XXE; se dopo la
+pulizia resta qualcosa di eseguibile il caricamento e' rifiutato. Il file e'
+poi servito con `nosniff` e una `Content-Security-Policy` restrittiva. I nomi
+sono slug, quindi il path traversal non ha da dove passare.
+
+### Note
+
+Il campo `status` sui controlli e il riferimento `custom:` nel campo `icon` sono
+entrambi opzionali: le configurazioni esistenti si caricano identiche.
+
+## [0.2.3] - 2026-08-13
+
+### Aggiunto
+
+- **L'host non e' piu' solo-Windows.** `media`, `hotkey`, `text`, `url`,
+  `volume` e `mic` funzionano ora anche su macOS e su Linux. Prima fuori da
+  Windows rispondevano `501`.
+- Nuova facciata [`src/host/platform/input.mjs`](src/host/platform/input.mjs):
+  gli handler non contengono piu' alcun `if (process.platform === ...)`, e ogni
+  operazione ha una coppia `plan*` (descrive, per il dry-run) / `send*` (esegue).
+  Stessa cosa per l'audio in `platform/audio.mjs`.
+- Adattatore macOS (`osascript`): tasti e testo via System Events, volume e muto
+  via `set volume`, play/pausa/brano inoltrati al primo lettore attivo fra
+  Spotify, Music e TV. Se manca il permesso Accessibilita', l'errore lo dice.
+- Adattatore Linux: `xdotool` su X11 e `ydotool` su Wayland (scelti in base a
+  `XDG_SESSION_TYPE`), `pactl` con ripiego su `amixer` per il volume,
+  `playerctl` con ripiego sul tasto multimediale per la riproduzione,
+  `xdg-open` per gli URL. Quando uno strumento manca, l'errore dice quale
+  pacchetto installare invece di fallire in modo oscuro.
+- L'azione `script` esegue anche i file `.sh`, che e' cio' che serviva perche'
+  la sua dichiarazione `platforms: ['*']` fosse vera.
+- `test/platform.test.mjs`: 34 verifiche sulle mappe dei tasti, sulla scelta
+  degli strumenti e sulla facciata. Le mappe sono moduli puri, quindi la
+  traduzione per macOS e Linux e' verificata anche dalla macchina Windows su
+  cui il progetto e' nato, e dalla CI su tutti e tre i sistemi.
+
+### Note
+
+**Il percorso Windows non e' stato toccato**: gli stessi script PowerShell, le
+stesse funzioni di `platform/windows.mjs`. La facciata li richiama tali e quali.
+
+Restano dichiarate solo per Windows le azioni che richiederebbero un adattatore
+per ogni ambiente desktop invece di un comando solo: `brightness`, `focus`,
+`desktop`, `window`, `power`, `clipboard`, `folder`, `screenshot`, `notify`,
+`browser`, `game`, `rdp`. Il motivo di ciascuna e' in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+L'esecuzione reale su macOS e Linux non e' stata provata su quelle macchine:
+la CI ne verifica avvio, test e smoke, ma l'input sintetico richiede una
+sessione grafica interattiva.
+
+## [0.2.2] - 2026-08-13
+
+### Aggiunto
+
+- **Stato reale dei controlli.** Il bottone del muto sa di essere muto, quello
+  della scena OBS sa se e' in onda, la luce Hue sa di essere accesa. L'host
+  legge la condizione vera dal sistema e dai servizi collegati e la manda ai
+  client: bordo acceso, spia e un'etichetta breve (`muto`, `LIVE`, il nome
+  della scena). Resta giusta anche quando qualcosa viene cambiato da un'altra
+  applicazione, che e' il caso in cui un deck cieco mente.
+- Nuovo contratto opzionale `readState(params, ctx)` per gli handler
+  (vedi [`docs/ADDING-ACTIONS.md`](docs/ADDING-ACTIONS.md)). Lo dichiarano
+  `volume`, `mic`, `brightness`, `media`, `obs` e `hue`.
+- `GET /api/status` (con `?refresh=1`) e messaggio WebSocket `status`, con
+  `states` completo e `changed` per le sole voci variate.
+- Il canale lite trasporta lo stato in forma compatta (`z` / `w`, `id -> 0|1`):
+  il firmware ESP32 disegna i bottoni accesi con bordo chiaro e spia.
+- `settings.status` (`enabled`, `intervalMs`) e `"status": false` sul singolo
+  controllo per escluderlo dalle letture.
+- `GET /api/actions` riporta `reportsState` per ogni azione.
+- `test/status.test.mjs`: 21 verifiche su normalizzazione, letture condivise,
+  backoff, eventi di variazione e traduzione delle risposte di OBS.
+
+### Note
+
+Il costo delle letture e' contenuto per scelta: vengono interrogati solo i
+controlli della pagina attiva, solo mentre almeno un client e' collegato, le
+letture identiche di un giro sono messe in comune e un servizio che non
+risponde viene messo in pausa per un minuto. **In dry-run non viene letto
+nulla**: la promessa di non toccare il PC vale anche per le letture, quindi in
+quella modalita' la mappa degli stati resta vuota.
+
+Il supporto ESP32 e' conforme al protocollo e verificato da `npm run test:esp32`,
+ma come tutto il firmware **non e' provato su hardware reale**.
+
+## [0.2.1] - 2026-08-13
+
+### Aggiunto
+
+- **Integrazione continua** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+  `npm run verify` a ogni push e pull request, su Linux, Windows e macOS con
+  Node 20.10 e 22. Prima i comandi andavano ricordati ed eseguiti a mano.
+- `npm run check:deps`: guardia automatica del vincolo di zero dipendenze.
+  Fallisce se `package.json` acquista dipendenze o se un sorgente importa un
+  pacchetto che non sia un modulo built-in di Node.
+- `test/project.test.mjs`: sei verifiche sull'impianto del progetto (assenza di
+  dipendenze, presenza e trigger del workflow, completezza di `verify`).
+
+### Note
+
+`npm run check:deps` fa ora parte di `npm run verify`, quindi la violazione del
+vincolo di zero dipendenze interrompe la catena di verifica come qualunque test
+fallito. Il resto dei limiti noti e' in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
 ## [0.2.0] - 2026-08-13
 
 Prima versione installabile, con l'editor visuale e 17 azioni in piu'.

@@ -368,6 +368,10 @@ export function resolveScriptRunner(scriptPath, args = []) {
       return { command: process.env.COMSPEC || 'cmd.exe', argv: ['/c', scriptPath, ...args] };
     case '.py':
       return { command: process.env.WDECK_PYTHON || 'python', argv: [scriptPath, ...args] };
+    // Gli script di shell servono a macOS e Linux: l'azione `script` dichiara
+    // platforms ['*'], ma fuori da Windows non avrebbe avuto nulla da eseguire.
+    case '.sh':
+      return { command: process.env.WDECK_SHELL || '/bin/sh', argv: [scriptPath, ...args] };
     case '.js':
     case '.mjs':
       return { command: process.execPath, argv: [scriptPath, ...args] };

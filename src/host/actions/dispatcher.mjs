@@ -142,7 +142,7 @@ export function createDispatcher({ registry, state, getDeck, baseDir, logger = c
 
   /**
    * Gestisce la pressione di un bottone (o il trascinamento di uno slider).
-   * @param {{buttonId: string, profileId?: string, pageId?: string, source?: string, dryRun?: boolean, hold?: boolean, value?: number}} req
+   * @param {{buttonId: string, profileId?: string, pageId?: string, source?: string, dryRun?: boolean, hold?: boolean, value?: number, deviceId?: string|null, address?: string|null}} req
    */
   async function press(req) {
     const deck = getDeck();
@@ -199,7 +199,11 @@ export function createDispatcher({ registry, state, getDeck, baseDir, logger = c
       result: outcome.result ?? null,
       error: outcome.error,
       durationMs: outcome.durationMs,
-      source: req.source ?? 'api'
+      source: req.source ?? 'api',
+      // Chi ha premuto: serve al registro di audit, che senza un "chi" non
+      // risponderebbe alla domanda per cui esiste.
+      deviceId: req.deviceId ?? null,
+      address: req.address ?? null
     };
     state.recordPress(entry);
     return entry;

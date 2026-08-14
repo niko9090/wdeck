@@ -8,14 +8,12 @@
  * che il client possa allineare la posizione del cursore alla realta'.
  */
 
+import { readAudioLevel, readBrightnessLevel } from '../../platform/readers.mjs';
+import { AUDIO_PLATFORMS, adjustVolume, readVolume, setMute, setVolume } from '../../platform/audio.mjs';
 import {
   buildAdjustBrightnessScript,
-  buildAdjustVolumeScript,
-  buildMuteScript,
   buildReadBrightnessScript,
-  buildReadVolumeScript,
   buildSetBrightnessScript,
-  buildSetVolumeScript,
   clampPercent,
   runLevelScript
 } from '../../platform/levels.mjs';
@@ -53,7 +51,7 @@ function makeVolumeAction({ type, target, title, description, category }) {
     type,
     title,
     description,
-    platforms: ['win32'],
+    platforms: [...AUDIO_PLATFORMS],
     category,
     control: 'slider',
     paramsHelp: {
@@ -78,7 +76,7 @@ function makeVolumeAction({ type, target, title, description, category }) {
     async run(params, ctx) {
       if (params?.mute !== undefined) {
         if (ctx.dryRun) return { ok: true, simulated: true, detail: `imposterebbe muto=${params.mute} su ${target}` };
-        const out = await runLevelScript(buildMuteScript(target, params.mute), { what: `muto ${target}` });
+        const out = await setMute(target, params.mute);
         return { ok: true, detail: `${title}: ${out.muted ? 'muto' : 'audio attivo'} (${out.volume}%)`, level: out.volume, muted: out.muted };
       }
 
@@ -88,17 +86,31 @@ function makeVolumeAction({ type, target, title, description, category }) {
         return { ok: true, simulated: true, detail: `${title}: ${what}` };
       }
 
-      let script;
-      if (mode === 'set') script = buildSetVolumeScript(target, amount);
-      else if (mode === 'adjust') script = buildAdjustVolumeScript(target, amount);
-      else script = buildReadVolumeScript(target);
+      let out;
+      if (mode === 'set') out = await setVolume(target, amount);
+      else if (mode === 'adjust') out = await adjustVolume(target, amount);
+      else out = await readVolume(target);
 
-      const out = await runLevelScript(script, { what: title.toLowerCase() });
       return {
         ok: true,
         detail: `${title}: ${out.volume}%${out.muted ? ' (muto)' : ''}`,
         level: out.volume,
         muted: out.muted
+      };
+    },
+
+    /**
+     * Stato reale del canale. Un bottone configurato con "mute" e' un
+     * interruttore, e come tale riporta acceso/spento; gli altri (cursori,
+     * +/-) riportano soltanto il livello.
+     */
+    async readState(params, ctx) {
+      const out = await readAudioLevel(ctx, target);
+      const isToggle = params?.mute !== undefined;
+      return {
+        on: isToggle ? out.muted === true : null,
+        level: out.volume ?? null,
+        text: isToggle && out.muted ? 'muto' : null
       };
     }
   };
@@ -159,6 +171,12 @@ export const brightnessAction = {
     const out = await runLevelScript(script, { what: 'luminosita\'', timeoutMs: 30000 });
     const via = out.mode === 'gamma' ? ' (attenuazione software)' : '';
     return { ok: true, detail: `luminosita': ${out.brightness}%${via}`, level: out.brightness, mode: out.mode };
+  },
+
+  /** La luminosita' non ha un acceso/spento: riporta solo il livello reale. */
+  async readState(params, ctx) {
+    const out = await readBrightnessLevel(ctx);
+    return { on: null, level: out.brightness ?? null, text: null };
   }
 };
 

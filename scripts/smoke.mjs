@@ -8,12 +8,32 @@
  * Uso: npm run smoke
  */
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { createHost } from '../src/host/index.mjs';
 import { connectWebSocket, waitForMessage } from '../src/host/ws/client.mjs';
 import { ENDPOINTS, MSG, LITE_FIELDS, LITE_MSG } from '../shared/protocol.mjs';
 
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.WDECK_SMOKE_PORT ?? 8971);
 const TOKEN = 'smoke-token-0123456789';
+
+/**
+ * Copia di lavoro della configurazione dell'utente.
+ *
+ * Il test prova la `deck.json` vera - e' il punto di uno smoke test - ma su una
+ * copia: accoppiare un dispositivo scrive nel file, e una verifica non deve
+ * lasciare tracce nella configurazione di chi la lancia.
+ */
+function copiaConfigurazione() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wdeck-smoke-'));
+  const file = path.join(dir, 'deck.json');
+  fs.copyFileSync(path.join(ROOT, 'deck.json'), file);
+  return { dir, file, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
 
 let passed = 0;
 const failures = [];
@@ -33,10 +53,13 @@ const quietLogger = { ...console, info: () => {}, debug: () => {}, warn: () => {
 async function main() {
   console.log('\nWdeck - smoke test end-to-end\n');
 
+  const config = copiaConfigurazione();
   const host = createHost({
+    configFile: config.file,
     overrides: { port: PORT, host: '127.0.0.1', token: TOKEN, dryRun: true },
     logger: quietLogger,
-    watch: false
+    watch: false,
+    tray: false
   });
 
   const info = await host.start();
@@ -68,6 +91,16 @@ async function main() {
     const firstPage = deckBody.deck?.profiles?.[0]?.pages?.[0];
     check('la prima pagina contiene bottoni', Array.isArray(firstPage?.buttons) && firstPage.buttons.length > 0);
     check('il layout NON espone il token', !JSON.stringify(deckBody).includes(TOKEN));
+
+    const statusNoToken = await fetch(`${base}${ENDPOINTS.status}`);
+    check('/api/status senza token -> 401', statusNoToken.status === 401, `status=${statusNoToken.status}`);
+
+    const statusRes = await fetch(`${base}${ENDPOINTS.status}?token=${TOKEN}`);
+    const statusBody = await statusRes.json();
+    check('/api/status con token -> 200', statusRes.status === 200, `status=${statusRes.status}`);
+    check('/api/status restituisce la mappa degli stati',
+      statusBody.ok === true && typeof statusBody.states === 'object' && statusBody.states !== null,
+      JSON.stringify(statusBody));
 
     const pressNoToken = await fetch(`${base}${ENDPOINTS.press}`, {
       method: 'POST',
@@ -111,6 +144,10 @@ async function main() {
     check('dopo l\'autenticazione arriva lo stato',
       typeof stateMsg.state?.activeProfile === 'string' && typeof stateMsg.state?.activePage === 'string');
     check('lo stato riporta dry-run attivo', stateMsg.state.dryRun === true);
+
+    const statusMsg = await waitForMessage(ws, (m) => m.type === MSG.status, { label: 'status' });
+    check('dopo l\'autenticazione arriva lo stato reale dei controlli',
+      typeof statusMsg.states === 'object' && statusMsg.states !== null, JSON.stringify(statusMsg));
 
     ws.send({ type: MSG.press, buttonId: 'media-playpause', requestId: 'req-1' });
     const ack = await waitForMessage(ws, (m) => m.type === MSG.ack && m.requestId === 'req-1', { label: 'ack pressione' });
@@ -170,6 +207,11 @@ async function main() {
     const liteHello = await waitForMessage(wsLite, (m) => m[LITE_FIELDS.type] === LITE_MSG.hello, { label: 'hello lite' });
     check('il canale lite invia hello compatto', liteHello[LITE_FIELDS.version] === 1, JSON.stringify(liteHello));
 
+    const liteStatus = await waitForMessage(wsLite, (m) => m[LITE_FIELDS.type] === LITE_MSG.status, { label: 'status lite' });
+    check('il canale lite invia lo stato compatto dei bottoni',
+      typeof liteStatus[LITE_FIELDS.states] === 'object' && liteStatus[LITE_FIELDS.states] !== null,
+      JSON.stringify(liteStatus));
+
     wsLite.send({ [LITE_FIELDS.type]: LITE_MSG.press, [LITE_FIELDS.id]: 'lock-station' });
     const liteAck = await waitForMessage(wsLite, (m) => m[LITE_FIELDS.type] === LITE_MSG.ack, { label: 'ack lite' });
     check('la pressione lite riceve ack positivo', liteAck[LITE_FIELDS.ok] === 1, JSON.stringify(liteAck));
@@ -187,10 +229,35 @@ async function main() {
     const goodPin = await fetch(`${base}${ENDPOINTS.pair}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: host.configStore.get().settings.security.pin })
+      body: JSON.stringify({ pin: host.configStore.get().settings.security.pin, name: 'Smoke test' })
     });
     const pairBody = await goodPin.json();
-    check('PIN corretto -> token restituito', goodPin.status === 200 && pairBody.token === TOKEN, JSON.stringify(pairBody));
+    check('PIN corretto -> token restituito', goodPin.status === 200 && typeof pairBody.token === 'string', JSON.stringify(pairBody));
+    check('il pairing crea un token dedicato, non consegna quello principale',
+      pairBody.token !== TOKEN && pairBody.device?.name === 'Smoke test', JSON.stringify(pairBody));
+
+    const conNuovo = await fetch(`${base}${ENDPOINTS.deck}`, { headers: { 'x-wdeck-token': pairBody.token } });
+    check('il token del dispositivo apre le rotte protette', conNuovo.status === 200, `status=${conNuovo.status}`);
+
+    const revoca = await fetch(`${base}${ENDPOINTS.devices}?id=${pairBody.device.id}&token=${TOKEN}`, { method: 'DELETE' });
+    check('il dispositivo si revoca da solo', revoca.status === 200, `status=${revoca.status}`);
+
+    const dopoRevoca = await fetch(`${base}${ENDPOINTS.deck}`, { headers: { 'x-wdeck-token': pairBody.token } });
+    check('dopo la revoca il token del dispositivo non vale piu\'', dopoRevoca.status === 401, `status=${dopoRevoca.status}`);
+
+    const ancoraPrincipale = await fetch(`${base}${ENDPOINTS.deck}?token=${TOKEN}`);
+    check('la revoca non tocca il token principale', ancoraPrincipale.status === 200, `status=${ancoraPrincipale.status}`);
+
+    const qrRes = await fetch(`${base}${ENDPOINTS.pairQr}?token=${TOKEN}`);
+    const qrBody = await qrRes.json();
+    check('/api/pair/qr produce un codice e un URL', qrRes.status === 200 && typeof qrBody.svg === 'string'
+      && qrBody.svg.startsWith('<svg') && typeof qrBody.url === 'string', `status=${qrRes.status}`);
+    check('il QR accoppia un dispositivo nuovo, non regala il token principale',
+      qrBody.device?.id && !qrBody.url.includes(TOKEN), JSON.stringify(qrBody.device));
+
+    const qrToken = new URL(qrBody.url).searchParams.get('token');
+    const conQr = await fetch(`${base}${ENDPOINTS.deck}`, { headers: { 'x-wdeck-token': qrToken } });
+    check('il token dentro il QR funziona davvero', conQr.status === 200, `status=${conQr.status}`);
 
     // ---------------------------------------------------------------
     console.log('\n6) Client web servito dall\'host');

@@ -31,16 +31,18 @@ export function obsAuthResponse(password, salt, challenge) {
 const OBS_OP = { hello: 0, identify: 1, identified: 2, request: 6, requestResponse: 7 };
 
 /**
- * Apre una connessione a OBS, esegue una richiesta e chiude.
+ * Apre una connessione a OBS, esegue una o piu' richieste in sequenza e chiude.
  *
  * OBS mantiene una sola sessione per connessione e le richieste sono rare
  * (una per pressione): tenere aperto un socket permanente aggiungerebbe
- * riconnessioni e stato da gestire senza alcun guadagno percepibile.
- * @param {{url: string, password?: string}} config
- * @param {{requestType: string, requestData?: object}} request
- * @returns {Promise<object>}
+ * riconnessioni e stato da gestire senza alcun guadagno percepibile. La lettura
+ * dello stato, invece, ha bisogno di piu' risposte insieme, e farle passare
+ * tutte dalla stessa connessione evita di aprirne una per ciascuna.
+ * @param {{url?: string, password?: string}} config
+ * @param {Array<{requestType: string, requestData?: object}>} requests
+ * @returns {Promise<object[]>} una risposta per richiesta, nello stesso ordine
  */
-export async function obsRequest(config, request) {
+export async function obsRequests(config, requests) {
   const url = config.url ?? 'ws://127.0.0.1:4455';
   let conn;
   try {
@@ -67,25 +69,40 @@ export async function obsRequest(config, request) {
     });
     await waitForMessage(conn, (msg) => msg?.op === OBS_OP.identified, { timeoutMs: 5000, label: 'identificazione OBS' });
 
-    const requestId = `wdeck-${crypto.randomUUID()}`;
-    send({
-      op: OBS_OP.request,
-      d: { requestId, requestType: request.requestType, requestData: request.requestData ?? {} }
-    });
-    const response = await waitForMessage(
-      conn,
-      (msg) => msg?.op === OBS_OP.requestResponse && msg.d?.requestId === requestId,
-      { timeoutMs: 8000, label: `risposta a ${request.requestType}` }
-    );
+    const out = [];
+    for (const request of requests) {
+      const requestId = `wdeck-${crypto.randomUUID()}`;
+      send({
+        op: OBS_OP.request,
+        d: { requestId, requestType: request.requestType, requestData: request.requestData ?? {} }
+      });
+      const response = await waitForMessage(
+        conn,
+        (msg) => msg?.op === OBS_OP.requestResponse && msg.d?.requestId === requestId,
+        { timeoutMs: 8000, label: `risposta a ${request.requestType}` }
+      );
 
-    const status = response.d?.requestStatus;
-    if (!status?.result) {
-      throw new Error(`OBS ha rifiutato "${request.requestType}": ${status?.comment ?? `codice ${status?.code}`}`);
+      const status = response.d?.requestStatus;
+      if (!status?.result) {
+        throw new Error(`OBS ha rifiutato "${request.requestType}": ${status?.comment ?? `codice ${status?.code}`}`);
+      }
+      out.push(response.d?.responseData ?? {});
     }
-    return response.d?.responseData ?? {};
+    return out;
   } finally {
     conn.close();
   }
+}
+
+/**
+ * Esegue una singola richiesta OBS.
+ * @param {{url?: string, password?: string}} config
+ * @param {{requestType: string, requestData?: object}} request
+ * @returns {Promise<object>}
+ */
+export async function obsRequest(config, request) {
+  const [response] = await obsRequests(config, [request]);
+  return response;
 }
 
 /** Richieste OBS esposte come comandi del deck. */
@@ -119,6 +136,68 @@ const OBS_COMMANDS = {
   replay: { label: 'salva replay', build: () => ({ requestType: 'SaveReplayBuffer' }) }
 };
 
+/**
+ * Le quattro condizioni globali di OBS, lette in una sola connessione.
+ * L'ordine e' quello in cui vengono lette e riletto in obsGlobalStatus().
+ */
+const OBS_STATUS_REQUESTS = [
+  { requestType: 'GetCurrentProgramScene' },
+  { requestType: 'GetRecordStatus' },
+  { requestType: 'GetStreamStatus' },
+  { requestType: 'GetVirtualCamStatus' }
+];
+
+/**
+ * Legge scena attiva, registrazione, diretta e webcam virtuale.
+ * @param {object} config
+ * @param {{cached?: Function}} ctx
+ */
+function obsGlobalStatus(config, ctx) {
+  const run = async () => {
+    const [scene, record, stream, cam] = await obsRequests(config, OBS_STATUS_REQUESTS);
+    return { scene, record, stream, cam };
+  };
+  return ctx?.cached ? ctx.cached('obs:global', run) : run();
+}
+
+/**
+ * Traduce comando + risposta di OBS nello stato del bottone.
+ * Funzione pura: e' la parte che vale la pena verificare senza un OBS acceso.
+ * @param {string} command
+ * @param {object} params
+ * @param {{scene?: object, record?: object, stream?: object, cam?: object, mute?: object, item?: object}} data
+ * @returns {{on: boolean|null, text: string|null}|null}
+ */
+export function obsStatusFrom(command, params, data) {
+  switch (command) {
+    case 'scene': {
+      const current = data.scene?.currentProgramSceneName ?? null;
+      if (current === null) return null;
+      return { on: current === params?.scene, text: current };
+    }
+    case 'start-record':
+    case 'stop-record':
+    case 'toggle-record':
+      return { on: data.record?.outputActive === true, text: data.record?.outputActive ? 'REC' : null };
+    case 'pause-record':
+      return { on: data.record?.outputPaused === true, text: data.record?.outputPaused ? 'in pausa' : null };
+    case 'start-stream':
+    case 'stop-stream':
+    case 'toggle-stream':
+      return { on: data.stream?.outputActive === true, text: data.stream?.outputActive ? 'LIVE' : null };
+    case 'virtual-cam':
+      return { on: data.cam?.outputActive === true, text: null };
+    case 'toggle-mute':
+      if (data.mute?.inputMuted === undefined) return null;
+      return { on: data.mute.inputMuted === true, text: data.mute.inputMuted ? 'muto' : null };
+    case 'toggle-source':
+      if (data.item?.sceneItemEnabled === undefined) return null;
+      return { on: data.item.sceneItemEnabled === true, text: null };
+    default:
+      return null;
+  }
+}
+
 export const obsAction = {
   type: 'obs',
   title: 'OBS Studio',
@@ -149,6 +228,35 @@ export const obsAction = {
     const config = integrationConfig(ctx, 'obs');
     const data = await obsRequest(config, spec.build(params));
     return { ok: true, detail: `OBS: ${spec.label}`, data };
+  },
+
+  /**
+   * Condizione corrente del comando: quale scena e' in onda, se si sta
+   * registrando o trasmettendo, se una sorgente e' muta o nascosta.
+   */
+  async readState(params, ctx) {
+    const command = params?.command;
+    if (!OBS_COMMANDS[command]) return null;
+    const config = integrationConfig(ctx, 'obs');
+
+    if (command === 'toggle-mute') {
+      if (!params?.source) return null;
+      const read = () => obsRequest(config, { requestType: 'GetInputMute', requestData: { inputName: params.source } });
+      const mute = ctx?.cached ? await ctx.cached(`obs:mute:${params.source}`, read) : await read();
+      return obsStatusFrom(command, params, { mute });
+    }
+
+    if (command === 'toggle-source') {
+      if (!params?.scene || params?.itemId === undefined) return null;
+      const read = () => obsRequest(config, {
+        requestType: 'GetSceneItemEnabled',
+        requestData: { sceneName: params.scene, sceneItemId: params.itemId }
+      });
+      const item = ctx?.cached ? await ctx.cached(`obs:item:${params.scene}:${params.itemId}`, read) : await read();
+      return obsStatusFrom(command, params, { item });
+    }
+
+    return obsStatusFrom(command, params, await obsGlobalStatus(config, ctx));
   }
 };
 
@@ -270,6 +378,29 @@ export const hueAction = {
     const failed = Array.isArray(result) ? result.filter((r) => r.error) : [];
     if (failed.length) throw new Error(`Hue: ${failed[0].error?.description ?? 'comando rifiutato'}`);
     return { ok: true, detail: `Hue ${target} ${params.id}: comando applicato` };
+  },
+
+  /** Il bridge sa dire se la luce e' accesa e a che intensita'. */
+  async readState(params, ctx) {
+    const config = integrationConfig(ctx, 'hue');
+    if (!config.bridge || !config.username) return null;
+    const target = params?.target ?? 'light';
+    const url = `http://${config.bridge}/api/${config.username}/${target === 'group' ? 'groups' : 'lights'}/${params.id}`;
+
+    const read = async () => {
+      const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      if (!response.ok) throw new Error(`bridge Hue ha risposto ${response.status}`);
+      return response.json();
+    };
+    const json = ctx?.cached ? await ctx.cached(`hue:${target}:${params.id}`, read) : await read();
+
+    const on = target === 'group' ? json?.state?.any_on : json?.state?.on;
+    const raw = target === 'group' ? json?.action?.bri : json?.state?.bri;
+    return {
+      on: typeof on === 'boolean' ? on : null,
+      level: Number.isFinite(raw) ? Math.round((raw / 254) * 100) : null,
+      text: null
+    };
   }
 };
 

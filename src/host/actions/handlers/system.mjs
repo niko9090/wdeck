@@ -2,7 +2,8 @@
 
 import fs from 'node:fs';
 import { checkExecutable, checkUrl } from '../../security/allowlist.mjs';
-import { buildOpenUrlScript, focusPid, launchProcess, runPowerShell, runScript, resolveScriptRunner } from '../../platform/windows.mjs';
+import { focusPid, launchProcess, runScript, resolveScriptRunner } from '../../platform/windows.mjs';
+import { SUPPORTED_PLATFORMS, openUrl, planUrl } from '../../platform/input.mjs';
 
 function assertArgs(args) {
   if (args === undefined) return [];
@@ -70,8 +71,9 @@ export const launchAction = {
 export const urlAction = {
   type: 'url',
   title: 'Apri URL',
-  description: 'Apre un URL con l\'applicazione predefinita di sistema. Lo schema deve essere in settings.security.allowUrlSchemes.',
-  platforms: ['win32'],
+  description: 'Apre un URL con l\'applicazione predefinita di sistema (Start-Process su Windows, '
+    + '"open" su macOS, xdg-open su Linux). Lo schema deve essere in settings.security.allowUrlSchemes.',
+  platforms: [...SUPPORTED_PLATFORMS],
   category: 'browser',
   paramsHelp: { url: 'URL completo, es. https://example.com' },
   validate(params) {
@@ -86,11 +88,11 @@ export const urlAction = {
       throw err;
     }
     if (ctx.dryRun) {
-      return { ok: true, simulated: true, detail: `aprirebbe ${params.url} (schema ${check.scheme})` };
+      const plan = planUrl(params.url);
+      return { ok: true, simulated: true, detail: `${plan.description} (schema ${check.scheme})`, backend: plan.backend };
     }
-    const res = await runPowerShell(buildOpenUrlScript(params.url), { timeoutMs: 10000 });
-    if (res.code !== 0) throw new Error(`apertura URL fallita: ${res.stderr || `exit ${res.code}`}`);
-    return { ok: true, detail: `aperto ${params.url}` };
+    const out = await openUrl(params.url);
+    return { ok: true, ...out };
   }
 };
 

@@ -22,7 +22,10 @@ export const miaAzione = {
   stub: false,                    // true se non e' ancora implementata
 
   validate(params) {},            // lancia Error se i parametri sono sbagliati
-  describe(params) {}             // stringa mostrata in dry-run, log e ack
+  describe(params) {},            // stringa mostrata in dry-run, log e ack
+
+  // opzionale: stato reale del controllo (vedi sezione 2-bis)
+  async readState(params, ctx) {}
 };
 ```
 
@@ -64,6 +67,43 @@ lo traduce in HTTP `403`.
    [`src/host/security/allowlist.mjs`](../src/host/security/allowlist.mjs)).
    La verifica va fatta **prima** del controllo su `dryRun`, cosi' una
    configurazione vietata risulta bloccata anche in simulazione.
+
+## 2-bis. Lo stato reale del controllo (`readState`)
+
+Un'azione che accende, spegne o regola qualcosa puo' dire ai client **in che
+stato si trova adesso**: e' cio' che rende il bottone del muto diverso da un
+telecomando, perche' resta giusto anche se il volume viene cambiato altrove.
+
+```js
+async readState(params, ctx) {
+  const audio = await ctx.cached('audio:speaker', () => leggiVolume());
+  return {
+    on: audio.muted,        // true | false | null (null = non e' un interruttore)
+    level: audio.volume,    // 0..100, oppure null
+    text: audio.muted ? 'muto' : null   // etichetta breve, oppure null
+  };
+}
+```
+
+Restituire `null` significa "non lo so": il client non mostra alcuna spia.
+
+Regole:
+
+| regola | perche' |
+|---|---|
+| **`readState` non deve modificare nulla.** | Viene chiamata da sola, ogni pochi secondi. |
+| **Usare `ctx.cached(chiave, fn)`** per la parte costosa. | Dieci bottoni volume devono costare una lettura sola, non dieci processi PowerShell. |
+| **Lanciare un errore se il servizio non risponde.** | L'host lo mostra come stato in errore e mette quella lettura in pausa per un minuto, invece di insistere. |
+| **Non serve gestire `ctx.dryRun`.** | In dry-run l'host non chiama affatto `readState`. |
+
+`ctx` e' lo stesso di `run()`, piu' `ctx.cached` e `ctx.reading === true`.
+Chi non dichiara `readState` non viene mai interrogato: aggiungerla e' a costo
+zero per tutte le altre azioni. `GET /api/actions` riporta `reportsState: true`
+per le azioni che la dichiarano.
+
+L'host interroga solo i controlli della pagina attiva, e solo mentre almeno un
+client e' collegato. Un bottone con `"status": false` in `deck.json` viene
+escluso.
 
 ## 3. Esempio completo
 
@@ -162,12 +202,30 @@ Ogni handler dichiara anche una `category` (usata dall'editor per raggruppare le
 azioni) e un `control`, che vale `button` salvo per le azioni pilotabili con un
 cursore, dove vale `slider`.
 
+Sanno dichiarare il proprio **stato reale** (`readState`): `volume`, `mic`,
+`brightness`, `media` (con `key` `mute`, `volumeup`, `volumedown`), `obs`,
+`hue`, `mqtt`, `spotify` e `discord`.
+
+### Scrivere un'azione multipiattaforma
+
+Un handler non deve contenere `if (process.platform === ...)`: quella scelta
+sta in [`src/host/platform/input.mjs`](../src/host/platform/input.mjs), che
+espone una coppia di funzioni per operazione - `plan*` descrive cosa verrebbe
+fatto (serve al dry-run ed e' pura), `send*` lo fa. Gli adattatori veri sono
+`windows.mjs`, `macos.mjs` e `linux.mjs`; le mappe dei tasti stanno in
+`keymaps.mjs` e sono moduli puri, quindi verificabili anche dalla piattaforma
+sbagliata. Per l'audio la facciata equivalente e' `platform/audio.mjs`.
+
+Dichiarare `platforms` con l'elenco vero: fuori da quelle piattaforme il
+dispatcher risponde `501` con un messaggio esplicito, che e' meglio di un
+errore oscuro a ogni pressione.
+
 ### Media e audio
 
 | tipo | piattaforme | descrizione |
 |---|---|---|
-| `volume` | win32 | volume di sistema assoluto 0..100, delta o muto (cursore) |
-| `mic` | win32 | volume e muto del microfono predefinito (cursore) |
+| `volume` | win32, darwin, linux | volume di sistema assoluto 0..100, delta o muto (cursore) |
+| `mic` | win32, darwin, linux | volume del microfono predefinito, e il muto dove il sistema lo espone (cursore) |
 
 ### Finestre e desktop
 
@@ -208,17 +266,53 @@ cursore, dove vale `slider`.
 | `obs` | tutte | OBS Studio via obs-websocket v5: scene, registrazione, diretta, muto |
 | `homeassistant` | tutte | chiama un servizio di Home Assistant |
 | `hue` | tutte | accende, spegne e regola luci e gruppi Philips Hue |
+| `mqtt` | tutte | pubblica su un broker MQTT e legge lo stato da un topic |
+| `spotify` | tutte | comanda Spotify via Web API: riproduzione, brano, volume, dispositivo |
+| `discord` | tutte | messaggio via webhook, oppure microfono e cuffie via canale locale |
+
+#### Come configurarle
+
+Le credenziali stanno in `settings.integrations`, mai nei parametri
+dell'azione: un deck si condivide senza esportare i propri segreti.
+
+```json
+"integrations": {
+  "mqtt": { "url": "mqtt://192.168.1.10:1883", "username": "wdeck", "password": "..." },
+  "spotify": { "clientId": "...", "clientSecret": "...", "refreshToken": "..." },
+  "discord": { "url": "https://discord.com/api/webhooks/...", "clientId": "...", "accessToken": "..." }
+}
+```
+
+**MQTT**: bastano URL e, se il broker le richiede, le credenziali. `mqtt://` e'
+in chiaro, `mqtts://` cifrato. Un bottone puo' anche mostrare lo stato reale
+indicando `stateTopic` (e `onValue`, se il valore "acceso" non e' `ON`).
+
+**Spotify**: serve registrare un'applicazione su
+[developer.spotify.com](https://developer.spotify.com/dashboard), poi ottenere
+**una volta sola** un refresh token con lo scope
+`user-modify-playback-state user-read-playback-state`. Il refresh token non
+scade; da quello Wdeck ricava da solo l'access token orario. A differenza dei
+tasti multimediali, comanda l'account: funziona anche se la musica sta suonando
+sul telefono o su un altoparlante in un'altra stanza.
+
+**Discord**: il comando `message` ha bisogno solo dell'URL di un webhook, che si
+crea dalle impostazioni del canale, e funziona subito. I comandi su microfono e
+cuffie parlano invece con il client Discord in esecuzione sullo stesso computer
+attraverso il suo canale locale, e richiedono un'applicazione registrata
+(`clientId`) piu' uno scope per la voce che **Discord concede su richiesta**:
+senza, il client risponde con un errore, che Wdeck riporta tale e quale invece
+di far finta di aver funzionato.
 
 ### Base
 
 | tipo | piattaforme | descrizione |
 |---|---|---|
-| `media` | win32 | tasti multimediali (play/pausa, next, prev, volume, muto) |
-| `hotkey` | win32 | combinazione di tasti, es. `ctrl+shift+m`, `win+l` |
-| `text` | win32 | digita testo nella finestra attiva |
+| `media` | win32, darwin, linux | comandi multimediali (play/pausa, next, prev, volume, muto) |
+| `hotkey` | win32, darwin, linux | combinazione di tasti, es. `ctrl+shift+m`, `win+l` |
+| `text` | win32, darwin, linux | digita testo nella finestra attiva |
 | `launch` | tutte | avvia un programma (whitelist) |
-| `script` | tutte | esegue `.ps1`/`.bat`/`.cmd`/`.py`/`.mjs` (whitelist) |
-| `url` | win32 | apre un URL con l'app predefinita |
+| `script` | tutte | esegue `.ps1`/`.bat`/`.cmd`/`.py`/`.mjs`/`.sh` (whitelist) |
+| `url` | win32, darwin, linux | apre un URL con l'app predefinita |
 | `http` | tutte | richiesta HTTP verso webhook/API |
 | `sequence` | tutte | esegue in ordine piu' azioni |
 | `delay` | tutte | attesa, da usare dentro `sequence` |

@@ -41,6 +41,7 @@ test('api: tutte le rotte protette rifiutano le richieste senza token', async (t
   const protette = [
     ['GET', ENDPOINTS.deck],
     ['GET', ENDPOINTS.state],
+    ['GET', ENDPOINTS.status],
     ['GET', ENDPOINTS.actions],
     ['GET', ENDPOINTS.liteDeck],
     ['GET', ENDPOINTS.liteState],

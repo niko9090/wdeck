@@ -6,7 +6,8 @@
  */
 
 import { ENDPOINTS, MSG } from '/shared/protocol.mjs';
-import { iconSvg } from './icons.js';
+import { CUSTOM_PREFIX, ICONS, iconMarkup, iconSvg } from './icons.js';
+import { language, setLanguage, t } from './i18n.js';
 
 const STORAGE = {
   hosts: 'wdeck.hosts',
@@ -68,14 +69,30 @@ const state = {
   pending: new Map(),
   /** azioni disponibili sull'host, caricate alla prima apertura dell'editor */
   actionGroups: null,
+  /** icone caricate dall'utente su questo host, lette all'apertura dell'editor */
+  customIcons: null,
   /** ultimo livello noto di ogni slider, per non farlo saltare al re-render */
   levels: new Map(),
+  /** stato reale dei controlli letto dall'host: id -> {on, level, text} */
+  statuses: {},
+  /** cursore attualmente sotto il dito: non va riallineato dall'host */
+  draggingId: null,
   update: null
 };
 
 const activeHost = () => state.hosts.find((h) => h.id === state.activeHostId) ?? null;
 const baseUrl = () => activeHost()?.base ?? location.origin;
 const token = () => activeHost()?.token ?? null;
+
+/**
+ * URL di un'icona caricata dall'utente.
+ * Il token viaggia in querystring perche' un tag <img> non puo' portare header.
+ */
+const customIconUrl = (name) => `${baseUrl()}${ENDPOINTS.iconFile}?name=${encodeURIComponent(name)}`
+  + `&token=${encodeURIComponent(token() ?? '')}`;
+
+/** Markup dell'icona di un controllo, glifo incluso o file caricato. */
+const controlIcon = (button) => iconMarkup(button.icon, button.action?.type, customIconUrl);
 
 // ---------------------------------------------------------------- utilita'
 
@@ -170,7 +187,9 @@ function switchHost(id) {
   state.profileId = null;
   state.pageId = null;
   state.levels.clear();
+  state.statuses = {};
   state.actionGroups = null;
+  state.customIcons = null;
   saveHosts();
   renderHosts();
   ui.grid.innerHTML = '';
@@ -188,7 +207,7 @@ function renderHosts() {
   ui.hosts.innerHTML = state.hosts
     .map((h) => `<button class="host-tab" type="button" role="tab" data-host="${h.id}" aria-selected="${h.id === state.activeHostId}">`
       + `<span class="host-dot"${h.id === state.activeHostId && state.connected ? ' data-on="1"' : ''}></span>${escapeHtml(h.name)}</button>`)
-    .join('') + '<button class="host-tab add" type="button" data-host-add="1" title="Aggiungi un computer">+</button>';
+    .join('') + `<button class="host-tab add" type="button" data-host-add="1" title="${t('top.addComputer')}">+</button>`;
 }
 
 // ---------------------------------------------------------------- gate
@@ -200,28 +219,47 @@ function showGate(message = '') {
   ui.gateError.textContent = message;
 }
 
+/**
+ * Nome con cui questo dispositivo si presenta all'host.
+ *
+ * Non c'e' modo di leggere il nome vero del telefono da una pagina web: si
+ * ricava dallo user agent, che almeno distingue un Android da un iPad da un PC.
+ */
+function deviceName() {
+  const ua = navigator.userAgent ?? '';
+  if (/iPad/i.test(ua)) return 'iPad';
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/Android/i.test(ua)) return /Mobile/i.test(ua) ? 'Telefono Android' : 'Tablet Android';
+  if (/Macintosh/i.test(ua)) return 'Mac';
+  if (/Windows/i.test(ua)) return 'PC Windows';
+  if (/Linux/i.test(ua)) return 'PC Linux';
+  return 'Browser';
+}
+
 async function pairWithPin() {
   const base = ui.gateHost.value.trim().replace(/\/+$/, '') || location.origin;
   const pin = ui.gatePin.value.trim();
   ui.gateError.textContent = '';
   if (!pin) {
-    ui.gateError.textContent = 'Inserisci il PIN mostrato dall\'host.';
+    ui.gateError.textContent = t('gate.pinMissing');
     return;
   }
   try {
     const res = await fetch(`${base}${ENDPOINTS.pair}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin })
+      // Il nome serve a riconoscere questo dispositivo nell'elenco dell'host,
+      // per poterlo revocare da solo se un giorno va perso.
+      body: JSON.stringify({ pin, name: deviceName() })
     });
     const data = await res.json();
     if (!res.ok || !data.token) {
-      ui.gateError.textContent = data?.error?.message ?? 'Pairing rifiutato.';
+      ui.gateError.textContent = data?.error?.message ?? t('gate.rejected');
       return;
     }
     await finishPairing(base, data.token);
   } catch (err) {
-    ui.gateError.textContent = `Host non raggiungibile: ${err.message}`;
+    ui.gateError.textContent = t('gate.unreachable', { message: err.message });
   }
 }
 
@@ -246,7 +284,7 @@ function saveManualToken() {
   const base = ui.gateHost.value.trim().replace(/\/+$/, '') || location.origin;
   const manual = ui.gateToken.value.trim();
   if (!manual) {
-    ui.gateError.textContent = 'Inserisci un token.';
+    ui.gateError.textContent = t('gate.tokenMissing');
     return;
   }
   finishPairing(base, manual);
@@ -270,7 +308,7 @@ function connect() {
   if (state.socket) {
     try { state.socket.close(); } catch { /* ignora */ }
   }
-  setStatus('connecting', 'connessione in corso...');
+  setStatus('connecting', t('status.connecting'));
 
   const socket = new WebSocket(wsUrl());
   state.socket = socket;
@@ -292,14 +330,14 @@ function connect() {
   socket.addEventListener('close', () => {
     if (socket !== state.socket) return;
     state.connected = false;
-    setStatus('offline', 'connessione persa');
+    setStatus('offline', t('status.lost'));
     renderHosts();
     const delay = Math.min(1000 * 2 ** state.retry, 15000);
     state.retry += 1;
     setTimeout(() => { if (token() && socket === state.socket) connect(); }, delay);
   });
 
-  socket.addEventListener('error', () => setStatus('offline', 'errore di connessione'));
+  socket.addEventListener('error', () => setStatus('offline', t('status.error')));
 }
 
 function handleMessage(msg) {
@@ -311,7 +349,7 @@ function handleMessage(msg) {
     case MSG.authOk:
       state.connected = true;
       state.retry = 0;
-      setStatus('online', 'connesso');
+      setStatus('online', t('status.online'));
       renderHosts();
       checkUpdate();
       break;
@@ -326,6 +364,11 @@ function handleMessage(msg) {
     case MSG.state:
       applyState(msg.state);
       renderStatus();
+      break;
+
+    case MSG.status:
+      state.statuses = msg.states ?? {};
+      applyStatuses();
       break;
 
     case MSG.navigate:
@@ -350,9 +393,9 @@ function handleMessage(msg) {
 
     case MSG.error:
       if (msg.code === 'unauthorized') {
-        showGate('Token non valido o scaduto. Esegui di nuovo il pairing.');
+        showGate(t('gate.expired'));
       } else {
-        toast(msg.message ?? 'errore', 'err');
+        toast(msg.message ?? t('action.error'), 'err');
       }
       break;
 
@@ -363,7 +406,7 @@ function handleMessage(msg) {
 
 function send(message) {
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
-    toast('Non connesso all\'host', 'err');
+    toast(t('status.notConnected'), 'err');
     return false;
   }
   state.socket.send(JSON.stringify(message));
@@ -379,10 +422,39 @@ function applyState(hostState) {
   ui.dryBadge.hidden = !hostState.dryRun;
 }
 
+/**
+ * Applica tema, accento e lingua dichiarati dall'host.
+ *
+ * `light` impone il tema chiaro, `auto` lo segue solo se il sistema lo chiede,
+ * `dark` (o niente) lascia quello scuro. Prima esisteva solo `auto`, quindi
+ * chi scriveva `"theme": "light"` non otteneva nulla.
+ */
 function applyTheme(uiConfig) {
   if (!uiConfig) return;
   if (uiConfig.accent) document.documentElement.style.setProperty('--accent', uiConfig.accent);
-  document.documentElement.classList.toggle('theme-auto', uiConfig.theme === 'auto');
+  const root = document.documentElement;
+  root.classList.toggle('theme-auto', uiConfig.theme === 'auto');
+  root.classList.toggle('theme-light', uiConfig.theme === 'light');
+
+  const scelta = setLanguage(uiConfig.language ?? 'auto');
+  if (document.documentElement.lang !== scelta) {
+    document.documentElement.lang = scelta;
+    applyStaticTexts();
+  }
+}
+
+/** Traduce le parti dell'interfaccia scritte direttamente in index.html. */
+function applyStaticTexts() {
+  for (const node of document.querySelectorAll('[data-i18n]')) {
+    node.textContent = t(node.dataset.i18n);
+  }
+  for (const node of document.querySelectorAll('[data-i18n-title]')) {
+    node.title = t(node.dataset.i18nTitle);
+  }
+  for (const node of document.querySelectorAll('[data-i18n-label]')) {
+    node.setAttribute('aria-label', t(node.dataset.i18nLabel));
+  }
+  ui.statusText.textContent = state.connected ? t('status.online') : t('status.offline');
 }
 
 function currentProfile() {
@@ -408,15 +480,20 @@ function renderProfiles() {
   const profile = currentProfile();
   ui.profileSelect.innerHTML = state.deck.profiles
     .map((p) => `<option value="${p.id}"${p.id === profile.id ? ' selected' : ''}>${escapeHtml(p.name)}</option>`)
-    .join('');
+    .join('')
+    // In modifica il menu dei profili diventa anche la via per crearli e
+    // rinominarli: non serve un altro bottone nella barra, gia' affollata.
+    + (state.editing ? `<option value="__gestisci__">${t('profile.manage')}</option>` : '');
 }
 
 function renderPages() {
   const profile = currentProfile();
   const page = currentPage();
   ui.pages.innerHTML = profile.pages
-    .map((p) => `<button class="page-tab" role="tab" data-page="${p.id}" aria-selected="${p.id === page.id}">${escapeHtml(p.name)}</button>`)
-    .join('');
+    .map((p) => `<button class="page-tab" role="tab" data-page="${p.id}" aria-selected="${p.id === page.id}">`
+      + `${escapeHtml(p.name)}${state.editing ? '<span class="page-edit" title="Modifica la pagina">&#9998;</span>' : ''}</button>`)
+    .join('')
+    + (state.editing ? '<button class="page-tab add" type="button" data-page-add="1" title="Aggiungi una pagina">+</button>' : '');
 }
 
 /**
@@ -459,6 +536,7 @@ function renderGrid() {
     }
   }
   ui.grid.innerHTML = parts.join('');
+  applyStatuses();
 }
 
 function buttonHtml(button) {
@@ -469,7 +547,7 @@ function buttonHtml(button) {
   ].filter(Boolean).join(';');
   return `<button class="deck-btn" type="button" data-id="${button.id}" style="${style}" title="${escapeHtml(button.label || button.id)}">`
     + `<span class="type-tag">${escapeHtml(button.action.type)}</span>`
-    + iconSvg(button.icon, button.action.type)
+    + controlIcon(button)
     + (state.deck.ui?.showLabels === false ? '' : `<span class="label">${escapeHtml(button.label)}</span>`)
     + (button.confirm ? '<span class="confirm-tag" title="chiede conferma">!</span>' : '')
     + '</button>';
@@ -488,7 +566,7 @@ function sliderHtml(button) {
     + ` role="slider" tabindex="0" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}" aria-label="${escapeHtml(button.label || button.id)}">`
     + `<div class="slider-fill" style="width:${percent}%"></div>`
     + '<div class="slider-content">'
-    + iconSvg(button.icon, button.action.type)
+    + controlIcon(button)
     + `<span class="slider-label">${escapeHtml(button.label)}</span>`
     + `<span class="slider-value">${value}</span>`
     + '</div></div>';
@@ -498,12 +576,54 @@ function renderStatus() {
   if (!state.hostState) return;
   ui.dryBadge.hidden = !state.hostState.dryRun;
   const parts = [
-    state.connected ? 'connesso' : 'non connesso',
-    `${state.hostState.clients} client`,
-    `${state.hostState.pressCount} pressioni`
+    state.connected ? t('status.online') : t('status.offline'),
+    t('status.clients', { n: state.hostState.clients }),
+    t('status.presses', { n: state.hostState.pressCount })
   ];
   ui.statusText.textContent = parts.join(' - ');
   if (state.hostState.lastAction) renderLastAction(state.hostState.lastAction);
+}
+
+/**
+ * Applica alla griglia lo stato reale letto dall'host.
+ *
+ * Non ridisegna nulla: tocca solo gli attributi dei controlli gia' presenti.
+ * Ricostruire la griglia a ogni aggiornamento di stato (uno ogni pochi
+ * secondi) azzererebbe le animazioni e farebbe sfarfallare i bottoni.
+ */
+function applyStatuses() {
+  for (const element of ui.grid.querySelectorAll('[data-id]')) {
+    applyStatusTo(element, state.statuses[element.dataset.id]);
+  }
+}
+
+function applyStatusTo(element, entry) {
+  if (!entry || entry.error || typeof entry.on !== 'boolean') delete element.dataset.on;
+  else element.dataset.on = entry.on ? '1' : '0';
+
+  setStateTag(element, entry?.error ? '!' : (entry?.text ?? ''));
+
+  // Il livello reale allinea il cursore, tranne mentre il dito lo sta muovendo:
+  // vedersi scappare via il cursore sotto le dita e' peggio di un valore vecchio.
+  if (typeof entry?.level === 'number' && state.draggingId !== element.dataset.id) {
+    state.levels.set(element.dataset.id, entry.level);
+    updateSliderVisual(element, entry.level);
+  }
+}
+
+/** Etichetta breve dello stato ("muto", "LIVE", nome della scena in onda). */
+function setStateTag(element, text) {
+  let tag = element.querySelector('.state-tag');
+  if (!text) {
+    tag?.remove();
+    return;
+  }
+  if (!tag) {
+    tag = document.createElement('span');
+    tag.className = 'state-tag';
+    element.appendChild(tag);
+  }
+  tag.textContent = text;
 }
 
 function renderLastAction(entry) {
@@ -559,7 +679,7 @@ function finishPress(pending, ok, result) {
   setTimeout(() => element.classList.remove('ok', 'err'), 700);
 
   if (!ok) {
-    toast(result?.error?.message ?? 'azione fallita', 'err');
+    toast(result?.error?.message ?? t('action.failed'), 'err');
     return;
   }
 
@@ -568,7 +688,7 @@ function finishPress(pending, ok, result) {
   const inner = result?.result ?? {};
   const output = String(inner.stdout ?? '').trim();
   if (output) toast(output.slice(0, 300), 'ok');
-  else if (result?.dryRun) toast(`simulato: ${result.description ?? ''}`, '');
+  else if (result?.dryRun) toast(t('action.simulated', { description: result.description ?? '' }), '');
   else if (inner.detail) toast(inner.detail, 'ok');
 
   // Gli handler di livello rispondono con il valore reale: allinea lo slider.
@@ -592,12 +712,15 @@ function updateSliderVisual(element, value) {
 function confirmPress(button) {
   return new Promise((resolve) => {
     openSheet({
-      title: 'Confermi?',
-      body: `<p class="sheet-text">Stai per eseguire <strong>${escapeHtml(button.label || button.id)}</strong> `
-        + `(azione <code>${escapeHtml(button.action.type)}</code>) sul computer <strong>${escapeHtml(activeHost()?.name ?? '')}</strong>.</p>`,
+      title: t('sheet.confirmTitle'),
+      body: `<p class="sheet-text">${t('sheet.confirmBody', {
+        label: escapeHtml(button.label || button.id),
+        type: escapeHtml(button.action.type),
+        host: escapeHtml(activeHost()?.name ?? '')
+      })}</p>`,
       actions: [
-        { label: 'Annulla', kind: 'ghost', onClick: () => { closeSheet(); resolve(false); } },
-        { label: 'Esegui', kind: 'danger', onClick: () => { closeSheet(); resolve(true); } }
+        { label: t('sheet.cancel'), kind: 'ghost', onClick: () => { closeSheet(); resolve(false); } },
+        { label: t('sheet.run'), kind: 'danger', onClick: () => { closeSheet(); resolve(true); } }
       ],
       onClose: () => resolve(false)
     });
@@ -637,16 +760,145 @@ async function loadActions() {
   if (state.actionGroups) return state.actionGroups;
   const res = await api(ENDPOINTS.actions);
   if (!res.ok) {
-    toast('Impossibile leggere le azioni disponibili', 'err');
+    toast(t('action.noActions'), 'err');
     return [];
   }
   state.actionGroups = res.data.groups ?? [];
   return state.actionGroups;
 }
 
+/** Elenco delle icone caricate dall'utente su questo host. */
+async function loadCustomIcons({ force = false } = {}) {
+  if (state.customIcons && !force) return state.customIcons;
+  const res = await api(ENDPOINTS.icons);
+  state.customIcons = res.ok ? (res.data.icons ?? []) : [];
+  return state.customIcons;
+}
+
+/** Copia di lavoro del deck: l'editor non modifica mai quella ricevuta. */
+const cloneDeck = () => JSON.parse(JSON.stringify(state.deck));
+
+const findProfile = (deck, id) => deck.profiles.find((p) => p.id === id);
+const findPage = (profile, id) => profile?.pages.find((p) => p.id === id);
+
+/** Genera uno slug valido a partire da un testo libero. */
+function slugify(text, fallback = 'nuovo') {
+  const slug = String(text ?? '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  return /^[a-z0-9]/.test(slug) ? slug : `${fallback}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** Rende unico uno slug rispetto a quelli gia' in uso. */
+function uniqueSlug(base, taken) {
+  if (!taken.includes(base)) return base;
+  for (let i = 2; i < 100; i += 1) {
+    const candidate = `${base}-${i}`.slice(0, 32);
+    if (!taken.includes(candidate)) return candidate;
+  }
+  return `${base}-${Math.random().toString(36).slice(2, 6)}`.slice(0, 32);
+}
+
+/** Tutti gli id di bottone del deck: servono a non crearne di duplicati. */
+function allButtonIds(deck) {
+  return deck.profiles.flatMap((p) => p.pages.flatMap((g) => g.buttons.map((b) => b.id)));
+}
+
+// ------------------------------------------------- scelta dell'icona
+
+/** Griglia di scelta dell'icona: glifi inclusi, icone caricate, caricamento. */
+function iconPickerHtml(selected, customIcons) {
+  const choice = (value, inner, title) => '<button type="button" class="icon-choice'
+    + `${value === (selected ?? '') ? ' selected' : ''}" data-icon="${escapeHtml(value)}" title="${escapeHtml(title)}">${inner}</button>`;
+
+  const builtin = Object.keys(ICONS)
+    .map((name) => choice(name, iconSvg(name), name))
+    .join('');
+  const custom = customIcons
+    .map((icon) => choice(`${CUSTOM_PREFIX}${icon.name}`,
+      `<img src="${customIconUrl(icon.name)}" alt="" />`, icon.name))
+    .join('');
+
+  return `
+    <div class="icon-picker" id="ed-icons">
+      ${choice('', `<span class="icon-auto">${t('edit.iconAuto')}</span>`, t('edit.iconDefault'))}
+      ${builtin}
+      ${custom}
+    </div>
+    <div class="icon-upload">
+      <label class="btn ghost small" for="ed-icon-file">${t('edit.iconUpload')}</label>
+      <input id="ed-icon-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden />
+      <span class="sheet-hint" id="ed-icon-msg">${t('edit.iconFormats')}</span>
+    </div>`;
+}
+
+/**
+ * Collega la griglia delle icone: selezione e caricamento di un file.
+ * @param {{onPick: (value: string|null) => void}} handlers
+ */
+function bindIconPicker({ onPick }) {
+  const picker = el('ed-icons');
+  if (!picker) return;
+
+  const select = (element) => {
+    for (const other of picker.querySelectorAll('.icon-choice')) other.classList.remove('selected');
+    element.classList.add('selected');
+    onPick(element.dataset.icon || null);
+  };
+
+  picker.addEventListener('click', (event) => {
+    const choice = event.target.closest('.icon-choice');
+    if (choice) select(choice);
+  });
+
+  el('ed-icon-file')?.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const message = el('ed-icon-msg');
+    message.textContent = t('edit.iconUploading');
+
+    try {
+      const content = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('file illeggibile'));
+        reader.readAsDataURL(file);
+      });
+      const name = uniqueSlug(
+        slugify(file.name.replace(/\.[^.]+$/, ''), 'icona'),
+        (await loadCustomIcons()).map((i) => i.name)
+      );
+      const res = await api(ENDPOINTS.icons, { method: 'POST', body: { name, content } });
+      if (!res.ok) {
+        message.textContent = res.data?.error?.message ?? t('edit.rejected');
+        return;
+      }
+
+      // La lista va riletta: l'icona nuova deve comparire subito nella griglia.
+      const saved = res.data.icon.name;
+      await loadCustomIcons({ force: true });
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'icon-choice';
+      button.dataset.icon = `${CUSTOM_PREFIX}${saved}`;
+      button.title = saved;
+      button.innerHTML = `<img src="${customIconUrl(saved)}" alt="" />`;
+      picker.appendChild(button);
+      select(button);
+      message.textContent = t('edit.iconUploaded', { name: saved });
+    } catch (err) {
+      message.textContent = t('edit.iconFailed', { message: err.message });
+    }
+  });
+}
+
 /** Apre l'editor di un bottone esistente o di una cella vuota. */
 async function editButton(buttonId, cell) {
-  const groups = await loadActions();
+  const [groups, customIcons] = await Promise.all([loadActions(), loadCustomIcons()]);
   const page = currentPage();
   const existing = page.buttons.find((b) => b.id === buttonId) ?? null;
   const [row, col] = cell ? cell.split(':').map(Number) : [existing.row, existing.col];
@@ -654,7 +906,7 @@ async function editButton(buttonId, cell) {
   const draft = existing
     ? JSON.parse(JSON.stringify(existing))
     : {
-      id: `btn-${Math.random().toString(36).slice(2, 8)}`,
+      id: uniqueSlug(`btn-${Math.random().toString(36).slice(2, 8)}`, allButtonIds(state.deck)),
       label: 'Nuovo',
       row,
       col,
@@ -672,30 +924,57 @@ async function editButton(buttonId, cell) {
 
   const allActions = groups.flatMap((g) => g.actions);
 
+  // Le azioni della pressione prolungata sono le stesse, piu' la voce "nessuna":
+  // configurarla richiedeva finora di scrivere holdAction a mano in deck.json.
+  const holdOptions = `<option value="">${escapeHtml(t('edit.holdNone'))}</option>`
+    + groups.map((g) => `<optgroup label="${escapeHtml(g.label)}">`
+      + g.actions.map((a) => `<option value="${a.type}"${a.type === draft.holdAction?.type ? ' selected' : ''}>${escapeHtml(a.title)}</option>`).join('')
+      + '</optgroup>').join('');
+
   openSheet({
-    title: existing ? 'Modifica controllo' : 'Nuovo controllo',
+    title: t(existing ? 'edit.editControl' : 'edit.newControl'),
     body: `
-      <label class="field"><span>Etichetta</span><input id="ed-label" type="text" maxlength="48" value="${escapeHtml(draft.label)}" /></label>
-      <label class="field"><span>Azione</span><select id="ed-type" class="select wide">${options}</select></label>
+      <label class="field"><span>${t('edit.label')}</span><input id="ed-label" type="text" maxlength="48" value="${escapeHtml(draft.label)}" /></label>
+      <label class="field"><span>${t('edit.action')}</span><select id="ed-type" class="select wide">${options}</select></label>
       <p id="ed-desc" class="sheet-hint"></p>
-      <label class="field"><span>Parametri (JSON)</span><textarea id="ed-params" rows="5" spellcheck="false">${escapeHtml(JSON.stringify(draft.action.params ?? {}, null, 2))}</textarea></label>
+      <label class="field"><span>${t('edit.params')}</span><textarea id="ed-params" rows="5" spellcheck="false">${escapeHtml(JSON.stringify(draft.action.params ?? {}, null, 2))}</textarea></label>
       <p id="ed-help" class="sheet-hint"></p>
+
+      <h3 class="sheet-section">${t('edit.icon')}</h3>
+      ${iconPickerHtml(draft.icon, customIcons)}
+
+      <h3 class="sheet-section">${t('edit.hold')}</h3>
+      <p class="sheet-hint">${t('edit.holdHint')}</p>
+      <label class="field"><span>${t('edit.action')}</span><select id="ed-hold-type" class="select wide">${holdOptions}</select></label>
+      <label class="field" id="ed-hold-params-field"><span>${t('edit.holdParams')}</span><textarea id="ed-hold-params" rows="3" spellcheck="false">${escapeHtml(JSON.stringify(draft.holdAction?.params ?? {}, null, 2))}</textarea></label>
+
       <div class="field-row">
-        <label class="field"><span>Tipo</span><select id="ed-kind" class="select">
-          <option value="button"${draft.kind !== 'slider' ? ' selected' : ''}>Pulsante</option>
-          <option value="slider"${draft.kind === 'slider' ? ' selected' : ''}>Cursore</option>
+        <label class="field"><span>${t('edit.kind')}</span><select id="ed-kind" class="select">
+          <option value="button"${draft.kind !== 'slider' ? ' selected' : ''}>${t('edit.kindButton')}</option>
+          <option value="slider"${draft.kind === 'slider' ? ' selected' : ''}>${t('edit.kindSlider')}</option>
         </select></label>
-        <label class="field"><span>Colore</span><input id="ed-color" type="color" value="${draft.color ?? '#2d3b55'}" /></label>
-        <label class="field"><span>Larghezza</span><input id="ed-span" type="number" min="1" max="12" value="${draft.span ?? 1}" /></label>
+        <label class="field"><span>${t('edit.color')}</span><input id="ed-color" type="color" value="${draft.color ?? '#2d3b55'}" /></label>
+        <label class="field"><span>${t('edit.width')}</span><input id="ed-span" type="number" min="1" max="12" value="${draft.span ?? 1}" /></label>
       </div>
-      <label class="field checkbox"><input id="ed-confirm" type="checkbox"${draft.confirm ? ' checked' : ''} /><span>Chiedi conferma prima di eseguire</span></label>
+      <label class="field checkbox"><input id="ed-confirm" type="checkbox"${draft.confirm ? ' checked' : ''} /><span>${t('edit.confirm')}</span></label>
+      <label class="field checkbox"><input id="ed-status" type="checkbox"${draft.status === false ? '' : ' checked'} /><span>${t('edit.showStatus')}</span></label>
     `,
     actions: [
-      ...(existing ? [{ label: 'Elimina', kind: 'danger', onClick: () => removeButton(existing.id) }] : []),
-      { label: 'Annulla', kind: 'ghost', onClick: () => closeSheet() },
-      { label: 'Salva', kind: 'primary', onClick: () => saveButtonDraft(draft, existing) }
+      ...(existing ? [{ label: t('sheet.delete'), kind: 'danger', onClick: () => removeButton(existing.id) }] : []),
+      { label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() },
+      { label: t('sheet.save'), kind: 'primary', onClick: () => saveButtonDraft(draft, existing) }
     ]
   });
+
+  // I parametri della pressione prolungata servono solo se c'e' un'azione.
+  const holdSelect = el('ed-hold-type');
+  const aggiornaHold = () => {
+    el('ed-hold-params-field').hidden = holdSelect.value === '';
+  };
+  holdSelect.addEventListener('change', aggiornaHold);
+  aggiornaHold();
+
+  bindIconPicker({ onPick: (value) => { draft.icon = value; } });
 
   const typeSelect = el('ed-type');
   const describe = () => {
@@ -703,8 +982,14 @@ async function editButton(buttonId, cell) {
     el('ed-desc').textContent = spec?.description ?? '';
     el('ed-help').innerHTML = spec && Object.keys(spec.paramsHelp ?? {}).length
       ? Object.entries(spec.paramsHelp).map(([k, v]) => `<code>${escapeHtml(k)}</code>: ${escapeHtml(v)}`).join('<br />')
-      : 'Questa azione non richiede parametri.';
+      : t('edit.noParams');
     if (spec?.control === 'slider') el('ed-kind').value = 'slider';
+
+    // Spuntare "mostra lo stato" su un'azione che non sa dichiararlo non
+    // farebbe nulla: meglio disattivare la casella che lasciarla senza effetto.
+    const statusBox = el('ed-status');
+    statusBox.disabled = spec ? spec.reportsState !== true : false;
+    statusBox.closest('.field').classList.toggle('disabled', statusBox.disabled);
   };
   typeSelect.addEventListener('change', describe);
   describe();
@@ -715,8 +1000,19 @@ async function saveButtonDraft(draft, existing) {
   try {
     params = JSON.parse(el('ed-params').value || '{}');
   } catch (err) {
-    toast(`Parametri non validi: ${err.message}`, 'err');
+    toast(t('edit.paramsInvalid', { message: err.message }), 'err');
     return;
+  }
+
+  const holdType = el('ed-hold-type').value;
+  let holdAction = null;
+  if (holdType !== '') {
+    try {
+      holdAction = { type: holdType, params: JSON.parse(el('ed-hold-params').value || '{}') };
+    } catch (err) {
+      toast(t('edit.holdParamsInvalid', { message: err.message }), 'err');
+      return;
+    }
   }
 
   const kind = el('ed-kind').value;
@@ -724,9 +1020,12 @@ async function saveButtonDraft(draft, existing) {
     ...draft,
     label: el('ed-label').value.trim(),
     kind,
+    icon: draft.icon || null,
     color: el('ed-color').value,
     span: Math.max(1, Number(el('ed-span').value) || 1),
     confirm: el('ed-confirm').checked,
+    status: el('ed-status').checked,
+    holdAction,
     action: { type: el('ed-type').value, params }
   };
   if (kind === 'slider') {
@@ -736,33 +1035,238 @@ async function saveButtonDraft(draft, existing) {
     if (!draft.span) next.span = Math.max(2, next.span);
   }
 
-  const deck = JSON.parse(JSON.stringify(state.deck));
-  const page = deck.profiles.find((p) => p.id === state.profileId).pages.find((p) => p.id === currentPage().id);
+  const deck = cloneDeck();
+  const page = findPage(findProfile(deck, state.profileId), currentPage().id);
   if (existing) {
     const index = page.buttons.findIndex((b) => b.id === existing.id);
     page.buttons[index] = next;
   } else {
     page.buttons.push(next);
   }
-  await persistDeck(deck, `"${next.label}" salvato`);
+  await persistDeck(deck, t('edit.saved', { label: next.label }));
 }
 
 async function removeButton(buttonId) {
-  const deck = JSON.parse(JSON.stringify(state.deck));
-  const page = deck.profiles.find((p) => p.id === state.profileId).pages.find((p) => p.id === currentPage().id);
+  const deck = cloneDeck();
+  const page = findPage(findProfile(deck, state.profileId), currentPage().id);
   page.buttons = page.buttons.filter((b) => b.id !== buttonId);
-  await persistDeck(deck, 'controllo eliminato');
+  await persistDeck(deck, t('edit.removed'));
+}
+
+/**
+ * Sposta un controllo in un'altra cella della stessa pagina.
+ *
+ * Non si controlla qui se la cella e' libera: la sovrapposizione la rileva
+ * l'host, che e' l'unico a vedere la configurazione intera, e la risposta
+ * arriva come messaggio di errore.
+ * @param {string} buttonId
+ * @param {{row: number, col: number}} target
+ */
+async function moveButton(buttonId, target) {
+  const deck = cloneDeck();
+  const page = findPage(findProfile(deck, state.profileId), currentPage().id);
+  const button = page.buttons.find((b) => b.id === buttonId);
+  if (!button) return false;
+  if (button.row === target.row && button.col === target.col) return false;
+  button.row = target.row;
+  button.col = target.col;
+  return persistDeck(deck, t('edit.moved'), { quiet: true });
+}
+
+// ------------------------------------------------- pagine
+
+/** Pannello di gestione di una pagina. */
+function editPage(pageId) {
+  const profile = currentProfile();
+  const page = findPage(profile, pageId) ?? currentPage();
+  const isLast = profile.pages.length <= 1;
+  const index = profile.pages.findIndex((p) => p.id === page.id);
+  const isDefault = profile.defaultPage === page.id;
+
+  openSheet({
+    title: t('page.title', { name: page.name }),
+    body: `
+      <label class="field"><span>${t('page.name')}</span><input id="pg-name" type="text" maxlength="64" value="${escapeHtml(page.name)}" /></label>
+      <div class="field-row">
+        <label class="field"><span>${t('page.rows')}</span><input id="pg-rows" type="number" min="1" max="8" value="${page.rows}" /></label>
+        <label class="field"><span>${t('page.cols')}</span><input id="pg-cols" type="number" min="1" max="12" value="${page.cols}" /></label>
+      </div>
+      <p class="sheet-hint">${t('page.resizeHint')}</p>
+      <div class="field-row">
+        <button class="btn ghost" type="button" id="pg-left"${index === 0 ? ' disabled' : ''}>${t('page.moveLeft')}</button>
+        <button class="btn ghost" type="button" id="pg-right"${index === profile.pages.length - 1 ? ' disabled' : ''}>${t('page.moveRight')}</button>
+      </div>
+      <label class="field checkbox"><input id="pg-default" type="checkbox"${isDefault ? ' checked disabled' : ''} /><span>${t('page.default')}</span></label>
+      ${isLast ? `<p class="sheet-hint">${t('page.onlyOne')}</p>` : ''}
+    `,
+    actions: [
+      ...(isLast ? [] : [{ label: t('sheet.delete'), kind: 'danger', onClick: () => removePage(page.id) }]),
+      { label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() },
+      { label: t('sheet.save'), kind: 'primary', onClick: () => savePage(page.id) }
+    ]
+  });
+
+  el('pg-left').addEventListener('click', () => movePage(page.id, -1));
+  el('pg-right').addEventListener('click', () => movePage(page.id, 1));
+}
+
+async function savePage(pageId) {
+  const deck = cloneDeck();
+  const profile = findProfile(deck, state.profileId);
+  const page = findPage(profile, pageId);
+  page.name = el('pg-name').value.trim() || page.id;
+  page.rows = Math.max(1, Math.min(8, Number(el('pg-rows').value) || page.rows));
+  page.cols = Math.max(1, Math.min(12, Number(el('pg-cols').value) || page.cols));
+  if (el('pg-default').checked) profile.defaultPage = page.id;
+  await persistDeck(deck, t('page.saved', { name: page.name }));
+}
+
+async function addPage() {
+  const deck = cloneDeck();
+  const profile = findProfile(deck, state.profileId);
+  const model = findPage(profile, state.pageId) ?? profile.pages[0];
+  const id = uniqueSlug('pagina', profile.pages.map((p) => p.id));
+  profile.pages.push({
+    id,
+    name: `Pagina ${profile.pages.length + 1}`,
+    rows: model?.rows ?? 3,
+    cols: model?.cols ?? 5,
+    buttons: []
+  });
+  if (await persistDeck(deck, t('page.added'))) goToPage(id);
+}
+
+async function removePage(pageId) {
+  const deck = cloneDeck();
+  const profile = findProfile(deck, state.profileId);
+  if (profile.pages.length <= 1) {
+    toast(t('page.needsOne'), 'err');
+    return;
+  }
+  profile.pages = profile.pages.filter((p) => p.id !== pageId);
+  if (profile.defaultPage === pageId) profile.defaultPage = profile.pages[0].id;
+  if (await persistDeck(deck, t('page.removed'))) goToPage(profile.pages[0].id);
+}
+
+async function movePage(pageId, delta) {
+  const deck = cloneDeck();
+  const profile = findProfile(deck, state.profileId);
+  const index = profile.pages.findIndex((p) => p.id === pageId);
+  const target = index + delta;
+  if (index === -1 || target < 0 || target >= profile.pages.length) return;
+  const [page] = profile.pages.splice(index, 1);
+  profile.pages.splice(target, 0, page);
+  await persistDeck(deck, t('page.reordered'));
+}
+
+// ------------------------------------------------- profili
+
+/** Pannello di gestione dei profili. */
+function editProfiles() {
+  const deck = state.deck;
+  const rows = deck.profiles.map((p) => `
+    <div class="host-row">
+      <span>${escapeHtml(p.name)}<small>${t('profile.pages', { n: p.pages.length })}${p.id === deck.defaultProfile ? ` - ${t('profile.isDefault')}` : ''}</small></span>
+      <span class="row-actions">
+        ${p.id === deck.defaultProfile ? '' : `<button class="btn ghost small" type="button" data-profile-default="${p.id}">${t('profile.setDefault')}</button>`}
+        <button class="btn ghost small" type="button" data-profile-rename="${p.id}">${t('profile.rename')}</button>
+        ${deck.profiles.length > 1 ? `<button class="btn ghost small danger" type="button" data-profile-remove="${p.id}">${t('sheet.delete')}</button>` : ''}
+      </span>
+    </div>`).join('');
+
+  openSheet({
+    title: t('profile.title'),
+    body: `
+      <div class="host-list">${rows}</div>
+      <label class="field"><span>${t('profile.newName')}</span><input id="pr-name" type="text" maxlength="64" placeholder="Streaming" /></label>
+      <button class="btn" type="button" id="pr-add">${t('profile.add')}</button>
+      <p class="sheet-hint">${t('profile.addHint')}</p>
+    `,
+    actions: [{ label: t('sheet.close'), kind: 'ghost', onClick: () => closeSheet() }]
+  });
+
+  el('pr-add').addEventListener('click', () => addProfile(el('pr-name').value));
+  for (const button of ui.sheetBody.querySelectorAll('[data-profile-remove]')) {
+    button.addEventListener('click', () => removeProfile(button.dataset.profileRemove));
+  }
+  for (const button of ui.sheetBody.querySelectorAll('[data-profile-default]')) {
+    button.addEventListener('click', () => setDefaultProfile(button.dataset.profileDefault));
+  }
+  for (const button of ui.sheetBody.querySelectorAll('[data-profile-rename]')) {
+    button.addEventListener('click', () => renameProfile(button.dataset.profileRename));
+  }
+}
+
+async function addProfile(rawName) {
+  const deck = cloneDeck();
+  const name = String(rawName ?? '').trim() || `Profilo ${deck.profiles.length + 1}`;
+  const id = uniqueSlug(slugify(name, 'profilo'), deck.profiles.map((p) => p.id));
+  const model = currentPage();
+  deck.profiles.push({
+    id,
+    name,
+    defaultPage: 'home',
+    pages: [{ id: 'home', name: 'Principale', rows: model?.rows ?? 3, cols: model?.cols ?? 5, buttons: [] }]
+  });
+  if (await persistDeck(deck, t('profile.created', { name }))) switchProfile(id);
+}
+
+async function removeProfile(profileId) {
+  const deck = cloneDeck();
+  if (deck.profiles.length <= 1) {
+    toast(t('profile.needsOne'), 'err');
+    return;
+  }
+  deck.profiles = deck.profiles.filter((p) => p.id !== profileId);
+  if (deck.defaultProfile === profileId) deck.defaultProfile = deck.profiles[0].id;
+  const saved = await persistDeck(deck, t('profile.removed'));
+  if (saved && state.profileId === profileId) switchProfile(deck.profiles[0].id);
+}
+
+async function setDefaultProfile(profileId) {
+  const deck = cloneDeck();
+  deck.defaultProfile = profileId;
+  await persistDeck(deck, t('profile.defaultUpdated'));
+}
+
+function renameProfile(profileId) {
+  const profile = findProfile(state.deck, profileId);
+  openSheet({
+    title: t('profile.renameTitle', { name: profile.name }),
+    body: `<label class="field"><span>${t('page.name')}</span><input id="pr-rename" type="text" maxlength="64" value="${escapeHtml(profile.name)}" /></label>`,
+    actions: [
+      { label: t('sheet.cancel'), kind: 'ghost', onClick: () => editProfiles() },
+      {
+        label: t('sheet.save'),
+        kind: 'primary',
+        onClick: async () => {
+          const deck = cloneDeck();
+          findProfile(deck, profileId).name = el('pr-rename').value.trim() || profileId;
+          await persistDeck(deck, t('profile.renamed'));
+        }
+      }
+    ]
+  });
+}
+
+/** Passa a un profilo, sincronizzando host e memoria locale. */
+function switchProfile(profileId) {
+  state.profileId = profileId;
+  state.pageId = null;
+  localStorage.setItem(STORAGE.profile, profileId);
+  renderAll();
+  send({ type: MSG.navigate, profile: profileId });
 }
 
 /** Invia il deck modificato all'host, che lo valida e lo scrive su disco. */
-async function persistDeck(deck, successMessage) {
+async function persistDeck(deck, successMessage, { quiet = false } = {}) {
   const res = await api(ENDPOINTS.save, { method: 'POST', body: { deck } });
   if (!res.ok) {
     const detail = (res.data.errors ?? []).slice(0, 3).map((e) => `${e.path}: ${e.message}`).join(' | ');
-    toast(detail || res.data?.error?.message || 'salvataggio rifiutato', 'err');
+    toast(detail || res.data?.error?.message || t('edit.rejected'), 'err');
     return false;
   }
-  closeSheet();
+  if (!quiet) closeSheet();
   toast(successMessage, 'ok');
   return true;
 }
@@ -774,59 +1278,181 @@ async function openSettings() {
   const settings = res.data?.settings ?? {};
   const update = state.update;
 
-  openSheet({
-    title: 'Impostazioni',
-    body: `
-      <h3 class="sheet-section">Accesso</h3>
-      <label class="field"><span>PIN di pairing (4-12 cifre)</span>
-        <input id="set-pin" type="text" inputmode="numeric" maxlength="12" placeholder="${settings.security?.pinConfigured ? `configurato (${settings.security.pinLength} cifre)` : 'nessun PIN'}" />
-      </label>
-      <p class="sheet-hint">Lascia vuoto per non cambiarlo. Il PIN serve solo ad associare nuovi dispositivi: quelli gia' associati restano collegati.</p>
+  const temaAttuale = state.deck?.ui?.theme ?? 'dark';
+  const linguaAttuale = state.deck?.ui?.language ?? 'auto';
+  const opzione = (value, selected, label) => `<option value="${value}"${value === selected ? ' selected' : ''}>${label}</option>`;
 
-      <h3 class="sheet-section">Computer collegati</h3>
+  openSheet({
+    title: t('settings.title'),
+    body: `
+      <h3 class="sheet-section">${t('settings.access')}</h3>
+      <label class="field"><span>${t('settings.pin')}</span>
+        <input id="set-pin" type="text" inputmode="numeric" maxlength="12" placeholder="${settings.security?.pinConfigured ? t('settings.pinConfigured', { n: settings.security.pinLength }) : t('settings.pinNone')}" />
+      </label>
+      <p class="sheet-hint">${t('settings.pinHint')}</p>
+
+      <h3 class="sheet-section">${t('settings.appearance')}</h3>
+      <div class="field-row">
+        <label class="field"><span>${t('settings.theme')}</span><select id="set-theme" class="select">
+          ${opzione('dark', temaAttuale, t('settings.themeDark'))}
+          ${opzione('light', temaAttuale, t('settings.themeLight'))}
+          ${opzione('auto', temaAttuale, t('settings.themeAuto'))}
+        </select></label>
+        <label class="field"><span>${t('settings.language')}</span><select id="set-language" class="select">
+          ${opzione('auto', linguaAttuale, t('settings.languageAuto'))}
+          ${opzione('it', linguaAttuale, 'Italiano')}
+          ${opzione('en', linguaAttuale, 'English')}
+        </select></label>
+      </div>
+
+      <h3 class="sheet-section">${t('settings.computers')}</h3>
       <div class="host-list">${state.hosts.map((h) => `
         <div class="host-row">
           <span>${escapeHtml(h.name)}<small>${escapeHtml(h.base)}</small></span>
-          <button class="btn ghost small" type="button" data-forget="${h.id}">Rimuovi</button>
-        </div>`).join('') || '<p class="sheet-hint">Nessun computer salvato.</p>'}
+          <button class="btn ghost small" type="button" data-forget="${h.id}">${t('settings.remove')}</button>
+        </div>`).join('') || `<p class="sheet-hint">${t('settings.noComputers')}</p>`}
       </div>
-      <button class="btn" type="button" id="set-add-host">Aggiungi un altro computer</button>
+      <button class="btn" type="button" id="set-add-host">${t('settings.addComputer')}</button>
 
-      <h3 class="sheet-section">Aggiornamenti</h3>
+      <h3 class="sheet-section">${t('settings.pairTitle')}</h3>
+      <p class="sheet-hint">${t('settings.pairHint')}</p>
+      <div class="qr-box" id="set-qr"><button class="btn" type="button" id="set-qr-show">${t('settings.showQr')}</button></div>
+
+      <h3 class="sheet-section">${t('settings.devices')}</h3>
+      <div class="host-list" id="set-devices"><p class="sheet-hint">${t('settings.qrGenerating')}</p></div>
+      <p class="sheet-hint">${t('settings.devicesHint')}</p>
+
+      <h3 class="sheet-section">${t('settings.token')}</h3>
+      <p class="sheet-hint">${t('settings.tokenHint')}</p>
+      <button class="btn ghost" type="button" id="set-rotate">${t('settings.rotate')}</button>
+
+      <h3 class="sheet-section">${t('settings.updates')}</h3>
       <p class="sheet-hint" id="set-update">${update?.available
-    ? `Disponibile la versione ${escapeHtml(update.latest?.version ?? '')} (in uso la ${escapeHtml(update.current ?? '')}).`
-    : `Versione in uso: ${escapeHtml(update?.current ?? '-')}. Nessun aggiornamento disponibile.`}</p>
-      <button class="btn" type="button" id="set-check-update">Controlla ora</button>
+    ? t('settings.updateAvailable', { version: escapeHtml(update.latest?.version ?? ''), current: escapeHtml(update.current ?? '') })
+    : t('settings.updateNone', { current: escapeHtml(update?.current ?? '-') })}</p>
+      <button class="btn" type="button" id="set-check-update">${t('settings.checkNow')}</button>
     `,
     actions: [
-      { label: 'Chiudi', kind: 'ghost', onClick: () => closeSheet() },
-      { label: 'Salva', kind: 'primary', onClick: saveSettings }
+      { label: t('sheet.close'), kind: 'ghost', onClick: () => closeSheet() },
+      { label: t('sheet.save'), kind: 'primary', onClick: saveSettings }
     ]
   });
 
   el('set-add-host').addEventListener('click', () => {
     closeSheet();
-    showGate('Inserisci indirizzo e PIN del computer da aggiungere.');
+    showGate(t('gate.addHost'));
   });
   el('set-check-update').addEventListener('click', () => checkUpdate({ force: true }));
+  el('set-rotate').addEventListener('click', rotateHostToken);
+  el('set-qr-show').addEventListener('click', showPairingQr);
+  renderDevices();
   for (const btn of ui.sheetBody.querySelectorAll('[data-forget]')) {
     btn.addEventListener('click', () => forgetHost(btn.dataset.forget));
   }
 }
 
+/**
+ * Mostra il QR di accoppiamento.
+ *
+ * Non viene caricato all'apertura delle impostazioni ma solo su richiesta:
+ * ogni chiamata crea un token nuovo, e non ha senso crearne uno ogni volta che
+ * qualcuno apre il pannello per cambiare il PIN.
+ */
+async function showPairingQr() {
+  const box = el('set-qr');
+  box.innerHTML = `<p class="sheet-hint">${t('settings.qrGenerating')}</p>`;
+  const res = await api(`${ENDPOINTS.pairQr}?name=${encodeURIComponent('accoppiato con QR')}`);
+  if (!res.ok) {
+    box.innerHTML = `<p class="sheet-hint">${escapeHtml(res.data?.error?.message ?? t('settings.qrUnavailable'))}</p>`;
+    return;
+  }
+  box.innerHTML = `<div class="qr">${res.data.svg}</div>`
+    + `<p class="sheet-hint">${escapeHtml(res.data.url.replace(/token=[^&]+/, 'token=...'))}</p>`
+    + (res.data.mdns ? `<p class="sheet-hint">${t('settings.qrOr', { url: `<code>${escapeHtml(res.data.mdns)}</code>` })}</p>` : '');
+  renderDevices();
+}
+
+/** Elenco dei dispositivi accoppiati sull'host attivo. */
+async function renderDevices() {
+  const box = el('set-devices');
+  if (!box) return;
+  const res = await api(ENDPOINTS.devices);
+  if (!res.ok) {
+    box.innerHTML = `<p class="sheet-hint">${t('settings.devicesUnavailable')}</p>`;
+    return;
+  }
+
+  const devices = res.data.devices ?? [];
+  if (devices.length === 0) {
+    box.innerHTML = `<p class="sheet-hint">${t('settings.devicesNone')}</p>`;
+    return;
+  }
+
+  box.innerHTML = devices.map((d) => {
+    const scadenza = d.expiresAt ? new Date(d.expiresAt).toLocaleDateString(language()) : t('settings.noExpiry');
+    const nota = d.id === res.data.current ? ` - ${t('settings.thisDevice')}` : '';
+    return `<div class="host-row">
+      <span>${escapeHtml(d.name)}<small>${d.expired ? t('settings.expired') : scadenza}${nota}</small></span>
+      <button class="btn ghost small danger" type="button" data-revoke="${d.id}">${t('settings.revoke')}</button>
+    </div>`;
+  }).join('');
+
+  for (const button of box.querySelectorAll('[data-revoke]')) {
+    button.addEventListener('click', () => revokeDevice(button.dataset.revoke));
+  }
+}
+
+async function revokeDevice(id) {
+  const res = await api(`${ENDPOINTS.devices}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    toast(res.data?.error?.message ?? t('settings.revokeRejected'), 'err');
+    return;
+  }
+  toast(t('settings.revoked'), 'ok');
+  renderDevices();
+}
+
+/** Rigenera il token principale e aggiorna quello salvato qui. */
+async function rotateHostToken() {
+  const res = await api(ENDPOINTS.tokenRotate, { method: 'POST', body: {} });
+  if (!res.ok) {
+    toast(res.data?.error?.message ?? t('settings.rotateRejected'), 'err');
+    return;
+  }
+  // Se questo client stava usando proprio il token principale, deve adottare
+  // il nuovo subito: altrimenti si scollegherebbe da solo.
+  const host = activeHost();
+  if (host && res.data.token) {
+    host.token = res.data.token;
+    saveHosts();
+  }
+  toast(t('settings.rotated'), 'ok');
+}
+
 async function saveSettings() {
   const pin = el('set-pin').value.trim();
-  if (!pin) {
+  const patch = {};
+  if (pin) patch.pin = pin;
+
+  const ui = {};
+  const tema = el('set-theme').value;
+  const lingua = el('set-language').value;
+  if (tema !== (state.deck?.ui?.theme ?? 'dark')) ui.theme = tema;
+  if (lingua !== (state.deck?.ui?.language ?? 'auto')) ui.language = lingua;
+  if (Object.keys(ui).length > 0) patch.ui = ui;
+
+  if (Object.keys(patch).length === 0) {
     closeSheet();
     return;
   }
-  const res = await api(ENDPOINTS.settings, { method: 'POST', body: { pin } });
+
+  const res = await api(ENDPOINTS.settings, { method: 'POST', body: patch });
   if (!res.ok) {
-    toast(res.data?.error?.message ?? 'impostazioni rifiutate', 'err');
+    toast(res.data?.error?.message ?? t('settings.rejected'), 'err');
     return;
   }
   closeSheet();
-  toast('PIN aggiornato', 'ok');
+  toast(t(pin && !patch.ui ? 'settings.pinUpdated' : 'settings.saved'), 'ok');
 }
 
 function forgetHost(id) {
@@ -836,7 +1462,7 @@ function forgetHost(id) {
   if (id === state.activeHostId) {
     state.activeHostId = state.hosts[0]?.id ?? null;
     if (state.activeHostId) switchHost(state.activeHostId);
-    else showGate('Nessun computer collegato.');
+    else showGate(t('gate.noHost'));
   }
   renderHosts();
 }
@@ -847,15 +1473,15 @@ async function checkUpdate({ force = false } = {}) {
   const res = await api(`${ENDPOINTS.update}${force ? '?check=1' : ''}`);
   if (!res.ok) return;
   showUpdate(res.data.update);
-  if (force && !res.data.update?.available) toast('Nessun aggiornamento disponibile', 'ok');
+  if (force && !res.data.update?.available) toast(t('settings.noUpdate'), 'ok');
 }
 
 function showUpdate(status) {
   state.update = status;
   ui.update.hidden = !status?.available;
   if (status?.available) {
-    ui.update.textContent = `v${status.latest.version} disponibile`;
-    ui.update.title = `Sei alla versione ${status.current}. Tocca per aprire la pagina del rilascio.`;
+    ui.update.textContent = `v${status.latest.version}`;
+    ui.update.title = t('settings.updateAvailable', { version: status.latest.version, current: status.current });
   }
 }
 
@@ -868,7 +1494,7 @@ function bindEvents() {
   ui.hosts.addEventListener('click', (event) => {
     const add = event.target.closest('[data-host-add]');
     if (add) {
-      showGate('Inserisci indirizzo e PIN del computer da aggiungere.');
+      showGate(t('gate.addHost'));
       return;
     }
     const tab = event.target.closest('.host-tab');
@@ -876,16 +1502,28 @@ function bindEvents() {
   });
 
   ui.profileSelect.addEventListener('change', () => {
-    state.profileId = ui.profileSelect.value;
-    state.pageId = null;
-    localStorage.setItem(STORAGE.profile, state.profileId);
-    renderAll();
-    send({ type: MSG.navigate, profile: state.profileId });
+    if (ui.profileSelect.value === '__gestisci__') {
+      ui.profileSelect.value = state.profileId;
+      editProfiles();
+      return;
+    }
+    switchProfile(ui.profileSelect.value);
   });
 
   ui.pages.addEventListener('click', (event) => {
+    if (event.target.closest('[data-page-add]')) {
+      addPage();
+      return;
+    }
     const tab = event.target.closest('.page-tab');
-    if (tab) goToPage(tab.dataset.page);
+    if (!tab?.dataset.page) return;
+    // In modifica la matita sulla scheda apre le impostazioni della pagina;
+    // il resto della scheda continua a cambiare pagina, come sempre.
+    if (state.editing && event.target.closest('.page-edit')) {
+      editPage(tab.dataset.page);
+      return;
+    }
+    goToPage(tab.dataset.page);
   });
 
   bindGrid();
@@ -894,19 +1532,21 @@ function bindEvents() {
   ui.btnEdit.addEventListener('click', () => {
     state.editing = !state.editing;
     ui.btnEdit.setAttribute('aria-pressed', String(state.editing));
+    renderProfiles();
+    renderPages();
     renderGrid();
-    toast(state.editing ? 'Modifica attiva: tocca un controllo per modificarlo, una cella vuota per aggiungerne uno' : 'Modifica disattivata');
+    toast(t(state.editing ? 'edit.on' : 'edit.off'));
   });
 
   ui.btnSimulate.addEventListener('click', () => {
     state.simulate = !state.simulate;
     ui.btnSimulate.setAttribute('aria-pressed', String(state.simulate));
-    toast(state.simulate ? 'Modalita\' simulazione attiva' : 'Modalita\' simulazione disattivata');
+    toast(t(state.simulate ? 'sim.on' : 'sim.off'));
   });
 
   ui.btnFullscreen.addEventListener('click', async () => {
     if (document.fullscreenElement) await document.exitFullscreen();
-    else await document.documentElement.requestFullscreen().catch(() => toast('Schermo intero non disponibile', 'err'));
+    else await document.documentElement.requestFullscreen().catch(() => toast(t('fullscreen.unavailable'), 'err'));
   });
 
   ui.btnSettings.addEventListener('click', openSettings);
@@ -945,6 +1585,38 @@ function stepPage(delta) {
   goToPage(next.id, { animate: delta > 0 ? 'left' : 'right' });
 }
 
+/**
+ * Cella della griglia sotto un punto dello schermo.
+ *
+ * Si ricava dalla geometria della griglia invece che da elementFromPoint,
+ * perche' durante il trascinamento il dito e' sopra il controllo trascinato,
+ * non sotto di esso.
+ * @returns {{row: number, col: number}|null}
+ */
+function cellAt(clientX, clientY) {
+  const page = currentPage();
+  if (!page) return null;
+  const rect = ui.grid.getBoundingClientRect();
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+  const col = Math.floor(((clientX - rect.left) / rect.width) * page.cols);
+  const row = Math.floor(((clientY - rect.top) / rect.height) * page.rows);
+  if (row < 0 || col < 0 || row >= page.rows || col >= page.cols) return null;
+  return { row, col };
+}
+
+/** Evidenzia la cella su cui il controllo verrebbe rilasciato. */
+function highlightDropCell(clientX, clientY) {
+  clearDropCell();
+  const cell = cellAt(clientX, clientY);
+  if (!cell) return;
+  const target = ui.grid.querySelector(`[data-empty="${cell.row}:${cell.col}"]`);
+  if (target) target.classList.add('drop-target');
+}
+
+function clearDropCell() {
+  for (const element of ui.grid.querySelectorAll('.drop-target')) element.classList.remove('drop-target');
+}
+
 function bindGrid() {
   /** Gesto in corso: distingue pressione, hold e trascinamento. */
   let gesture = null;
@@ -959,14 +1631,21 @@ function bindGrid() {
     const empty = event.target.closest('.deck-btn.empty');
 
     if (state.editing) {
-      if (button) editButton(button.dataset.id);
-      else if (slider) editButton(slider.dataset.id);
-      else if (empty) editButton(null, empty.dataset.empty);
+      const control = button ?? slider;
+      if (control) {
+        // Un tocco apre l'editor, un trascinamento sposta: quale dei due sia
+        // si capisce solo al rilascio, quindi qui si registra soltanto l'inizio.
+        control.setPointerCapture?.(event.pointerId);
+        gesture = { kind: 'edit-move', element: control, startX: event.clientX, startY: event.clientY, moved: false };
+      } else if (empty) {
+        editButton(null, empty.dataset.empty);
+      }
       return;
     }
 
     if (slider) {
       slider.setPointerCapture?.(event.pointerId);
+      state.draggingId = slider.dataset.id;
       gesture = { kind: 'slider', element: slider, startX: event.clientX, startY: event.clientY, lastSent: 0 };
       applySliderFromPointer(slider, event.clientX);
       return;
@@ -1008,6 +1687,15 @@ function bindGrid() {
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
 
+    if (gesture.kind === 'edit-move') {
+      if (!gesture.moved && Math.hypot(dx, dy) > 10) {
+        gesture.moved = true;
+        gesture.element.classList.add('dragging');
+      }
+      if (gesture.moved) highlightDropCell(event.clientX, event.clientY);
+      return;
+    }
+
     if (gesture.kind === 'slider') {
       applySliderFromPointer(gesture.element, event.clientX);
       return;
@@ -1029,8 +1717,23 @@ function bindGrid() {
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
 
+    if (gesture.kind === 'edit-move') {
+      const element = gesture.element;
+      const moved = gesture.moved;
+      element.classList.remove('dragging');
+      clearDropCell();
+      gesture = null;
+      if (!moved) editButton(element.dataset.id);
+      else {
+        const cell = cellAt(event.clientX, event.clientY);
+        if (cell) moveButton(element.dataset.id, cell);
+      }
+      return;
+    }
+
     if (gesture.kind === 'slider') {
       sendSliderValue(gesture.element, { final: true });
+      state.draggingId = null;
     } else if (gesture.kind === 'button' && !gesture.fired) {
       const spec = gesture.spec;
       gesture.element.classList.remove('pending');
@@ -1043,8 +1746,10 @@ function bindGrid() {
 
   ui.grid.addEventListener('pointerup', endGesture);
   ui.grid.addEventListener('pointercancel', () => {
-    if (gesture?.element) gesture.element.classList.remove('pending');
+    if (gesture?.element) gesture.element.classList.remove('pending', 'dragging');
     clearHold();
+    clearDropCell();
+    state.draggingId = null;
     gesture = null;
   });
   ui.grid.addEventListener('contextmenu', (event) => event.preventDefault());
@@ -1118,7 +1823,12 @@ function bindSheet() {
 // ---------------------------------------------------------------- avvio
 
 function boot() {
+  // Prima di tutto la lingua: il gate compare anche senza essersi collegati,
+  // e resterebbe in italiano fino al primo deck ricevuto.
+  setLanguage('auto');
+  document.documentElement.lang = language();
   bindEvents();
+  applyStaticTexts();
   loadHosts();
 
   // Un token nell'URL (link stampato dall'host) vale come pairing immediato.

@@ -385,6 +385,24 @@ export function parseLevelOutput(stdout) {
 }
 
 /**
+ * Legge volume e stato del muto di un canale.
+ * @param {'speaker'|'mic'} [target]
+ * @returns {Promise<{volume?: number, muted?: boolean}>}
+ */
+export function readVolume(target = 'speaker') {
+  return runLevelScript(buildReadVolumeScript(target), { what: `volume ${target}` });
+}
+
+/**
+ * Legge la luminosita' corrente dello schermo.
+ * @returns {Promise<{brightness?: number, mode?: string}>}
+ */
+export function readBrightness() {
+  // La compilazione C# del primo giro e' lenta quanto quella della scrittura.
+  return runLevelScript(buildReadBrightnessScript(), { what: 'luminosita\'', timeoutMs: 30000 });
+}
+
+/**
  * Esegue uno degli script sopra e ne interpreta l'output.
  * @param {string} script
  * @param {{timeoutMs?: number, what?: string}} [options]

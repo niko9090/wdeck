@@ -1,9 +1,9 @@
 # Wdeck
 
-**Stream Deck software multi-piattaforma**: un host che gira sul PC Windows,
-un client web installabile (PWA) per Android e per gli altri PC, e un firmware
-di esempio per ESP32 con display touch. Nessun hardware proprietario, nessuna
-dipendenza npm a runtime.
+**Stream Deck software multi-piattaforma**: un host che gira su Windows, macOS e
+Linux, un client web installabile (PWA) per Android e per gli altri PC, e un
+firmware di esempio per ESP32 con display touch. Nessun hardware proprietario,
+nessuna dipendenza npm a runtime.
 
 ```
    Android / iPad / altro PC          ESP32 + TFT touch
@@ -13,7 +13,7 @@ dipendenza npm a runtime.
               |                                |
               +--------------+-----------------+
                              |
-                    HOST Node.js 22 (PC Windows)
+              HOST Node.js 22 (Windows, macOS, Linux)
                     REST + WebSocket, deck.json
                              |
               tasti media | hotkey | testo | programmi
@@ -43,9 +43,9 @@ sul desktop e (con `-Autostart`) lo fa partire insieme a Windows. Non serve
 essere amministratore e non viene scaricato nulla. Per rimuoverlo:
 `.\installer\install.ps1 -Uninstall` (la tua `deck.json` viene conservata).
 
-### Oppure dai sorgenti
+### Oppure dai sorgenti (Windows, macOS, Linux)
 
-```powershell
+```bash
 git clone https://github.com/niko9090/wdeck.git
 cd wdeck
 npm install          # nessuna dipendenza da scaricare: e' istantaneo
@@ -53,16 +53,21 @@ npm run build        # compila il client web in dist/web
 npm start            # avvia l'host
 ```
 
+Su macOS e Linux non c'e' un installer: si avvia dai sorgenti. Quali azioni
+funzionano su quale sistema, e cosa serve installare, e' nella tabella
+[Su quali sistemi gira](#su-quali-sistemi-gira).
+
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.2.0 - deck "Wdeck"
+  Wdeck host v0.4.0 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
-  azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
-                   game, homeassistant, hotkey, http, hue, launch, media, mic,
-                   navigate, noop, notify, obs, power, rdp, screenshot, script,
-                   sequence, stub, text, url, volume, window
+  azioni         : brightness, browser, clipboard, delay, desktop, discord,
+                   focus, folder, game, homeassistant, hotkey, http, hue, launch,
+                   media, mic, mqtt, navigate, noop, notify, obs, power, rdp,
+                   screenshot, script, sequence, spotify, stub, text, url,
+                   volume, window
 
   URL del client web:
     http://127.0.0.1:8899/?token=...
@@ -72,10 +77,21 @@ All'avvio la console stampa gli URL da aprire e il token:
   PIN   : configurato (pairing via POST /api/pair)
 ```
 
-Dal telefono, sulla stessa rete, apri l'indirizzo `192.168.x.x` e inserisci il
-**PIN** (`settings.security.pin` in `deck.json`); in alternativa apri
-direttamente l'URL con `?token=...`. Da Chrome/Edge: menu -> *Installa app* per
-averlo a schermo intero come app nativa.
+**Il modo piu' rapido di collegare il telefono e' inquadrare il QR code** che
+l'host stampa nel terminale all'avvio: si apre il deck gia' collegato, senza
+digitare indirizzo ne' PIN. Ogni codice porta con se' un token dedicato a quel
+dispositivo, revocabile da solo. Lo stesso codice si trova in *Impostazioni ->
+Collega un altro dispositivo*.
+
+In alternativa apri l'indirizzo `192.168.x.x` e inserisci il **PIN**
+(`settings.security.pin` in `deck.json`), oppure usa l'URL con `?token=...`.
+
+L'host si annuncia anche in rete locale come **`wdeck-host.local`**: quel nome
+non cambia quando il router riassegna gli indirizzi, e macOS, iOS, Windows 10+
+e Android recente lo risolvono senza installare nulla.
+
+Da Chrome/Edge: menu -> *Installa app* per averlo a schermo intero come app
+nativa.
 
 Mentre l'host gira, un'**icona nell'area di notifica** (vicino all'orologio) da'
 accesso a: apri il deck, copia gli indirizzi per il telefono, ricarica
@@ -88,9 +104,42 @@ accesso a: apri il deck, copia gli indirizzi per il telefono, ricarica
 | tocco su un bottone | esegue l'azione, con risposta immediata |
 | **scorrimento orizzontale** | pagina precedente / successiva |
 | trascinamento su un cursore | volume o luminosita' al valore scelto |
-| tocco prolungato | esegue `holdAction`, se il bottone ne ha una |
-| matita in alto a destra | modalita' modifica: tocca un controllo per cambiarlo, una cella vuota per aggiungerne uno |
+| tocco prolungato | esegue `holdAction`, se il controllo ne ha una |
+| matita in alto a destra | modalita' modifica: vedi sotto |
 | ingranaggio | PIN, computer collegati, aggiornamenti |
+
+### L'editor visuale
+
+La matita in alto a destra accende la modalita' modifica. Da li' si fa tutto
+senza toccare `deck.json`:
+
+| gesto | effetto |
+|---|---|
+| tocco su un controllo | ne apre le impostazioni: azione, parametri, icona, colore, larghezza |
+| **trascinamento di un controllo** | lo sposta in un'altra cella |
+| tocco su una cella vuota | aggiunge un controllo li' |
+| **+** in fondo alle schede | aggiunge una pagina |
+| matita su una scheda | nome, righe, colonne, ordine, eliminazione della pagina |
+| menu dei profili -> *Gestisci profili* | crea, rinomina, elimina, sceglie il profilo iniziale |
+
+Ogni salvataggio passa dalla **validazione dell'host**, che e' l'unico a vedere
+la configurazione intera: se una modifica lascerebbe un profilo senza pagine, un
+controllo fuori dalla griglia, due controlli sulla stessa cella o un `navigate`
+senza destinazione, il salvataggio viene rifiutato e il messaggio dice quale.
+La versione precedente resta in `.wdeck-backup/`.
+
+### Icone personalizzate
+
+Nell'editor, sotto *Icona*, ci sono i glifi inclusi e il bottone **Carica
+un'icona**: PNG, JPEG, WebP, GIF o SVG, fino a 192 KB, fino a 64 in tutto.
+I file finiscono in `icons/` **accanto** a `deck.json` (non dentro: un file di
+configurazione pieno di base64 non sarebbe piu' modificabile a mano) e si usano
+scrivendo `"icon": "custom:mio-logo"`.
+
+Il formato viene riconosciuto **dai byte**, non da quanto dichiara il browser.
+Gli SVG vengono ripuliti al caricamento da script, gestori di evento, URL
+`javascript:` e riferimenti esterni; se resta qualcosa di eseguibile il file
+viene rifiutato.
 
 ### Piu' computer
 
@@ -114,6 +163,67 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 
 ---
 
+## Distribuzione: eseguibile Windows e binari ESP32
+
+Per **dare Wdeck a qualcun altro** non serve che quel qualcuno installi Node.js
+o sappia cos'e' npm.
+
+### `wdeck.exe`, file unico
+
+```powershell
+npm run exe        # produce release\wdeck.exe (~84 MB)
+```
+
+Un solo file, che si copia su una chiavetta e parte con un doppio clic: dentro
+c'e' il runtime di Node insieme all'host, grazie alle *Single Executable
+Applications* di Node 20+. Alla prima esecuzione riversa i propri moduli in
+`%LOCALAPPDATA%\Wdeck\runtime\<impronta>\` e crea `%LOCALAPPDATA%\Wdeck\deck.json`
+se non esiste gia'; la configurazione sta **fuori** dai file estratti, quindi un
+exe piu' recente non se la porta via. Accetta le stesse opzioni della CLI
+(`wdeck.exe --port 9000 --dry-run`).
+
+Pesa 84 MB perche' l'interprete e' dentro: e' il prezzo del non chiedere nulla
+al PC di destinazione. Chi Node ce l'ha gia' fa prima con l'archivio zip.
+
+Per **costruirlo** serve Node 20.12 o superiore (`node:sea` non esiste prima);
+per **eseguirlo** non serve niente, e l'host dai sorgenti continua a girare
+dalla 20.10 come sempre.
+
+La build usa [postject](https://github.com/nodejs/postject), lo strumento
+ufficiale del progetto Node.js, scaricato al volo da `npx` **solo in fase di
+costruzione**: non e' una dipendenza, non compare in `package.json` e l'host non
+lo importa mai. Il vincolo di zero dipendenze a runtime resta verificato da
+`npm run check:deps`.
+
+### Firmware ESP32 gia' compilato
+
+```powershell
+pip install platformio    # una volta sola
+npm run firmware          # produce release\firmware\*.bin
+```
+
+Escono tre binari per ciascuna delle schede supportate — `firmware`,
+`bootloader` e `partitions` — pronti da scrivere:
+
+```powershell
+pio run -e esp32-cyd -t upload          # scheda collegata via USB
+# oppure, partendo dai .bin gia' pronti:
+esptool.py --chip esp32 write_flash 0x1000 esp32-cyd-bootloader.bin `
+    0x8000 esp32-cyd-partitions.bin 0x10000 esp32-cyd-firmware.bin
+```
+
+Wi-Fi, indirizzo dell'host e token si passano alla compilazione senza toccare
+il codice (`-DWDECK_WIFI_SSID=...`, vedi `firmware/esp32/platformio.ini`).
+
+**Cosa dimostra questa compilazione, e cosa no.** Che il firmware compili per
+tutte e tre le schede e' una verifica vera, ed e' servita: ha trovato un errore
+che nessun test poteva vedere (l'ambiente senza touch non compilava affatto).
+Che il firmware **funzioni** su una scheda accesa e' un'altra affermazione, e
+quella richiede l'hardware: pin, rotazione e taratura del touch restano da
+verificare sulla scheda in uso.
+
+---
+
 ## Comandi
 
 | comando | cosa fa |
@@ -121,11 +231,15 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (150 verifiche) |
-| `npm run smoke` | smoke test end-to-end su un host reale (36 verifiche) |
-| `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (109 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (443 verifiche) |
+| `npm run smoke` | smoke test end-to-end su un host reale (49 verifiche) |
+| `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
+| `npm run check:deps` | verifica il vincolo di zero dipendenze (package.json e import) |
 | `npm run verify` | tutti i controlli sopra, in sequenza |
+| `npm run exe` | costruisce `release/wdeck.exe`, eseguibile singolo per Windows |
+| `npm run firmware` | compila il firmware ESP32 in `release/firmware/*.bin` |
+| `npm run package` | archivio zip da allegare a una release |
 | `node scripts/gen-icons.mjs` | rigenera le icone PNG della PWA |
 
 Opzioni della CLI:
@@ -134,11 +248,19 @@ Opzioni della CLI:
 node bin/wdeck.mjs --help
 node bin/wdeck.mjs --port 9000 --host 127.0.0.1   # solo locale
 node bin/wdeck.mjs --dry-run --no-watch
+node bin/wdeck.mjs --tls                          # HTTPS/WSS autofirmato
 node bin/wdeck.mjs --config .\deck-lavoro.json
 ```
 
 Equivalenti come variabili d'ambiente: `WDECK_PORT`, `WDECK_HOST`,
-`WDECK_TOKEN`, `WDECK_DRY_RUN`, `WDECK_REQUIRE_TOKEN`.
+`WDECK_TOKEN`, `WDECK_DRY_RUN`, `WDECK_REQUIRE_TOKEN`, `WDECK_TLS`.
+
+### Integrazione continua
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) esegue `npm run verify` a
+ogni push e a ogni pull request, su Linux, Windows e macOS con Node 20.10 e 22.
+E' la stessa catena che si lancia in locale: test unitari, smoke end-to-end,
+build della PWA, conformita' del firmware e coerenza della documentazione.
 
 ---
 
@@ -161,7 +283,7 @@ Struttura: **deck -> profili -> pagine -> bottoni -> azione**.
       "allowedExtensions": [".exe", ".ps1", ".bat"],
       "allowExec": ["C:\\Windows\\System32\\notepad.exe", "scripts/examples/*"]
     },
-    "ui": { "theme": "dark", "accent": "#4c8dff", "showLabels": true }
+    "ui": { "theme": "dark", "accent": "#4c8dff", "showLabels": true, "language": "auto" }
   },
   "profiles": [
     {
@@ -200,21 +322,49 @@ Lo schema JSON per l'autocompletamento negli editor e'
 [`schema/deck.schema.json`](schema/deck.schema.json) (gia' referenziato con
 `$schema` in `deck.json`).
 
+### Su quali sistemi gira
+
+L'host, la PWA e il protocollo funzionano ovunque giri Node 20.10+. Cambia
+quali azioni possono essere *eseguite*:
+
+| azione | Windows | macOS | Linux |
+|---|:---:|:---:|:---:|
+| `media`, `hotkey`, `text`, `url` | si | si | si |
+| `volume`, `mic` | si | si | si |
+| `launch`, `script`, `http`, `sequence`, `navigate`, `obs`, `homeassistant`, `hue` | si | si | si |
+| `brightness`, `focus`, `desktop`, `window`, `power`, `clipboard`, `folder`, `screenshot`, `notify`, `browser`, `game`, `rdp` | si | - | - |
+
+Fuori dalle piattaforme supportate un'azione risponde `501` con un messaggio
+esplicito, e resta comunque provabile in dry-run.
+
+Cosa serve installare:
+
+- **Windows**: nulla, PowerShell basta.
+- **macOS**: nulla (`osascript` e' di sistema). L'input sintetico richiede pero'
+  il permesso **Accessibilita'** per l'applicazione che avvia Wdeck, in
+  *Impostazioni di Sistema -> Privacy e sicurezza -> Accessibilita'*; senza,
+  l'azione fallisce dicendo esattamente questo.
+- **Linux**: `xdotool` (sessioni X11) oppure `ydotool` con il suo demone
+  (sessioni Wayland) per tasti e testo; `pactl` (PipeWire/PulseAudio) o
+  `amixer` (ALSA) per il volume; `playerctl` per play/pausa e cambio brano
+  (senza, si ripiega sul tasto multimediale); `xdg-open` per gli URL. Se ne
+  manca uno, l'errore dice quale pacchetto installare.
+
 ### Azioni disponibili
 
-29 azioni in 12 categorie. L'editor le mostra raggruppate esattamente cosi'.
+32 azioni in 12 categorie. L'editor le mostra raggruppate esattamente cosi'.
 
 | categoria | azioni |
 |---|---|
-| Media e audio | `media`, `volume`, `mic` |
+| Media e audio | `media`, `volume`, `mic`, `spotify` |
 | Tastiera e testo | `hotkey`, `text` |
 | Finestre e desktop | `focus`, `desktop`, `window` |
 | Sistema e alimentazione | `brightness`, `power` |
 | Programmi e giochi | `launch`, `game` |
 | Browser e web | `browser`, `url`, `http` |
 | Desktop remoti | `rdp` |
-| Streaming e OBS | `obs` |
-| Casa intelligente | `homeassistant`, `hue` |
+| Streaming e OBS | `obs`, `discord` |
+| Casa intelligente | `homeassistant`, `hue`, `mqtt` |
 | Produttivita' | `clipboard`, `folder`, `screenshot`, `notify` |
 | Script personalizzati | `script` |
 | Navigazione deck | `navigate`, `sequence`, `delay`, `noop`, `stub` |
@@ -239,6 +389,58 @@ scatti come i tasti media:
 
 `span` indica quante celle occupa in orizzontale. Il valore mostrato e' sempre
 quello reale letto dal PC, non l'ultima posizione del dito.
+
+### Stato reale dei controlli
+
+Il bottone del muto sa di essere muto. L'host legge periodicamente la
+condizione vera dal PC e dai servizi collegati, e i client la mostrano: bordo
+acceso, spia e un'etichetta breve (`muto`, `LIVE`, il nome della scena OBS in
+onda). Il valore resta giusto anche quando qualcosa viene cambiato **da
+un'altra applicazione**, che e' proprio il caso in cui un deck "cieco" mente.
+
+Sanno dichiarare il proprio stato: `volume`, `mic`, `brightness`, `media` (con
+`key` `mute`/`volumeup`/`volumedown`), `obs`, `hue`, `mqtt`, `spotify` e
+`discord`.
+
+```json
+{ "id": "mute", "label": "Muto", "row": 0, "col": 0,
+  "action": { "type": "volume", "params": { "mute": "toggle" } } }
+```
+
+Non serve configurare nulla. Per spegnere la lettura su un singolo controllo:
+`"status": false`. Per spegnerla del tutto o cambiarne il ritmo:
+
+```json
+"settings": { "status": { "enabled": true, "intervalMs": 8000 } }
+```
+
+Vengono interrogati solo i controlli della pagina che si sta guardando, e solo
+mentre c'e' almeno un client collegato; le letture uguali sono messe in comune
+(dieci cursori del volume costano una lettura sola) e un servizio spento viene
+messo in pausa per un minuto invece di essere interrogato di continuo.
+In **dry-run non viene letto nulla**: la promessa di non toccare il PC vale
+anche per le letture.
+
+### Aspetto e lingua
+
+`settings.ui.theme` accetta `dark`, `light` e `auto` (segue il sistema);
+`settings.ui.language` accetta `it`, `en` e `auto` (segue il browser).
+Entrambi si cambiano anche da *Impostazioni -> Aspetto*, senza toccare il file.
+
+### Pressione prolungata
+
+Un controllo puo' avere una **seconda azione**, eseguita tenendolo premuto per
+mezzo secondo: si configura dall'editor, nella sezione *Pressione prolungata*.
+E' comoda per mettere l'opposto sullo stesso tasto - accendi e spegni, muto e
+volume al massimo - senza occupare due celle.
+
+```json
+{
+  "id": "luce", "label": "Luce", "row": 0, "col": 0,
+  "action":     { "type": "hue", "params": { "id": 1, "on": "toggle" } },
+  "holdAction": { "type": "hue", "params": { "id": 1, "on": false } }
+}
+```
 
 ### Conferma per le azioni pericolose
 
@@ -269,18 +471,79 @@ protezioni non sono un dettaglio.
 
 - **Token obbligatorio** su ogni endpoint tranne `/api/health` e `/api/pair`;
   confronto a tempo costante; generato automaticamente se non lo configuri.
-- **Pairing con PIN**, per non digitare il token sul telefono.
+- **Un token per dispositivo.** Il pairing con PIN non consegna piu' la chiave
+  di casa: crea una credenziale dedicata a quel telefono, che si **revoca da
+  sola** e puo' **scadere**. In `deck.json` ne resta la sola impronta SHA-256,
+  quindi chi legge il file non puo' ricavarla. Un telefono perso si toglie
+  senza riaccoppiare tutti gli altri, e chi era collegato viene scollegato
+  subito, non alla prossima richiesta.
+- **Rotazione del token principale** da *Impostazioni* nel client, da
+  `POST /api/token/rotate`, o da riga di comando **senza avviare l'host**
+  (`--rotate-token`), che e' cio' che serve quando il token e' andato perduto.
 - **Whitelist `allowExec`**: se e' vuota, *nessun* programma puo' essere
   lanciato. Supporta i glob `*` e `**`; i percorsi relativi sono risolti
   rispetto alla cartella di `deck.json`; il path traversal non la aggira.
 - **Whitelist di estensioni** e **whitelist degli schemi URL**.
+- **Limiti di frequenza**: 60 comandi ogni 10 secondi e 10 tentativi di accesso
+  ogni 5 minuti, a finestra scorrevole. Un PIN di quattro cifre sono diecimila
+  combinazioni: senza limite si provano in pochi secondi. Anche i token
+  rifiutati contano come tentativi, altrimenti il limite si aggirerebbe
+  provando quelli. Si tara da `settings.security.rateLimit`.
+- **Registro di audit** persistente accanto a `deck.json`: ogni azione con chi
+  l'ha chiesta, da dove, con quale esito e in quanto tempo, piu' gli eventi di
+  sicurezza (pairing riusciti e falliti, revoche, rotazioni, blocchi per
+  frequenza). E' JSONL, si legge con `tail` e si filtra con `grep`. Token, PIN e
+  password non ci finiscono mai. Si legge anche da `GET /api/audit`.
 - **Dry-run**: i client possono attivarlo ma **non disattivarlo**.
+- **HTTPS/WSS opzionale** con certificato autofirmato generato all'avvio
+  (`--tls`, oppure `settings.server.tls.enabled`). Senza, il token viaggia in
+  chiaro dentro l'URL che apri sul telefono: chiunque sia sulla stessa rete
+  Wi-Fi puo' leggerlo. Il certificato copre `localhost`, `127.0.0.1` e gli
+  indirizzi della macchina, si rigenera quando scade o quando cambia rete, e
+  non richiede alcuna dipendenza: la struttura X.509 e' costruita nel progetto.
+  Non essendo firmato da un'autorita', il browser mostra un avviso la prima
+  volta. Chi ha un certificato vero lo indica con `certFile` e `keyFile`.
 - **Bind**: `127.0.0.1` per l'uso solo locale, `0.0.0.0` per la LAN.
 - Il layout inviato ai client **non contiene mai** token, PIN o whitelist.
 
-Limiti noti: nessun HTTPS, un solo token condiviso, nessun rate limiting.
-Vedi la sezione *Mancante* di [`docs/ROADMAP.md`](docs/ROADMAP.md).
-Usare solo su una rete di cui ti fidi.
+### Il pairing scrive in `deck.json`
+
+Vale la pena saperlo prima di tenere `deck.json` sotto controllo di versione:
+**ogni accoppiamento riuscito modifica il file di configurazione**, aggiungendo
+una voce a `settings.security.devices`. Non e' un file separato.
+
+```json
+{ "id": "d-1a2b3c4d5e", "name": "Telefono di Nicola",
+  "hash": "793cbd7e...", "createdAt": 1786655324210, "expiresAt": null }
+```
+
+Il token vero **non c'e'**: resta solo la sua impronta SHA-256, che serve a
+riconoscerlo ma non permette di ricostruirlo. Anche committando il file per
+sbaglio non si consegna una credenziale valida — ma si consegna comunque
+l'elenco dei dispositivi accoppiati, e i token di prova restano validi finche'
+non li si revoca. Le voci nate da un collaudo si tolgono cosi':
+
+```bash
+node bin/wdeck.mjs --list-devices              # quali ci sono
+node bin/wdeck.mjs --revoke-device d-1a2b3c4d5e # via quella
+node bin/wdeck.mjs --prune-devices              # via tutte le scadute
+```
+
+Chi vuole che il proprio `deck.json` non finisca mai in un commit lo tenga fuori
+dal repository: l'host accetta `--config <percorso>`, e l'installer lo mette
+gia' in `%LOCALAPPDATA%\Wdeck\deck.json`, fuori dalla cartella del progetto.
+
+Gestione da riga di comando (non avvia l'host, lavora su `deck.json`):
+
+```bash
+node bin/wdeck.mjs --list-devices
+node bin/wdeck.mjs --add-device "ESP32 salotto" --days 365
+node bin/wdeck.mjs --revoke-device d-1a2b3c4d5e
+node bin/wdeck.mjs --rotate-token
+```
+
+Vedi la sezione *Mancante* di [`docs/ROADMAP.md`](docs/ROADMAP.md) per quello
+che resta scoperto.
 
 ---
 
@@ -298,7 +561,7 @@ Wdeck/
 │  ├─ config/                   validazione schema + caricamento e hot reload
 │  ├─ actions/                  registro, dispatcher e handler delle azioni
 │  ├─ security/                 token/PIN e whitelist di esecuzione
-│  ├─ platform/                 tasti virtuali e integrazione PowerShell
+│  ├─ platform/                 adattatori Windows / macOS / Linux
 │  ├─ server/                   API REST, hub WebSocket, file statici
 │  └─ ws/                       WebSocket RFC 6455 (frame, server, client)
 ├─ web/                         client PWA (moduli ES, nessun framework)
@@ -313,12 +576,17 @@ Scelte di fondo:
 - **Zero dipendenze runtime.** Solo moduli built-in di Node: niente pacchetti
   nativi da compilare, `npm install` immediato, nulla che invecchi male.
   Il WebSocket e la validazione dello schema sono implementati nel progetto.
+  `npm run check:deps` fa fallire la build se qualcuno aggiunge un pacchetto.
 - **Il protocollo e' un file solo.** `shared/protocol.mjs` e' importato
   dall'host e dal client web, e replicato in C in `wdeck_protocol.h`; un test
   automatico impedisce che i due divergano.
-- **Windows tramite PowerShell.** Tasti e hotkey usano `keybd_event` via
-  P/Invoke, il testo usa `SendKeys`; gli script sono passati con
-  `-EncodedCommand`, quindi i parametri non possono causare injection.
+- **Un adattatore per piattaforma, una facciata sola.** Gli handler parlano con
+  [`src/host/platform/input.mjs`](src/host/platform/input.mjs) e non sanno su
+  quale sistema girano. Windows usa PowerShell (`keybd_event` via P/Invoke,
+  `SendKeys` per il testo, script passati con `-EncodedCommand` cosi' i
+  parametri non possono causare injection); macOS usa `osascript`; Linux usa
+  `xdotool`/`ydotool`, `pactl`/`amixer` e `playerctl`. Le mappe dei tasti sono
+  moduli puri, quindi verificabili anche dalla piattaforma sbagliata.
 - **Dry-run come cittadino di prima classe.** Ogni handler sa simularsi: e'
   quello che rende i test eseguibili ovunque e sicuri.
 

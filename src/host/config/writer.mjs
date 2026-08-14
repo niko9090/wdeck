@@ -26,16 +26,21 @@ const MAX_BACKUPS = 10;
  * @returns {object} deck da validare e scrivere
  */
 export function mergeDeckUpdate(current, incoming) {
+  // `current` puo' essere il file cosi' com'e' su disco, dove interi blocchi di
+  // impostazioni possono mancare: qui non si presuppone che esistano.
+  const currentSettings = current.settings ?? {};
+  const incomingSettings = incoming.settings ?? {};
+
   const merged = {
     ...current,
     ...incoming,
     settings: {
-      ...current.settings,
-      ...(incoming.settings ?? {}),
+      ...currentSettings,
+      ...incomingSettings,
       // security non e' modificabile per questa via: ha endpoint dedicati.
-      security: current.settings.security,
-      ui: { ...current.settings.ui, ...(incoming.settings?.ui ?? {}) },
-      integrations: { ...current.settings.integrations, ...(incoming.settings?.integrations ?? {}) }
+      ...(currentSettings.security === undefined ? {} : { security: currentSettings.security }),
+      ui: { ...currentSettings.ui, ...(incomingSettings.ui ?? {}) },
+      integrations: { ...currentSettings.integrations, ...(incomingSettings.integrations ?? {}) }
     }
   };
   if (incoming.profiles) merged.profiles = incoming.profiles;
@@ -75,6 +80,7 @@ export function compactDeck(deck) {
           if (button.kind && button.kind !== 'button') out.kind = button.kind;
           if (button.span && button.span !== 1) out.span = button.span;
           if (button.confirm) out.confirm = true;
+          if (button.status === false) out.status = false;
           if (button.icon) out.icon = button.icon;
           if (button.color) out.color = button.color;
           if (button.textColor) out.textColor = button.textColor;

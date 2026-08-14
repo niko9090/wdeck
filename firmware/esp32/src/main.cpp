@@ -36,6 +36,8 @@ struct WdeckButton {
   int row;
   int col;
   uint16_t color;
+  // Stato reale inviato dall'host: -1 sconosciuto, 0 spento, 1 acceso.
+  int8_t on;
   // rettangolo calcolato in fase di disegno
   int16_t x, y, w, h;
 };
@@ -103,7 +105,15 @@ static void drawButton(int index, bool pressed) {
 
   uint16_t fill = pressed ? highlightColor : b.color;
   tft.fillRoundRect(b.x, b.y, b.w, b.h, 6, fill);
-  tft.drawRoundRect(b.x, b.y, b.w, b.h, 6, TFT_DARKGREY);
+
+  // Un bottone a due stati (muto, scena in onda, luce accesa) si riconosce dal
+  // bordo chiaro e dalla spia in alto a sinistra: e' lo stato letto dall'host,
+  // non l'ultima pressione fatta da questo dispositivo.
+  uint16_t frame = (b.on == 1) ? TFT_WHITE : TFT_DARKGREY;
+  tft.drawRoundRect(b.x, b.y, b.w, b.h, 6, frame);
+  if (b.on >= 0) {
+    tft.fillCircle(b.x + 8, b.y + 8, 3, b.on == 1 ? TFT_GREEN : TFT_DARKGREY);
+  }
 
   tft.setTextColor(TFT_WHITE, fill);
   tft.setTextDatum(MC_DATUM);
@@ -207,6 +217,7 @@ static bool fetchLayout(const char *profile, const char *page) {
     b.row = item[WDECK_F_ROW] | 0;
     b.col = item[WDECK_F_COL] | 0;
     b.color = parseColor(item[WDECK_F_COLOR] | "", TFT_NAVY);
+    b.on = -1;  // sconosciuto finche' non arriva il messaggio di stato
     // item[WDECK_F_ICON] e item[WDECK_F_TYPE] sono disponibili per estensioni
     // (glifi personalizzati o colorazione per tipo di azione).
     if (b.id[0] != '\0') buttonCount++;
@@ -289,6 +300,23 @@ static void handleWsMessage(const char *text) {
     return;
   }
 
+  // Stato reale dei bottoni: l'host manda solo id -> 0|1, i controlli assenti
+  // dalla mappa restano "sconosciuti" e vengono disegnati senza spia.
+  if (strcmp(type, WDECK_MSG_STATUS) == 0) {
+    JsonObject states = doc[WDECK_F_STATES].as<JsonObject>();
+    for (int i = 0; i < buttonCount; i++) {
+      int8_t next = -1;
+      if (!states.isNull() && states[buttons[i].id].is<int>()) {
+        next = states[buttons[i].id].as<int>() != 0 ? 1 : 0;
+      }
+      if (next != buttons[i].on) {
+        buttons[i].on = next;
+        drawButton(i, false);
+      }
+    }
+    return;
+  }
+
   if (strcmp(type, WDECK_MSG_ACK) == 0) {
     bool ok = (doc[WDECK_F_OK] | 0) != 0;
     const char *message = doc[WDECK_F_MESSAGE] | "";
@@ -363,6 +391,12 @@ static void connectWifi() {
 
 // ---------------------------------------------------------------- touch
 
+// TFT_eSPI genera getTouch() soltanto quando TOUCH_CS e' definito. Su una
+// scheda senza touch - l'ambiente esp32s3-st7789 e' proprio quello - chiamarla
+// non da' un tocco che non arriva mai: da' un errore di compilazione. Il deck
+// resta uno schermo di stato, e le pressioni arrivano dai pulsanti hardware.
+#ifdef TOUCH_CS
+
 static void handleTouch() {
   uint16_t tx = 0, ty = 0;
   if (!tft.getTouch(&tx, &ty, WDECK_TOUCH_THRESHOLD)) return;
@@ -377,6 +411,12 @@ static void handleTouch() {
     }
   }
 }
+
+#else
+
+static void handleTouch() {}
+
+#endif
 
 // ---------------------------------------------------------------- arduino
 
