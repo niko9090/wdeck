@@ -57,6 +57,16 @@ test('avvio exe: la cartella dati e\' un percorso assoluto', () => {
   assert.ok(path.isAbsolute(home), `atteso assoluto, ricevuto ${home}`);
 });
 
+test('avvio exe: il ponte resta importabile dove node:sea non esiste', () => {
+  // Il progetto gira dalla 20.10, ma node:sea e' arrivato nella 20.12: senza
+  // guardia, importare questo file su una 20.10 esplode. La CI l'ha scoperto al
+  // primo giro proprio perche' prova entrambe le versioni.
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'sea-entry.cjs'), 'utf8');
+  assert.match(src, /try \{\s*sea = require\('node:sea'\);\s*\} catch/,
+    'require(node:sea) deve stare dentro un try/catch');
+  assert.match(src, /if \(sea\.isSea\(\)\)/, 'l\'avvio deve restare dietro isSea()');
+});
+
 test('distribuzione: gli script di build sono sintatticamente validi', () => {
   // Sono fuori dalla suite normale (nessuno li importa): senza questo controllo
   // un errore di battitura si scoprirebbe solo al momento di distribuire.

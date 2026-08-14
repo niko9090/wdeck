@@ -18,8 +18,19 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const sea = require('node:sea');
 const { pathToFileURL } = require('node:url');
+
+// `node:sea` esiste dalla 20.12, ma il progetto dichiara di girare dalla 20.10:
+// su una 20.10 questo file deve restare importabile - i test lo importano per
+// collaudare normalizeArgs - e limitarsi a non avviare nulla. Dentro un
+// eseguibile vero il modulo c'e' sempre, perche' a costruirlo e' una versione
+// che lo supporta (vedi il controllo in scripts/build-exe.mjs).
+let sea;
+try {
+  sea = require('node:sea');
+} catch {
+  sea = { isSea: () => false };
+}
 
 /** Cartella dati dell'utente, quella che sopravvive agli aggiornamenti. */
 function dataHome() {

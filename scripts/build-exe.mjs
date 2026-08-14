@@ -47,6 +47,16 @@ function main() {
     process.exit(1);
   }
 
+  // L'host gira dalla 20.10, ma `node:sea` e gli asset incorporati esistono
+  // dalla 20.12: costruire con una versione precedente darebbe un errore
+  // oscuro a meta' strada invece di questa riga.
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  if (major < 20 || (major === 20 && minor < 12)) {
+    console.error(`Serve Node 20.12 o superiore per costruire l'eseguibile (qui c'e' ${process.versions.node}).`);
+    console.error('L\'host invece gira gia\' dalla 20.10: e\' solo la costruzione a chiedere di piu\'.');
+    process.exit(1);
+  }
+
   // Il client va compilato prima: dentro l'exe ci va dist/web, non i sorgenti.
   console.log('  compilo il client web...');
   execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'build-web.mjs')], { stdio: 'pipe' });

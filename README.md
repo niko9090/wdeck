@@ -185,6 +185,10 @@ exe piu' recente non se la porta via. Accetta le stesse opzioni della CLI
 Pesa 84 MB perche' l'interprete e' dentro: e' il prezzo del non chiedere nulla
 al PC di destinazione. Chi Node ce l'ha gia' fa prima con l'archivio zip.
 
+Per **costruirlo** serve Node 20.12 o superiore (`node:sea` non esiste prima);
+per **eseguirlo** non serve niente, e l'host dai sorgenti continua a girare
+dalla 20.10 come sempre.
+
 La build usa [postject](https://github.com/nodejs/postject), lo strumento
 ufficiale del progetto Node.js, scaricato al volo da `npx` **solo in fase di
 costruzione**: non e' una dipendenza, non compare in `package.json` e l'host non

@@ -30,6 +30,14 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
   Un errore rimasto invisibile finche' nessuno ha compilato: i test di
   conformita' al protocollo leggono il sorgente, non lo compilano.
 
+- **La CI falliva su Node 20.10** (e solo li'): `scripts/sea-entry.cjs` chiedeva
+  `node:sea` all'apertura, ma quel modulo esiste dalla 20.12, e il test che lo
+  importa esplodeva. Ora il `require` e' dentro un try/catch: fuori da un
+  eseguibile il file resta una libreria importabile ovunque. `npm run exe`
+  controlla la versione e lo dice chiaro; l'host continua a girare dalla 20.10.
+  Trovato dalla CI al suo primo giro vero, su una versione di Node che in locale
+  non c'e'.
+
 ### Note
 
 Compilare non e' collaudare. Il firmware ora si costruisce per tre schede, ma
