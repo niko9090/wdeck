@@ -38,6 +38,14 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
   Trovato dalla CI al suo primo giro vero, su una versione di Node che in locale
   non c'e'.
 
+- **`npm test` non trovava nulla su Windows con Node 20.10.** Lo script era
+  `node --test test/*.test.mjs`, e quel glob lo espande la shell: `cmd` e
+  PowerShell non lo fanno, e Node ha imparato a farlo da se' solo dalla 21. Su
+  quella combinazione la suite usciva con "Could not find" invece di eseguire
+  443 verifiche — e nessuno se n'era accorto perche' la CI non era mai girata.
+  Ora l'elenco dei file lo costruisce `scripts/test.mjs`, e un test impedisce a
+  qualunque script di package.json di tornare a dipendere dal glob della shell.
+
 ### Note
 
 Compilare non e' collaudare. Il firmware ora si costruisce per tre schede, ma

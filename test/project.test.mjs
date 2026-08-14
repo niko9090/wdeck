@@ -25,6 +25,17 @@ test('package.json non dichiara dipendenze di sviluppo', () => {
   assert.deepEqual(Object.keys(pkg.devDependencies ?? {}), []);
 });
 
+test('nessuno script si affida alla shell per espandere i glob', () => {
+  // `node --test test/*.test.mjs` funziona solo dove la shell espande il glob:
+  // su Windows non lo fa, e Node se lo espande da solo solo dalla 21. Su
+  // Windows con la 20.10 - che package.json dichiara di supportare - "npm test"
+  // non trovava nessun file e usciva con errore. Trovato dalla CI, non qui.
+  for (const [nome, comando] of Object.entries(pkg.scripts)) {
+    assert.ok(!/[*?]/.test(comando),
+      `lo script "${nome}" contiene un glob che la shell di Windows non espande: ${comando}`);
+  }
+});
+
 test('esiste il workflow di CI e lancia la verifica completa', () => {
   const workflow = read('.github/workflows/ci.yml');
   assert.match(workflow, /npm run verify/);

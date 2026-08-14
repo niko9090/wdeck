@@ -231,7 +231,7 @@ verificare sulla scheda in uso.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (441 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (443 verifiche) |
 | `npm run smoke` | smoke test end-to-end su un host reale (49 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |

@@ -15,7 +15,7 @@
     "start": "node bin/wdeck.mjs",
     "dev": "node bin/wdeck.mjs --dry-run",
     "build": "node scripts/build-web.mjs",
-    "test": "node --test test/*.test.mjs",
+    "test": "node scripts/test.mjs",
     "smoke": "node scripts/smoke.mjs",
     "test:esp32": "node scripts/test-esp32.mjs",
     "check:docs": "node scripts/check-docs.mjs",
