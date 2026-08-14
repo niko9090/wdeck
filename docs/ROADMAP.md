@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-13 - versione `0.3.0`.
+Ultimo aggiornamento: 2026-08-14 - versione `0.4.0`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -166,7 +166,7 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 432 |
+| `npm test` | file di test unitari/integrazione | 441 |
 | `npm run smoke` | end-to-end su host reale | 49 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
@@ -183,7 +183,7 @@ a ogni push e pull request su Linux, Windows e macOS, con Node 20.10 e 22.
 | elemento | stato attuale | perche' resta cosi' |
 |---|---|---|
 | azione `stub` | conferma la pressione e restituisce la nota configurata | **e' voluta**: serve a disegnare un deck prima di aver scritto l'azione vera. Nessuna integrazione inclusa la usa piu' |
-| firmware ESP32 | codice completo e conforme al protocollo, verificato a ogni giro da `npm run test:esp32` | **non e' mai stato compilato ne' provato su hardware reale**: pin, rotazione e touch vanno verificati sulla scheda in uso |
+| firmware ESP32 | conforme al protocollo (`npm run test:esp32`) e **compilato** per tutte e tre le schede supportate (`npm run firmware`) | **mai eseguito su hardware reale**: pin, rotazione e taratura del touch vanno verificati sulla scheda in uso |
 | icone su ESP32 | il campo `n` arriva al dispositivo ma il display mostra solo l'etichetta | servono glifi bitmap o LVGL, da guardare su uno schermo vero |
 | `holdAction` su ESP32 | configurabile dall'editor e supportata da host e client web | il firmware non distingue un tocco lungo da uno breve: la soglia va tarata sul touch reale |
 | `ui.showLabels` su ESP32 | rispettato dal client web | il firmware disegna sempre l'etichetta, perche' senza icone non resterebbe nulla da vedere |
@@ -198,10 +198,15 @@ costerebbe molto piu' di quanto renda.
 
 ### Richiede hardware o un ambiente che qui non c'e'
 
-- **Prova del firmware su una scheda vera.** Il codice e' completo e conforme
-  al protocollo - `npm run test:esp32` lo verifica contro `shared/protocol.mjs`
-  a ogni giro - ma non e' mai stato compilato ne' eseguito. Pin, rotazione e
-  taratura del touch vanno verificati sulla scheda in uso.
+- **Prova del firmware su una scheda vera.** Il codice e' conforme al protocollo
+  (`npm run test:esp32` lo verifica contro `shared/protocol.mjs` a ogni giro) e
+  ora **compila** per tutte e tre le schede supportate: `npm run firmware`
+  produce i `.bin` pronti da scrivere. La compilazione non e' una formalita' -
+  ha subito trovato un errore vero, l'ambiente `esp32s3-st7789` che non
+  compilava affatto perche' chiamava `getTouch()` su un display senza touch -
+  ma resta una verifica sul codice, non sul comportamento. **Mai eseguito su
+  hardware**: pin, rotazione e taratura del touch vanno visti su una scheda
+  accesa, e nessuna compilazione puo' sostituire quel momento.
 - **Prova dell'input sintetico su macOS e Linux.** Gli adattatori ci sono e le
   loro traduzioni sono verificate, ma inviare tasti richiede una sessione
   grafica interattiva: la CI puo' avviare l'host e far girare i test, non
@@ -253,7 +258,7 @@ costerebbe molto piu' di quanto renda.
 - **Permessi per dispositivo.** Ogni token accoppiato puo' premere qualunque
   bottone. Limitare un dispositivo a un profilo richiederebbe un modello di
   permessi nel protocollo e nell'interfaccia, ed e' una funzionalita' a se'.
-- **Misura della copertura del codice.** Il valore aggiunto sopra 432 verifiche
+- **Misura della copertura del codice.** Il valore aggiunto sopra 441 verifiche
   scritte guardando il comportamento sarebbe soprattutto un numero.
 
 ---
@@ -261,7 +266,8 @@ costerebbe molto piu' di quanto renda.
 ## Prossimi passi consigliati
 
 Le otto voci della consegna precedente sono state fatte tutte (vedi
-[CHANGELOG.md](../CHANGELOG.md), dalla 0.2.1 alla 0.3.0). Quello che resta, in
+[CHANGELOG.md](../CHANGELOG.md), dalla 0.2.1 alla 0.3.0), e la 0.4.0 ha aggiunto
+i due binari distribuibili: `wdeck.exe` e i `.bin` dell'ESP32. Quello che resta, in
 ordine di rapporto valore/costo:
 
 1. **Provare il firmware su una scheda vera** e correggere pin, rotazione e

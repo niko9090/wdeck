@@ -60,13 +60,14 @@ funzionano su quale sistema, e cosa serve installare, e' nella tabella
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.3.0 - deck "Wdeck"
+  Wdeck host v0.4.0 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
-  azioni         : brightness, browser, clipboard, delay, desktop, focus, folder,
-                   game, homeassistant, hotkey, http, hue, launch, media, mic,
-                   navigate, noop, notify, obs, power, rdp, screenshot, script,
-                   sequence, stub, text, url, volume, window
+  azioni         : brightness, browser, clipboard, delay, desktop, discord,
+                   focus, folder, game, homeassistant, hotkey, http, hue, launch,
+                   media, mic, mqtt, navigate, noop, notify, obs, power, rdp,
+                   screenshot, script, sequence, spotify, stub, text, url,
+                   volume, window
 
   URL del client web:
     http://127.0.0.1:8899/?token=...
@@ -162,6 +163,63 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 
 ---
 
+## Distribuzione: eseguibile Windows e binari ESP32
+
+Per **dare Wdeck a qualcun altro** non serve che quel qualcuno installi Node.js
+o sappia cos'e' npm.
+
+### `wdeck.exe`, file unico
+
+```powershell
+npm run exe        # produce release\wdeck.exe (~84 MB)
+```
+
+Un solo file, che si copia su una chiavetta e parte con un doppio clic: dentro
+c'e' il runtime di Node insieme all'host, grazie alle *Single Executable
+Applications* di Node 20+. Alla prima esecuzione riversa i propri moduli in
+`%LOCALAPPDATA%\Wdeck\runtime\<impronta>\` e crea `%LOCALAPPDATA%\Wdeck\deck.json`
+se non esiste gia'; la configurazione sta **fuori** dai file estratti, quindi un
+exe piu' recente non se la porta via. Accetta le stesse opzioni della CLI
+(`wdeck.exe --port 9000 --dry-run`).
+
+Pesa 84 MB perche' l'interprete e' dentro: e' il prezzo del non chiedere nulla
+al PC di destinazione. Chi Node ce l'ha gia' fa prima con l'archivio zip.
+
+La build usa [postject](https://github.com/nodejs/postject), lo strumento
+ufficiale del progetto Node.js, scaricato al volo da `npx` **solo in fase di
+costruzione**: non e' una dipendenza, non compare in `package.json` e l'host non
+lo importa mai. Il vincolo di zero dipendenze a runtime resta verificato da
+`npm run check:deps`.
+
+### Firmware ESP32 gia' compilato
+
+```powershell
+pip install platformio    # una volta sola
+npm run firmware          # produce release\firmware\*.bin
+```
+
+Escono tre binari per ciascuna delle schede supportate — `firmware`,
+`bootloader` e `partitions` — pronti da scrivere:
+
+```powershell
+pio run -e esp32-cyd -t upload          # scheda collegata via USB
+# oppure, partendo dai .bin gia' pronti:
+esptool.py --chip esp32 write_flash 0x1000 esp32-cyd-bootloader.bin `
+    0x8000 esp32-cyd-partitions.bin 0x10000 esp32-cyd-firmware.bin
+```
+
+Wi-Fi, indirizzo dell'host e token si passano alla compilazione senza toccare
+il codice (`-DWDECK_WIFI_SSID=...`, vedi `firmware/esp32/platformio.ini`).
+
+**Cosa dimostra questa compilazione, e cosa no.** Che il firmware compili per
+tutte e tre le schede e' una verifica vera, ed e' servita: ha trovato un errore
+che nessun test poteva vedere (l'ambiente senza touch non compilava affatto).
+Che il firmware **funzioni** su una scheda accesa e' un'altra affermazione, e
+quella richiede l'hardware: pin, rotazione e taratura del touch restano da
+verificare sulla scheda in uso.
+
+---
+
 ## Comandi
 
 | comando | cosa fa |
@@ -169,12 +227,15 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (432 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (441 verifiche) |
 | `npm run smoke` | smoke test end-to-end su un host reale (49 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
 | `npm run check:deps` | verifica il vincolo di zero dipendenze (package.json e import) |
 | `npm run verify` | tutti i controlli sopra, in sequenza |
+| `npm run exe` | costruisce `release/wdeck.exe`, eseguibile singolo per Windows |
+| `npm run firmware` | compila il firmware ESP32 in `release/firmware/*.bin` |
+| `npm run package` | archivio zip da allegare a una release |
 | `node scripts/gen-icons.mjs` | rigenera le icone PNG della PWA |
 
 Opzioni della CLI:

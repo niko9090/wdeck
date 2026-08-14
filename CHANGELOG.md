@@ -3,6 +3,44 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.4.0] - 2026-08-14
+
+### Aggiunto
+
+- **`wdeck.exe`, eseguibile singolo per Windows** (`npm run exe`). Un file solo,
+  ~84 MB, che parte con un doppio clic su un PC dove Node.js **non e'
+  installato**: il runtime viaggia dentro, tramite le *Single Executable
+  Applications* di Node 20+. Serviva per poter dare Wdeck a qualcuno senza
+  chiedergli di installare nulla.
+  Alla prima esecuzione riversa i moduli in
+  `%LOCALAPPDATA%\Wdeck\runtime\<impronta>\` e semina `deck.json` un livello
+  sopra, **fuori** dai file estratti, cosi' un exe piu' recente non porta via la
+  configurazione. L'impronta e' l'hash del contenuto: due versioni convivono e
+  un exe identico non ripete l'estrazione.
+- **Firmware ESP32 gia' compilato** (`npm run firmware`): produce
+  `release/firmware/*.bin` — firmware, bootloader e tabella delle partizioni —
+  per tutte e tre le schede supportate. Prima il firmware era solo sorgente.
+
+### Corretto
+
+- **L'ambiente `esp32s3-st7789` non compilava.** `handleTouch()` chiamava
+  `tft.getTouch()` senza condizioni, ma TFT_eSPI genera quella funzione solo
+  quando `TOUCH_CS` e' definito — e quell'ambiente e' proprio quello del display
+  **senza** touch. Il codice del tocco ora sta dietro `#ifdef TOUCH_CS`.
+  Un errore rimasto invisibile finche' nessuno ha compilato: i test di
+  conformita' al protocollo leggono il sorgente, non lo compilano.
+
+### Note
+
+Compilare non e' collaudare. Il firmware ora si costruisce per tre schede, ma
+non e' mai stato **eseguito** su hardware: pin, rotazione e taratura del touch
+restano da verificare su una scheda accesa.
+
+`postject`, usato per scrivere il blob dentro il binario, e' uno strumento da
+banco di lavoro scaricato da `npx` solo durante `npm run exe`: non e' una
+dipendenza, non compare in `package.json` e l'host non lo importa mai. Il
+vincolo di zero dipendenze a runtime resta verificato da `npm run check:deps`.
+
 ## [0.3.0] - 2026-08-13
 
 ### Aggiunto
