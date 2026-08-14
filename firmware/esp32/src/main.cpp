@@ -391,6 +391,12 @@ static void connectWifi() {
 
 // ---------------------------------------------------------------- touch
 
+// TFT_eSPI genera getTouch() soltanto quando TOUCH_CS e' definito. Su una
+// scheda senza touch - l'ambiente esp32s3-st7789 e' proprio quello - chiamarla
+// non da' un tocco che non arriva mai: da' un errore di compilazione. Il deck
+// resta uno schermo di stato, e le pressioni arrivano dai pulsanti hardware.
+#ifdef TOUCH_CS
+
 static void handleTouch() {
   uint16_t tx = 0, ty = 0;
   if (!tft.getTouch(&tx, &ty, WDECK_TOUCH_THRESHOLD)) return;
@@ -405,6 +411,12 @@ static void handleTouch() {
     }
   }
 }
+
+#else
+
+static void handleTouch() {}
+
+#endif
 
 // ---------------------------------------------------------------- arduino
 
