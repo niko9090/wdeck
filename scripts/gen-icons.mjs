@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = path.join(ROOT, 'web', 'icons');
@@ -47,7 +47,7 @@ function chunk(type, data) {
  * @param {(x:number,y:number)=>[number,number,number,number]} painter
  * @returns {Buffer} contenuto PNG
  */
-function encodePng(size, painter) {
+export function encodePng(size, painter) {
   const stride = size * 4;
   const raw = Buffer.alloc((stride + 1) * size);
   for (let y = 0; y < size; y += 1) {
@@ -100,7 +100,7 @@ function inRoundedRect(x, y, rx, ry, w, h, radius) {
  * @param {number} size
  * @param {{padding?: number, fullBleed?: boolean}} [options]
  */
-function deckPainter(size, { padding = 0.14, fullBleed = false } = {}) {
+export function deckPainter(size, { padding = 0.14, fullBleed = false } = {}) {
   const margin = Math.round(size * padding);
   const gap = Math.max(2, Math.round(size * 0.035));
   const inner = size - margin * 2;
@@ -142,4 +142,4 @@ function main() {
   }
 }
 
-main();
+if (import.meta.url === pathToFileURL(process.argv[1]).href) main();

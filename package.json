@@ -1,6 +1,6 @@
 {
   "name": "wdeck",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Wdeck - Stream Deck software multi-piattaforma: host Node.js + client web PWA + firmware ESP32",
   "type": "module",
   "private": true,
@@ -24,6 +24,7 @@
     "exe": "node scripts/build-exe.mjs",
     "firmware": "node scripts/build-firmware.mjs",
     "checksums": "node scripts/checksums.mjs",
+    "installer": "node scripts/build-installer.mjs",
     "verify": "npm test && npm run smoke && npm run build && npm run test:esp32 && npm run check:docs && npm run check:deps"
   },
   "dependencies": {},

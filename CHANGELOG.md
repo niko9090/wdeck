@@ -3,6 +3,42 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.6.0] - 2026-08-14
+
+### Aggiunto
+
+- **`WdeckSetup.exe`: un'installazione normale.** Procedura guidata in italiano
+  e inglese, icona sul desktop e nel menu Start, avvio automatico facoltativo,
+  disinstallazione registrata in *App e funzionalita'*. Si installa per utente
+  in `%LOCALAPPDATA%\Programs\Wdeck`, quindi **non chiede l'UAC**.
+  Disinstallando restano `deck.json` e le icone caricate dall'utente: sono
+  lavoro suo, non file di programma.
+- **Icona vera** (`installer/wdeck.ico`), costruita dalle stesse forme
+  dell'icona della PWA in otto misure, da 16 a 256 pixel. Da Vista in poi un
+  `.ico` puo' contenere PNG, quindi si riusa l'encoder che il progetto ha gia':
+  nessun convertitore esterno.
+- `npm run installer` e `node scripts/gen-ico.mjs`.
+
+### Corretto
+
+- **`wdeck.exe` apriva una finestra del terminale e la lasciava aperta.**
+  `node.exe` e' compilato come applicazione a console: un eseguibile costruito
+  con SEA eredita quella natura, e chi lo lanciava con un doppio clic si
+  ritrovava una finestra nera al posto di un programma. Nell'intestazione PE un
+  campo di due byte distingue le due cose: ora la build lo porta da 3 (console)
+  a 2 (grafico). Cambiano due byte e nient'altro - il codice eseguito e'
+  identico.
+
+  Senza terminale, pero', un errore all'avvio non lo vedrebbe piu' nessuno:
+  quando non c'e' una console il diario finisce in
+  `%LOCALAPPDATA%\Wdeck\wdeck.log`, ruotato a 1 MB.
+
+### Note
+
+Da qui viene anche l'unico effetto collaterale: i comandi da riga di comando
+dell'eseguibile (`--list-devices`, `--help`) non hanno piu' un terminale su cui
+scrivere e finiscono nel diario. Dai sorgenti la CLI resta quella di sempre.
+
 ## [0.5.0] - 2026-08-14
 
 ### Aggiunto

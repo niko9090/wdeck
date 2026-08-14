@@ -19,7 +19,7 @@ import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
@@ -30,6 +30,49 @@ const INCLUDE_FILES = ['package.json'];
 
 /** Il fusibile che Node cerca dentro il binario per sapere dove sta il blob. */
 const FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
+
+/**
+ * Dice a Windows che questo programma non ha bisogno di un terminale.
+ *
+ * `node.exe` e' compilato come applicazione a console: chi lo lancia con un
+ * doppio clic si vede aprire una finestra nera che resta li' finche' il
+ * programma vive. Wdeck ha la sua icona nell'area di notifica e non ha niente
+ * da dire a un terminale, quindi quella finestra e' solo un fastidio.
+ *
+ * Nell'intestazione PE un campo di due byte distingue le due cose: 3 significa
+ * console, 2 significa interfaccia grafica. Si cambia quello, e nient'altro:
+ * il codice eseguito e' identico.
+ *
+ * @param {string} file
+ * @returns {{cambiato: boolean, motivo?: string, da?: number}}
+ */
+export function impostaSottosistemaGrafico(file) {
+  const IMAGE_SUBSYSTEM_WINDOWS_GUI = 2;
+  const IMAGE_SUBSYSTEM_WINDOWS_CUI = 3;
+
+  const bin = fs.readFileSync(file);
+  if (bin.toString('ascii', 0, 2) !== 'MZ') return { cambiato: false, motivo: 'non e\' un eseguibile Windows' };
+
+  const pe = bin.readUInt32LE(0x3c);
+  if (bin.toString('ascii', pe, pe + 4) !== 'PE\0\0') return { cambiato: false, motivo: 'intestazione PE non trovata' };
+
+  // L'intestazione opzionale comincia dopo i 24 byte di quella di file; il
+  // campo Subsystem sta 68 byte piu' avanti, uguale in PE32 e PE32+.
+  const opzionale = pe + 24;
+  const magic = bin.readUInt16LE(opzionale);
+  if (magic !== 0x10b && magic !== 0x20b) return { cambiato: false, motivo: `formato sconosciuto (0x${magic.toString(16)})` };
+
+  const posizione = opzionale + 68;
+  const attuale = bin.readUInt16LE(posizione);
+  if (attuale === IMAGE_SUBSYSTEM_WINDOWS_GUI) return { cambiato: true, da: attuale };
+  if (attuale !== IMAGE_SUBSYSTEM_WINDOWS_CUI) {
+    return { cambiato: false, motivo: `sottosistema inatteso: ${attuale}` };
+  }
+
+  bin.writeUInt16LE(IMAGE_SUBSYSTEM_WINDOWS_GUI, posizione);
+  fs.writeFileSync(file, bin);
+  return { cambiato: true, da: attuale };
+}
 
 function walk(dir, base = dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -113,10 +156,15 @@ function main() {
     { stdio: 'pipe', shell: true }
   );
 
+  console.log('  tolgo la finestra del terminale...');
+  const sottosistema = impostaSottosistemaGrafico(exe);
+  if (!sottosistema.cambiato) throw new Error(`sottosistema non modificato: ${sottosistema.motivo}`);
+
   // Un exe che non parte e' peggio di un errore di build: lo provo qui.
+  // Senza console non si puo' leggere cosa stampa, quindi si guarda l'unica
+  // cosa che resta osservabile dall'esterno: che esca da solo e senza errori.
   console.log('  verifico che parta...');
-  const help = execFileSync(exe, ['--help'], { encoding: 'utf8', timeout: 60000 });
-  if (!help.includes('Wdeck host')) throw new Error('l\'eseguibile non risponde a --help');
+  execFileSync(exe, ['--help'], { stdio: 'ignore', timeout: 60000 });
 
   const mb = (fs.statSync(exe).size / 1048576).toFixed(1);
   console.log(`\n  versione : ${pkg.version}`);
@@ -126,4 +174,4 @@ function main() {
   console.log('\nEXE OK');
 }
 
-main();
+if (import.meta.url === pathToFileURL(process.argv[1]).href) main();

@@ -105,8 +105,45 @@ function normalizeArgs(argv, execPath, configFile) {
   return [execPath, execPath, ...args];
 }
 
+/**
+ * Senza terminale, `console.log` scrive su un capo che non esiste: un errore
+ * all'avvio sparirebbe nel nulla e l'utente vedrebbe solo un programma che non
+ * parte. Qui il diario finisce su file, che e' la prima cosa da chiedere a
+ * qualcuno quando dice "non funziona".
+ *
+ * @param {string} home
+ */
+function diarioSuFile(home) {
+  const file = path.join(home, 'wdeck.log');
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    // Un diario che cresce all'infinito e' un problema, non un aiuto.
+    if (fs.existsSync(file) && fs.statSync(file).size > 1024 * 1024) {
+      fs.rmSync(`${file}.1`, { force: true });
+      fs.renameSync(file, `${file}.1`);
+    }
+    const flusso = fs.createWriteStream(file, { flags: 'a' });
+    const scrivi = (livello) => (...parti) => {
+      const testo = parti.map((p) => (typeof p === 'string' ? p : require('node:util').inspect(p))).join(' ');
+      flusso.write(`${new Date().toISOString()} [${livello}] ${testo}\n`);
+    };
+    console.log = scrivi('info');
+    console.info = scrivi('info');
+    console.debug = scrivi('debug');
+    console.warn = scrivi('avviso');
+    console.error = scrivi('errore');
+  } catch {
+    // Se nemmeno il file si puo' scrivere, meglio proseguire in silenzio che
+    // impedire l'avvio: il deck serve, il diario e' un di piu'.
+  }
+}
+
 function main() {
   const paths = layout();
+  // Costruito come applicazione grafica, l'eseguibile non ha un terminale
+  // dove parlare: isTTY falso vuol dire proprio quello.
+  if (!process.stdout.isTTY) diarioSuFile(paths.home);
+
   extract(paths);
   const configFile = seedConfig(paths.home);
   process.argv = normalizeArgs(process.argv, process.execPath, configFile);

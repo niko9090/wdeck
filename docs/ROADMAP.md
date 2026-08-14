@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-14 - versione `0.5.0`.
+Ultimo aggiornamento: 2026-08-14 - versione `0.6.0`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -174,7 +174,7 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 457 |
+| `npm test` | file di test unitari/integrazione | 465 |
 | `npm run smoke` | end-to-end su host reale | 49 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
@@ -267,7 +267,7 @@ costerebbe molto piu' di quanto renda.
 - **Permessi per dispositivo.** Ogni token accoppiato puo' premere qualunque
   bottone. Limitare un dispositivo a un profilo richiederebbe un modello di
   permessi nel protocollo e nell'interfaccia, ed e' una funzionalita' a se'.
-- **Misura della copertura del codice.** Il valore aggiunto sopra 457 verifiche
+- **Misura della copertura del codice.** Il valore aggiunto sopra 465 verifiche
   scritte guardando il comportamento sarebbe soprattutto un numero.
 
 ---

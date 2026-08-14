@@ -28,20 +28,23 @@ nessuna dipendenza npm a runtime.
 
 ## Quickstart: installazione su Windows
 
-Serve **Node.js 20.10 o superiore** (sviluppato e testato su Node 22).
+Scarica **`WdeckSetup.exe`** dalla pagina
+[Releases](https://github.com/niko9090/wdeck/releases) e fai doppio clic.
 
-Scarica l'archivio dell'ultima versione dalla pagina
-[Releases](https://github.com/niko9090/wdeck/releases), estrailo e lancia:
+Procedura guidata, icona sul desktop e nel menu Start, avvio automatico se lo
+spunti, e la voce per rimuoverlo in *App e funzionalita'* come qualsiasi altro
+programma. **Non serve installare Node.js**, non serve essere amministratore e
+non compare nessuna finestra del terminale: Wdeck sta nell'area di notifica,
+vicino all'orologio, e da li' si apre il deck, si copiano gli indirizzi per il
+telefono e si esce.
 
-```powershell
-.\installer\install.ps1 -Autostart
-```
+Disinstallando, la tua `deck.json` e le icone che hai caricato **restano**: sono
+lavoro tuo.
 
-L'installer copia tutto in `%LOCALAPPDATA%\Wdeck`, compila il client, **genera
-un token e un PIN casuali per questo PC**, crea i collegamenti nel menu Start e
-sul desktop e (con `-Autostart`) lo fa partire insieme a Windows. Non serve
-essere amministratore e non viene scaricato nulla. Per rimuoverlo:
-`.\installer\install.ps1 -Uninstall` (la tua `deck.json` viene conservata).
+### Se preferisci non installare niente
+
+Nella stessa pagina c'e' `wdeck.exe`: lo stesso programma in un file solo, da
+tenere su una chiavetta. Doppio clic e parte, senza scrivere niente nel sistema.
 
 ### Oppure dai sorgenti (Windows, macOS, Linux)
 
@@ -60,7 +63,7 @@ funzionano su quale sistema, e cosa serve installare, e' nella tabella
 All'avvio la console stampa gli URL da aprire e il token:
 
 ```
-  Wdeck host v0.5.0 - deck "Wdeck"
+  Wdeck host v0.6.0 - deck "Wdeck"
   configurazione : C:\Users\<utente>\AppData\Local\Wdeck\deck.json
   dry-run        : disattivato
   azioni         : brightness, browser, clipboard, delay, desktop, discord,
@@ -163,10 +166,34 @@ Se scrivi qualcosa di sbagliato, l'host lo segnala e tiene la versione buona.
 
 ---
 
-## Distribuzione: eseguibile Windows e binari ESP32
+## Distribuzione: installer, eseguibile e binari ESP32
 
 Per **dare Wdeck a qualcun altro** non serve che quel qualcuno installi Node.js
 o sappia cos'e' npm.
+
+### `WdeckSetup.exe`, l'installer
+
+```powershell
+npm run installer    # produce release\WdeckSetup-<versione>.exe (~23 MB)
+```
+
+Procedura guidata in italiano e inglese, icone nel menu Start e sul desktop,
+avvio automatico facoltativo, disinstallazione registrata in *App e
+funzionalita'*. Si installa per utente in `%LOCALAPPDATA%\Programs\Wdeck`,
+quindi **non chiede l'UAC**: un deck non ha ragione di volere i diritti di
+amministratore.
+
+Lo costruisce [Inno Setup](https://jrsoftware.org/isdl.php), che va installato a
+parte: e' un attrezzo da banco come `postject`, non entra in `package.json` e non
+finisce dentro il programma.
+
+**Nessuna finestra del terminale.** `node.exe` e' compilato come applicazione a
+console, e questo e' il motivo per cui un eseguibile costruito con SEA apre una
+finestra nera e la lascia aperta. Nell'intestazione PE un campo di due byte
+distingue le due cose: `npm run exe` lo porta da 3 (console) a 2 (grafico), e
+non tocca nient'altro - il codice eseguito e' identico. Senza terminale il
+diario finisce in `%LOCALAPPDATA%\Wdeck\wdeck.log`, che e' la prima cosa da
+guardare quando qualcosa non parte.
 
 ### `wdeck.exe`, file unico
 
@@ -231,13 +258,16 @@ verificare sulla scheda in uso.
 | `npm start` | avvia l'host con `deck.json` |
 | `npm run dev` | avvia l'host in dry-run (non esegue nulla) |
 | `npm run build` | compila il client web statico in `dist/web/` |
-| `npm test` | test unitari e di integrazione dell'host (457 verifiche) |
+| `npm test` | test unitari e di integrazione dell'host (465 verifiche) |
 | `npm run smoke` | smoke test end-to-end su un host reale (49 verifiche) |
 | `npm run test:esp32` | conformita' del firmware ESP32 al protocollo (111 verifiche) |
 | `npm run check:docs` | coerenza fra documentazione, codice e protocollo |
 | `npm run check:deps` | verifica il vincolo di zero dipendenze (package.json e import) |
 | `npm run verify` | tutti i controlli sopra, in sequenza |
+| `npm run installer` | costruisce `release/WdeckSetup-<versione>.exe` (serve Inno Setup) |
 | `npm run exe` | costruisce `release/wdeck.exe`, eseguibile singolo per Windows |
+| `npm run checksums` | scrive `release/SHA256SUMS.txt` |
+| `node scripts/gen-ico.mjs` | genera `installer/wdeck.ico` dalle icone della PWA |
 | `npm run firmware` | compila il firmware ESP32 in `release/firmware/*.bin` |
 | `npm run package` | archivio zip da allegare a una release |
 | `node scripts/gen-icons.mjs` | rigenera le icone PNG della PWA |
