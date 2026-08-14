@@ -539,9 +539,47 @@ di GitHub invece di restituire l'ultimo risultato in cache.
     "current": "0.2.0",
     "latest": { "version": "0.3.0", "url": "https://github.com/...", "notes": "...", "asset": { "name": "wdeck-0.3.0.zip" } },
     "error": null
-  }
+  },
+  "selfUpdate": { "supported": true, "reason": null }
 }
 ```
+
+`selfUpdate` dice se questa installazione sa sostituirsi da sola. E' vero solo
+per `wdeck.exe` su Windows; dai sorgenti `reason` spiega che si aggiorna con
+`git pull`, e il client mostra quella frase invece del pulsante.
+
+### `POST /api/update/apply`
+
+Scarica l'ultima release, **verifica l'impronta** e mette il nuovo eseguibile al
+posto di quello in esecuzione, poi riavvia.
+
+```json
+{ "ok": true, "version": "0.5.0", "from": "0.4.0", "sha256": "2278822a...", "backup": "C:\\Wdeck\\wdeck.exe.vecchio" }
+```
+
+Tre cose che questo endpoint fa e che vale la pena sapere:
+
+- **Non parte mai da solo.** Il controllo periodico segnala e basta; si scarica
+  soltanto quando qualcuno con un token valido chiama qui. La differenza fra
+  "ti avviso" e "mi sostituisco mentre esegui comandi sul tuo PC" e' la ragione
+  per cui sono due cose separate.
+- **Verifica lo SHA-256** contro `SHA256SUMS.txt` pubblicato accanto alla
+  release. Se il file non c'e', o l'impronta non corrisponde, l'aggiornamento si
+  ferma **prima** di toccare l'eseguibile in uso e risponde `500`. Ci si
+  fiderebbe altrimenti solo del TLS.
+- **Tiene la versione precedente** come `wdeck.exe.vecchio`, cancellata al primo
+  avvio andato a buon fine. Se la nuova non parte, si rinomina indietro.
+
+| risposta | quando |
+|---|---|
+| `409 forbidden` | si sta girando dai sorgenti, o non su Windows |
+| `409 bad_request` | si e' gia' all'ultima versione |
+| `502 internal` | GitHub non risponde |
+| `500 internal` | impronta mancante o diversa, o download fallito |
+| `429 rate_limited` | vale il limite dei tentativi di accesso |
+
+Ogni esito, riuscito o no, finisce nel registro di audit (`update-applied`,
+`update-failed`) con chi l'ha chiesto e da dove.
 
 L'host non scarica e non installa nulla: si limita a segnalarlo. Quando un
 aggiornamento compare, i client ricevono anche l'evento WebSocket

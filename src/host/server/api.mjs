@@ -430,7 +430,37 @@ export function createApiRouter(host) {
       const status = url.searchParams.get('check') === '1'
         ? await host.updates.check({ force: true })
         : host.updates.status;
-      sendJson(res, 200, { ok: true, update: status });
+      sendJson(res, 200, { ok: true, update: status, selfUpdate: host.selfUpdate.support });
+    },
+
+    // Scarica la versione nuova, ne verifica l'impronta e la mette al posto di
+    // questa. Non e' fra le cose che l'host fa da solo: si arriva qui solo
+    // perche' qualcuno con un token valido l'ha chiesto.
+    [`POST ${ENDPOINTS.updateApply}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const address = addressOf(req);
+      // Scaricare 84 MB e sovrascrivere un binario non e' un'operazione da
+      // ripetere in raffica: vale il limite dei tentativi di accesso.
+      if (!allow(res, host.limits.checkAuth({ address }), 'tentativi di accesso')) {
+        host.audit.write('rate-limited', { what: 'update', address });
+        return;
+      }
+
+      const esito = await host.selfUpdate.apply();
+      if (!esito.ok) {
+        host.audit.write('update-failed', { address, error: esito.error });
+        sendError(res, esito.status ?? 400, esito.code ?? ERROR_CODES.internal, esito.error);
+        return;
+      }
+
+      host.audit.write('update-applied', {
+        address,
+        from: esito.from,
+        to: esito.version,
+        sha256: esito.sha256
+      });
+      sendJson(res, 200, { ok: true, ...esito });
+      if (esito.restart) host.selfUpdate.restart();
     },
 
     [`POST ${ENDPOINTS.press}`]: async (req, res) => {

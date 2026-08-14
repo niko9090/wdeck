@@ -3,6 +3,40 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.5.0] - 2026-08-14
+
+### Aggiunto
+
+- **`wdeck.exe` si aggiorna da solo**, su richiesta: scarica l'ultima release,
+  **ne verifica lo SHA-256** e si sostituisce, poi riavvia. Dal client
+  (*Impostazioni -> Aggiornamenti*), dalla tray o da `POST /api/update/apply`.
+  Fino alla 0.4.0 l'host sapeva solo dire che una versione nuova esisteva, e
+  scaricarla restava un lavoro a mano.
+
+  Tre cautele, perche' qui si sovrascrive un binario sul PC di qualcun altro:
+
+  1. **Non parte mai da solo.** Il controllo periodico segnala e basta; si
+     scarica solo quando qualcuno lo chiede. Non esiste un aggiornamento
+     silenzioso in sottofondo, e non e' previsto.
+  2. **Impronta verificata** contro `SHA256SUMS.txt` pubblicato accanto alla
+     release. Se manca, o non corrisponde, ci si ferma **prima** di toccare
+     l'eseguibile in uso. Senza, ci si fiderebbe solo del TLS.
+  3. **La versione precedente resta** come `wdeck.exe.vecchio`, cancellata al
+     primo avvio riuscito: se la nuova non parte, si rinomina indietro.
+
+  Dai sorgenti la funzione non si attiva e lo dice: li' si aggiorna con
+  `git pull`, e riscrivere i file di un checkout altrui sarebbe un pessimo modo
+  di rendersi utili.
+- **`npm run checksums`** scrive `release/SHA256SUMS.txt` nel formato di
+  `sha256sum`, verificabile anche a mano con `sha256sum -c`.
+
+### Note
+
+L'aggiornamento automatico era elencato in ROADMAP fra gli **esclusi per
+scelta**, e lo era per un vincolo esplicito di chi ha commissionato il lavoro.
+La richiesta e' cambiata; la cautela no, ed e' per questo che si scarica solo su
+richiesta e solo dopo aver verificato cosa si e' scaricato.
+
 ## [0.4.0] - 2026-08-14
 
 ### Aggiunto

@@ -36,6 +36,7 @@ export const ENDPOINTS = {
   save: '/api/deck/save',
   settings: '/api/settings',
   update: '/api/update',
+  updateApply: '/api/update/apply',
   icons: '/api/icons',
   iconFile: '/api/icons/file',
   devices: '/api/devices',

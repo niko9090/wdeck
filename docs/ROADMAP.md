@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-14 - versione `0.4.0`.
+Ultimo aggiornamento: 2026-08-14 - versione `0.5.0`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.
@@ -122,6 +122,14 @@ esegue anche i file `.sh`.
   modifica che romperebbe la configurazione viene rifiutata con la ragione, e la
   versione precedente resta in `.wdeck-backup/`.
 
+### Aggiornamento dell'eseguibile
+
+- `wdeck.exe` scarica la release nuova, **ne verifica lo SHA-256** contro
+  `SHA256SUMS.txt` e si sostituisce, tenendo la versione precedente come copia
+  di sicurezza. Dal client, dalla tray o da `POST /api/update/apply`.
+- Parte **solo su richiesta**: il controllo periodico si limita a segnalare.
+- Dai sorgenti non si attiva e lo dice: li' si aggiorna con `git pull`.
+
 ### Pairing e scoperta
 
 - **QR code** generato dal progetto ([`shared/qr.mjs`](../shared/qr.mjs)):
@@ -166,7 +174,7 @@ esegue anche i file `.sh`.
 
 | comando | contenuto | verifiche |
 |---|---|---|
-| `npm test` | file di test unitari/integrazione | 443 |
+| `npm test` | file di test unitari/integrazione | 457 |
 | `npm run smoke` | end-to-end su host reale | 49 |
 | `npm run test:esp32` | conformita' firmware <-> protocollo | 111 |
 | `npm run build` | build PWA con verifica dei file prodotti | - |
@@ -218,10 +226,11 @@ costerebbe molto piu' di quanto renda.
 
 ### Escluso da una scelta di progetto
 
-- **Aggiornamento automatico.** L'host segnala che esiste una versione nuova ma
-  **non scarica e non installa nulla**: un programma che si sostituisce da solo
-  i file mentre esegue comandi sul PC e' esattamente cio' che questo progetto
-  non vuole essere. Il download resta all'utente.
+- **Aggiornamento senza chiedere.** L'eseguibile ora *sa* sostituirsi (vedi
+  Completo), ma solo quando glielo si chiede: non esiste, e non e' previsto, un
+  aggiornamento che parte da solo in sottofondo. Un programma che si riscrive
+  mentre esegue comandi sul PC di qualcun altro deve almeno avere il permesso
+  di quel qualcuno, ogni volta.
 - **Servizio Windows.** Un servizio gira nella sessione 0, da cui non puo'
   inviare tasti ne' portare finestre in primo piano nella sessione dell'utente:
   meta' delle azioni smetterebbe di funzionare. L'avvio automatico al login
@@ -258,7 +267,7 @@ costerebbe molto piu' di quanto renda.
 - **Permessi per dispositivo.** Ogni token accoppiato puo' premere qualunque
   bottone. Limitare un dispositivo a un profilo richiederebbe un modello di
   permessi nel protocollo e nell'interfaccia, ed e' una funzionalita' a se'.
-- **Misura della copertura del codice.** Il valore aggiunto sopra 443 verifiche
+- **Misura della copertura del codice.** Il valore aggiunto sopra 457 verifiche
   scritte guardando il comportamento sarebbe soprattutto un numero.
 
 ---

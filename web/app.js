@@ -1331,6 +1331,12 @@ async function openSettings() {
     ? t('settings.updateAvailable', { version: escapeHtml(update.latest?.version ?? ''), current: escapeHtml(update.current ?? '') })
     : t('settings.updateNone', { current: escapeHtml(update?.current ?? '-') })}</p>
       <button class="btn" type="button" id="set-check-update">${t('settings.checkNow')}</button>
+      ${update?.available && state.selfUpdate?.supported
+    ? `<button class="btn primary" type="button" id="set-apply-update">${t('settings.installUpdate')}</button>
+       <p class="sheet-hint">${t('settings.installHint')}</p>`
+    : update?.available && state.selfUpdate?.reason
+      ? `<p class="sheet-hint">${escapeHtml(state.selfUpdate.reason)}</p>`
+      : ''}
     `,
     actions: [
       { label: t('sheet.close'), kind: 'ghost', onClick: () => closeSheet() },
@@ -1343,6 +1349,7 @@ async function openSettings() {
     showGate(t('gate.addHost'));
   });
   el('set-check-update').addEventListener('click', () => checkUpdate({ force: true }));
+  el('set-apply-update')?.addEventListener('click', applyUpdate);
   el('set-rotate').addEventListener('click', rotateHostToken);
   el('set-qr-show').addEventListener('click', showPairingQr);
   renderDevices();
@@ -1472,8 +1479,39 @@ function forgetHost(id) {
 async function checkUpdate({ force = false } = {}) {
   const res = await api(`${ENDPOINTS.update}${force ? '?check=1' : ''}`);
   if (!res.ok) return;
+  state.selfUpdate = res.data.selfUpdate ?? null;
   showUpdate(res.data.update);
   if (force && !res.data.update?.available) toast(t('settings.noUpdate'), 'ok');
+}
+
+/**
+ * Scarica e installa la versione nuova. Chiede conferma perche' da qui in poi
+ * l'host si sostituisce e riparte: chi sta usando il deck lo vede sparire per
+ * qualche secondo, e vale la pena saperlo prima.
+ */
+async function applyUpdate() {
+  const versione = state.update?.latest?.version ?? '';
+  if (!confirm(t('settings.installConfirm', { version: versione }))) return;
+
+  const bottone = el('set-apply-update');
+  if (bottone) {
+    bottone.disabled = true;
+    bottone.textContent = t('settings.installing');
+  }
+  toast(t('settings.installing'), 'ok');
+
+  const res = await api(ENDPOINTS.updateApply, { method: 'POST' });
+  if (!res.ok) {
+    if (bottone) {
+      bottone.disabled = false;
+      bottone.textContent = t('settings.installUpdate');
+    }
+    toast(res.data?.message ?? t('settings.installFailed'), 'err');
+    return;
+  }
+  // L'host si sta riavviando: la riconnessione automatica fara' il resto.
+  toast(t('settings.installed', { version: res.data.version ?? versione }), 'ok');
+  closeSheet();
 }
 
 function showUpdate(status) {

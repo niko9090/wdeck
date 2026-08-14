@@ -10,10 +10,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ERROR_CODES } from '../../shared/protocol.mjs';
 import { createConfigStore, envOverrides } from './config/loader.mjs';
 import { saveDeck, writeAtomic } from './config/writer.mjs';
 import { formatErrors, validateDeck } from './config/schema.mjs';
 import { createUpdateChecker } from './updates.mjs';
+import { applyUpdate, cleanupOldExe, restart as restartExe, selfUpdateSupport } from './update-apply.mjs';
 import { startTray } from './tray.mjs';
 import { createDefaultRegistry } from './actions/handlers/index.mjs';
 import { createDispatcher } from './actions/dispatcher.mjs';
@@ -318,6 +320,49 @@ export function createHost(options = {}) {
     onUpdate: (status) => hub.broadcastUpdate?.(status)
   });
 
+  // Sostituzione dell'eseguibile. Deliberatamente separata dal controllo
+  // periodico: quello guarda e basta, questo agisce solo se chiamato.
+  const supporto = selfUpdateSupport();
+  host.selfUpdate = {
+    support: { supported: supporto.supported, reason: supporto.reason },
+
+    /** Scarica l'ultima release, ne verifica l'impronta e la mette al posto di questa. */
+    async apply() {
+      if (!supporto.supported) {
+        return { ok: false, status: 409, code: ERROR_CODES.forbidden, error: supporto.reason };
+      }
+      const stato = await host.updates.check({ force: true });
+      if (stato.error) {
+        return { ok: false, status: 502, code: ERROR_CODES.internal, error: stato.error };
+      }
+      if (!stato.available) {
+        return { ok: false, status: 409, code: ERROR_CODES.badRequest, error: `sei gia' alla versione ${host.version}` };
+      }
+      try {
+        logger.info?.(`[wdeck] scarico la versione ${stato.latest.version}...`);
+        const esito = await applyUpdate({
+          release: stato.latest,
+          exePath: supporto.exePath,
+          onProgress: (fase) => logger.debug?.(`[wdeck] aggiornamento: ${fase}`)
+        });
+        logger.info?.(`[wdeck] versione ${esito.version} installata; la precedente resta in ${path.basename(esito.backup)}`);
+        return { ok: true, from: host.version, restart: true, ...esito };
+      } catch (err) {
+        logger.warn?.(`[wdeck] aggiornamento non riuscito: ${err.message}`);
+        return { ok: false, status: 500, code: ERROR_CODES.internal, error: err.message };
+      }
+    },
+
+    /** Riavvia con la versione appena installata, dopo aver chiuso in ordine. */
+    restart() {
+      if (!supporto.supported) return;
+      setTimeout(() => {
+        host.stop().catch(() => {});
+        restartExe(supporto.exePath);
+      }, 300).unref?.();
+    }
+  };
+
   const api = createApiRouter(host);
   const hub = createHub(host);
   host.hub = hub;
@@ -406,6 +451,12 @@ export function createHost(options = {}) {
       }
       host.updates.start();
       status.start();
+
+      // Se stiamo girando, l'aggiornamento e' andato a buon fine: la copia di
+      // sicurezza della versione precedente ha finito il suo lavoro.
+      if (supporto.supported && cleanupOldExe(supporto.exePath)) {
+        logger.debug?.('[wdeck] rimossa la copia della versione precedente');
+      }
 
       // Un indirizzo numerico non si ricorda e cambia con il DHCP: annunciarsi
       // come "<nome>.local" da' un indirizzo stabile che macOS, iOS, Windows e

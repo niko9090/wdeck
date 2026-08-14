@@ -1,11 +1,17 @@
 /**
  * Controllo aggiornamenti tramite le release di GitHub.
  *
- * L'host non scarica e non installa nulla da solo: si limita a confrontare la
- * propria versione con l'ultima release pubblicata e a segnalarlo al client,
- * che mostra la notifica. Un aggiornamento automatico che sostituisce eseguibili
- * sul PC di qualcun altro e' una decisione che spetta all'utente, non al programma.
+ * Questo modulo **guarda soltanto**: confronta la versione in esecuzione con
+ * l'ultima release pubblicata e lo segnala. Non scarica niente di sua
+ * iniziativa, nemmeno quando trova una versione nuova.
+ *
+ * A scaricare e sostituire ci pensa [`update-apply.mjs`](./update-apply.mjs), e
+ * solo su richiesta esplicita: la differenza fra "ti avviso" e "mi sostituisco
+ * da solo mentre esegui comandi sul tuo PC" e' l'intera ragione della
+ * separazione fra i due file.
  */
+
+import { FILE_IMPRONTE } from './update-apply.mjs';
 
 /** Ogni quanto ricontrollare, se il controllo periodico e' attivo. */
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -48,14 +54,19 @@ export async function fetchLatestRelease(repository, { timeoutMs = 8000, fetchIm
     throw new Error(`GitHub ha risposto ${response.status}`);
   }
   const data = await response.json();
-  const installer = (data.assets ?? []).find((a) => /\.(exe|msi|zip)$/i.test(a.name ?? ''));
+  const assets = data.assets ?? [];
+  // L'eseguibile vince sull'archivio: e' quello che si sa sostituire da solo.
+  const installer = assets.find((a) => /\.exe$/i.test(a.name ?? ''))
+    ?? assets.find((a) => /\.(msi|zip)$/i.test(a.name ?? ''));
+  const impronte = assets.find((a) => a.name === FILE_IMPRONTE);
   return {
     version: String(data.tag_name ?? '').replace(/^v/i, ''),
     name: data.name ?? data.tag_name ?? '',
     url: data.html_url ?? `https://github.com/${repository}/releases/latest`,
     notes: String(data.body ?? '').slice(0, 4000),
     publishedAt: data.published_at ?? null,
-    asset: installer ? { name: installer.name, url: installer.browser_download_url, size: installer.size } : null
+    asset: installer ? { name: installer.name, url: installer.browser_download_url, size: installer.size } : null,
+    checksums: impronte ? { url: impronte.browser_download_url } : null
   };
 }
 

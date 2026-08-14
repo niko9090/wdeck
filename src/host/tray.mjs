@@ -106,7 +106,11 @@ Add-Item 'Controlla aggiornamenti' {
     $res = Invoke-RestMethod -Uri "$url/api/update?check=1" -Headers @{ 'x-wdeck-token' = $token }
     $icon.BalloonTipTitle = 'Wdeck'
     if ($res.update.available) {
-      $icon.BalloonTipText = "Disponibile la versione $($res.update.latest.version). Apri la pagina del rilascio dal menu."
+      if ($res.selfUpdate.supported) {
+        $icon.BalloonTipText = "Disponibile la versione $($res.update.latest.version). Usa 'Scarica e installa' per aggiornare."
+      } else {
+        $icon.BalloonTipText = "Disponibile la versione $($res.update.latest.version). Apri la pagina del rilascio dal menu."
+      }
     } else {
       $icon.BalloonTipText = "Nessun aggiornamento: sei alla versione $($res.update.current)."
     }
@@ -115,6 +119,27 @@ Add-Item 'Controlla aggiornamenti' {
     $icon.BalloonTipText = $_.Exception.Message
   }
   $icon.ShowBalloonTip(5000)
+} | Out-Null
+
+Add-Item 'Scarica e installa aggiornamento' {
+  # Chiede conferma: da qui in poi si sostituisce un eseguibile e si riavvia,
+  # e chi sta usando il deck in questo momento se ne accorge.
+  $scelta = [System.Windows.Forms.MessageBox]::Show(
+    "Scarico la versione nuova, ne verifico l'impronta e riavvio Wdeck. La versione attuale resta come copia di sicurezza.",
+    'Aggiornare Wdeck?', 'YesNo', 'Question')
+  if ($scelta -ne 'Yes') { return }
+  $icon.BalloonTipTitle = 'Wdeck'
+  $icon.BalloonTipText = 'Scarico l''aggiornamento...'
+  $icon.ShowBalloonTip(3000)
+  try {
+    $res = Invoke-RestMethod -Method Post -Uri "$url/api/update/apply" -Headers @{ 'x-wdeck-token' = $token }
+    $icon.BalloonTipTitle = 'Aggiornato'
+    $icon.BalloonTipText = "Versione $($res.version) installata. Wdeck si sta riavviando."
+  } catch {
+    $icon.BalloonTipTitle = 'Aggiornamento non riuscito'
+    $icon.BalloonTipText = $_.Exception.Message
+  }
+  $icon.ShowBalloonTip(6000)
 } | Out-Null
 
 [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
