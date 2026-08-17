@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import net from 'node:net';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -26,6 +27,29 @@ async function startHost(t, overrides = {}) {
 }
 
 const json = async (res) => ({ status: res.status, body: await res.json() });
+
+test('avvio: se la porta e\' occupata per un istante, riprova invece di morire', async (t) => {
+  // Riproduce la corsa del riavvio dopo un aggiornamento: un altro processo
+  // tiene la porta, il nuovo host non deve arrendersi al primo EADDRINUSE.
+  const occupante = net.createServer();
+  const porta = await new Promise((resolve) => {
+    occupante.listen(0, '127.0.0.1', () => resolve(occupante.address().port));
+  });
+
+  const host = createHost({
+    overrides: { port: porta, host: '127.0.0.1', token: TOKEN, dryRun: true },
+    logger: silent,
+    watch: false
+  });
+  t.after(() => host.stop());
+
+  const avvio = host.start();
+  // Libera la porta poco dopo: l'host deve accorgersene al giro successivo.
+  setTimeout(() => occupante.close(), 500);
+
+  const info = await avvio;
+  assert.equal(info.port, porta, 'l\'host deve finire sulla stessa porta, dopo qualche tentativo');
+});
 
 test('api: /api/health e\' pubblico e descrive l\'host', async (t) => {
   const { base } = await startHost(t);

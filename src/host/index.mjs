@@ -371,8 +371,12 @@ export function createHost(options = {}) {
     /** Riavvia con la versione appena installata, dopo aver chiuso in ordine. */
     restart() {
       if (!supporto.supported) return;
-      setTimeout(() => {
-        host.stop().catch(() => {});
+      // La chiusura va ATTESA prima di lanciare il nuovo processo: finche' questo
+      // tiene aperta la porta, la versione appena avviata la troverebbe occupata
+      // (EADDRINUSE) e morirebbe subito. Era esattamente il sintomo "si apre e si
+      // richiude da solo dopo l'aggiornamento".
+      setTimeout(async () => {
+        await host.stop().catch(() => {});
         restartExe(supporto.exePath);
       }, 300).unref?.();
     }
@@ -452,9 +456,26 @@ export function createHost(options = {}) {
    */
   host.start = () => new Promise((resolve, reject) => {
     const { host: bindHost, port } = configStore.get().settings.server;
-    server.once('error', reject);
-    server.listen(port, bindHost, () => {
-      server.removeListener('error', reject);
+    // Subito dopo un aggiornamento la porta puo' restare occupata per un istante,
+    // mentre la versione precedente finisce di chiudersi. Invece di arrendersi al
+    // primo EADDRINUSE si riprova per qualche secondo: cosi' il riavvio non muore
+    // in una corsa con il processo che si sta sostituendo.
+    const MAX_TENTATIVI_PORTA = 20;
+    const ATTESA_PORTA_MS = 250;
+    let tentativiPorta = 0;
+    const provaAscolto = () => {
+      const onError = (err) => {
+        if (err?.code === 'EADDRINUSE' && tentativiPorta < MAX_TENTATIVI_PORTA) {
+          tentativiPorta += 1;
+          logger.debug?.(`[wdeck] porta ${port} occupata, riprovo (${tentativiPorta}/${MAX_TENTATIVI_PORTA})`);
+          setTimeout(provaAscolto, ATTESA_PORTA_MS).unref?.();
+          return;
+        }
+        reject(err);
+      };
+      server.once('error', onError);
+      server.listen(port, bindHost, () => {
+      server.removeListener('error', onError);
       const addr = server.address();
       host.address = { host: bindHost, port: addr.port };
       if (options.watch !== false) {
@@ -508,7 +529,9 @@ export function createHost(options = {}) {
         mdns: host.mdns?.hostname ?? null,
         urls: buildUrls(bindHost, addr.port, host.scheme)
       });
-    });
+      });
+    };
+    provaAscolto();
   });
 
   /** Ferma il server e libera le risorse. */
