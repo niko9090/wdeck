@@ -37,6 +37,26 @@ export const mediaAction = {
   platforms: [...SUPPORTED_PLATFORMS],
   category: 'media',
   paramsHelp: { key: Object.keys(MEDIA_KEYS).join(' | '), repeat: 'intero 1..20 (default 1)' },
+  fields: [
+    {
+      key: 'key',
+      label: 'Tasto',
+      type: 'select',
+      help: 'comando multimediale da inviare',
+      required: true,
+      default: 'playpause',
+      options: [
+        { value: 'playpause', label: 'Play/Pausa' },
+        { value: 'next', label: 'Successivo' },
+        { value: 'prev', label: 'Precedente' },
+        { value: 'stop', label: 'Stop' },
+        { value: 'mute', label: 'Muto' },
+        { value: 'volumeup', label: 'Alza volume' },
+        { value: 'volumedown', label: 'Abbassa volume' }
+      ]
+    },
+    { key: 'repeat', label: 'Ripetizioni', type: 'number', help: 'intero 1..20 (default 1)', min: 1, max: 20, step: 1, default: 1 }
+  ],
   validate(params) {
     resolveMediaKey(params?.key);
     checkRepeat(params?.repeat);
@@ -77,6 +97,10 @@ export const hotkeyAction = {
   platforms: [...SUPPORTED_PLATFORMS],
   category: 'input',
   paramsHelp: { keys: 'es. "ctrl+alt+del", "win+l", "f5"', repeat: 'intero 1..20 (default 1)' },
+  fields: [
+    { key: 'keys', label: 'Tasti', type: 'hotkey', help: 'es. "ctrl+alt+del", "win+l", "f5"', placeholder: 'ctrl+shift+m', required: true },
+    { key: 'repeat', label: 'Ripetizioni', type: 'number', help: 'intero 1..20 (default 1)', min: 1, max: 20, step: 1, default: 1 }
+  ],
   validate(params) {
     parseHotkey(params?.keys);
     checkRepeat(params?.repeat);
@@ -101,6 +125,9 @@ export const textAction = {
   platforms: [...SUPPORTED_PLATFORMS],
   category: 'input',
   paramsHelp: { text: 'testo da digitare (max 2000 caratteri)' },
+  fields: [
+    { key: 'text', label: 'Testo', type: 'textarea', help: 'testo da digitare (max 2000 caratteri)', required: true }
+  ],
   validate(params) {
     const text = params?.text;
     if (typeof text !== 'string' || text.length === 0) throw new Error('parametro "text" mancante');

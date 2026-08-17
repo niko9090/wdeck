@@ -10,6 +10,8 @@ export const sequenceAction = {
     steps: 'array di azioni { type, params }',
     continueOnError: 'boolean (default false)'
   },
+  advanced: true,
+  fields: [],
   validate(params) {
     const steps = params?.steps;
     if (!Array.isArray(steps) || steps.length === 0) {

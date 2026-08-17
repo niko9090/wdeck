@@ -75,6 +75,25 @@ export const powerAction = {
     command: Object.keys(POWER_COMMANDS).join(' | '),
     delaySeconds: 'ritardo prima di spegnimento/riavvio, 0..600 (default 0)'
   },
+  fields: [
+    {
+      key: 'command',
+      label: 'Comando',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'lock', label: 'Blocca la sessione' },
+        { value: 'sleep', label: 'Sospendi il PC' },
+        { value: 'hibernate', label: 'Iberna il PC' },
+        { value: 'shutdown', label: 'Spegni il PC' },
+        { value: 'restart', label: 'Riavvia il PC' },
+        { value: 'signout', label: 'Disconnetti l\'utente' },
+        { value: 'abort', label: 'Annulla spegnimento programmato' },
+        { value: 'monitor-off', label: 'Spegni lo schermo' }
+      ]
+    },
+    { key: 'delaySeconds', label: 'Ritardo (secondi)', type: 'number', help: 'ritardo prima di spegnimento/riavvio', min: 0, max: 600, step: 1, default: 0 }
+  ],
   validate(params) {
     if (!POWER_COMMANDS[params?.command]) {
       throw new Error(`parametro "command" non valido: atteso uno fra ${Object.keys(POWER_COMMANDS).join(', ')}`);

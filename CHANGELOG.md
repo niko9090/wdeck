@@ -3,6 +3,36 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.7.3] - 2026-08-17
+
+Editor dei pulsanti **guidato**: niente più JSON scritto a mano per i casi
+normali. Ogni azione dichiara i propri campi e l'editor mostra menù, cursori e
+interruttori adatti; il JSON resta a disposizione sotto un interruttore
+"Avanzato", per chi vuole metterci mano.
+
+### Aggiunto
+
+- **Form guidato per i parametri delle azioni.** Ogni azione espone uno schema
+  di campi (`fields`: etichetta, tipo, opzioni, limiti, default). L'editor lo
+  traduce in controlli veri: menù a tendina per le scelte (es. il tasto media),
+  campi numerici con minimo/massimo (volume, luminosità), interruttori per gli
+  on/off, cattura della combinazione per le hotkey, elenco di profili e pagine
+  per la navigazione. Vale sia per la pressione normale sia per quella prolungata.
+- **Modalità "Avanzato (JSON)".** Un interruttore rivela il JSON grezzo dei
+  parametri, sincronizzato con il form: per i parametri complessi (sequenze,
+  intestazioni HTTP) l'editor lo segnala e rimanda qui.
+
+### Corretto
+
+- I valori delle opzioni tipati (booleani, numeri: `mute`, `qos`...) ora
+  vengono salvati con il tipo giusto e non come stringa, così l'host non li
+  rifiuta.
+
+### Note
+
+Le azioni con parametri a lista o a oggetto (`sequence`, gli header di `http`)
+restano configurabili solo dalla modalità JSON, che l'editor indica quando serve.
+
 ## [0.7.2] - 2026-08-17
 
 Aggiornamento con **finestra di avanzamento**: cliccando "Scarica e installa"

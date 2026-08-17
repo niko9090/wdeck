@@ -981,6 +981,225 @@ function bindIconPicker({ onPick }) {
 }
 
 /** Apre l'editor di un bottone esistente o di una cella vuota. */
+// ---------------------------------------------------------------- form guidato
+
+// I due editor d'azione aperti nel pannello (pressione normale e prolungata):
+// li teniamo qui perche' il salvataggio, che e' una funzione a parte, deve
+// poterne leggere i parametri correnti.
+let edMainCtl = null;
+let edHoldCtl = null;
+
+/**
+ * Opzioni dinamiche per i campi che puntano al deck stesso: l'elenco dei
+ * profili o delle pagine, che non e' fisso ma dipende da cosa ha configurato
+ * l'utente. Cosi' "vai alla pagina" e' un menu' a tendina, non un id da sapere.
+ */
+function dynamicFieldOptions(type) {
+  const deck = state.deck;
+  if (!deck) return [];
+  if (type === 'profile') return (deck.profiles ?? []).map((p) => ({ value: p.id, label: p.name || p.id }));
+  const prof = (deck.profiles ?? []).find((p) => p.id === state.profileId) ?? (deck.profiles ?? [])[0];
+  return (prof?.pages ?? []).map((pg) => ({ value: pg.id, label: pg.name || pg.id }));
+}
+
+/**
+ * Cattura una combinazione di tasti in un campo "hotkey": premendo
+ * ctrl+shift+k il campo si riempie da solo con "ctrl+shift+k", senza doverla
+ * scrivere a mano. I soli modificatori si ignorano finche' non arriva un tasto.
+ */
+function captureHotkey(event, input, setParam) {
+  const key = event.key.toLowerCase();
+  if (['control', 'shift', 'alt', 'meta'].includes(key)) return;
+  event.preventDefault();
+  const mods = [];
+  if (event.ctrlKey) mods.push('ctrl');
+  if (event.shiftKey) mods.push('shift');
+  if (event.altKey) mods.push('alt');
+  if (event.metaKey) mods.push('win');
+  const nome = key === ' ' ? 'space' : key;
+  const combo = [...mods, nome].join('+');
+  input.value = combo;
+  setParam(combo);
+}
+
+/**
+ * Costruisce il controllo di un singolo campo (etichetta + input) a partire
+ * dallo schema dichiarato dall'azione, e lo collega all'oggetto `params`:
+ * ogni modifica scrive nella chiave giusta, senza toccare le altre (cosi' i
+ * parametri avanzati messi a mano nel JSON non vengono cancellati).
+ */
+function buildFieldControl(field, params, onSync) {
+  const wrap = document.createElement('label');
+  wrap.className = field.type === 'toggle' ? 'field checkbox' : 'field';
+  const current = params[field.key] ?? field.default ?? (field.type === 'toggle' ? false : '');
+
+  const setParam = (val) => {
+    if (val === '' || val === undefined || val === null) delete params[field.key];
+    else params[field.key] = val;
+    onSync?.();
+  };
+
+  let input;
+  switch (field.type) {
+    case 'number':
+      input = document.createElement('input');
+      input.type = 'number';
+      if (field.min != null) input.min = String(field.min);
+      if (field.max != null) input.max = String(field.max);
+      if (field.step != null) input.step = String(field.step);
+      input.value = current === '' ? '' : String(current);
+      input.addEventListener('input', () => setParam(input.value === '' ? '' : Number(input.value)));
+      break;
+    case 'toggle':
+      input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = Boolean(current);
+      input.addEventListener('change', () => { params[field.key] = input.checked; onSync?.(); });
+      break;
+    case 'textarea':
+      input = document.createElement('textarea');
+      input.rows = 3;
+      input.spellcheck = false;
+      input.value = current ?? '';
+      if (field.placeholder) input.placeholder = field.placeholder;
+      input.addEventListener('input', () => setParam(input.value));
+      break;
+    case 'select':
+    case 'profile':
+    case 'page': {
+      input = document.createElement('select');
+      input.className = 'select wide';
+      const opts = field.type === 'select' ? (field.options ?? []) : dynamicFieldOptions(field.type);
+      // Le opzioni possono avere valori tipati (booleani, numeri: es. mute=true,
+      // qos=1). Il DOM li rende stringa, quindi al cambio si risale al valore
+      // originale confrontando la forma stringa, per non salvare "true" al posto
+      // di true. Un sentinello distingue "nessuna scelta" da un valore vuoto.
+      const NIENTE = '__none__';
+      if (!field.required) input.appendChild(new Option(t('edit.optNone'), NIENTE));
+      for (const o of opts) input.appendChild(new Option(o.label, String(o.value)));
+
+      let effettivo = current;
+      if ((effettivo === '' || effettivo == null) && field.required && opts.length) {
+        // un campo obbligatorio parte dalla prima opzione, cosi' un pulsante
+        // salvato senza toccarlo non nasce gia' invalido
+        effettivo = opts[0].value;
+        setParam(effettivo);
+      }
+      input.value = (effettivo === '' || effettivo == null) ? NIENTE : String(effettivo);
+
+      input.addEventListener('change', () => {
+        if (input.value === NIENTE) { setParam(''); return; }
+        const scelto = opts.find((o) => String(o.value) === input.value);
+        setParam(scelto ? scelto.value : input.value);
+      });
+      break;
+    }
+    case 'hotkey':
+      input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = field.placeholder ?? 'es. ctrl+shift+m';
+      input.value = current ?? '';
+      input.addEventListener('input', () => setParam(input.value));
+      input.addEventListener('keydown', (event) => captureHotkey(event, input, setParam));
+      break;
+    default:
+      input = document.createElement('input');
+      input.type = 'text';
+      if (field.placeholder) input.placeholder = field.placeholder;
+      input.value = current ?? '';
+      input.addEventListener('input', () => setParam(input.value));
+  }
+
+  const labelSpan = document.createElement('span');
+  labelSpan.textContent = field.required ? `${field.label} *` : field.label;
+  if (field.type === 'toggle') {
+    wrap.append(input, labelSpan);
+  } else {
+    wrap.append(labelSpan, input);
+  }
+  if (field.help) {
+    const help = document.createElement('span');
+    help.className = 'field-help';
+    help.textContent = field.help;
+    wrap.appendChild(help);
+  }
+  return wrap;
+}
+
+/**
+ * Disegna il form guidato di un'azione dentro `container`, seminando i valori
+ * di default per un pulsante nuovo. Se l'azione non ha campi semplici mostra
+ * una nota che rimanda alla modalita' avanzata.
+ */
+function renderActionFields(container, spec, params, onSync) {
+  container.innerHTML = '';
+  if (!spec) return;
+  const fields = Array.isArray(spec.fields) ? spec.fields : [];
+  if (fields.length === 0) {
+    const nota = document.createElement('p');
+    nota.className = 'sheet-hint';
+    nota.textContent = spec.advanced ? t('edit.advancedOnly') : t('edit.noParams');
+    container.appendChild(nota);
+    return;
+  }
+  for (const field of fields) {
+    // I default vanno scritti subito, non solo quando l'utente tocca il campo:
+    // un pulsante nuovo salvato senza toccare nulla deve comunque avere i suoi
+    // parametri, altrimenti l'host lo rifiuta.
+    if (params[field.key] === undefined && field.default !== undefined) params[field.key] = field.default;
+    container.appendChild(buildFieldControl(field, params, onSync));
+  }
+  if (spec.advanced) {
+    const nota = document.createElement('p');
+    nota.className = 'sheet-hint';
+    nota.textContent = t('edit.advancedExtra');
+    container.appendChild(nota);
+  }
+}
+
+/**
+ * Collega un editor d'azione: menu' del tipo, form guidato, interruttore
+ * "Avanzato" che rivela il JSON. Il JSON e il form restano sincronizzati; la
+ * fonte autorevole al salvataggio e' il JSON solo se il pannello e' aperto.
+ */
+function wireActionEditor({ typeSelect, fieldsBox, advToggle, advBox, textarea, allActions, initialParams }) {
+  let params = initialParams && typeof initialParams === 'object' && !Array.isArray(initialParams)
+    ? { ...initialParams }
+    : {};
+  const spec = () => allActions.find((a) => a.type === typeSelect.value) ?? null;
+  const syncTextarea = () => { textarea.value = JSON.stringify(params, null, 2); };
+  const rebuild = () => { renderActionFields(fieldsBox, spec(), params, syncTextarea); syncTextarea(); };
+
+  advToggle?.addEventListener('click', () => {
+    const mostra = advBox.hidden;
+    advBox.hidden = !mostra;
+    advToggle.setAttribute('aria-expanded', String(mostra));
+  });
+  textarea.addEventListener('change', () => {
+    try {
+      const parsed = JSON.parse(textarea.value || '{}');
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        params = parsed;
+        rebuild();
+      }
+    } catch { /* JSON incompleto: si lascia stare, il salvataggio segnalera' l'errore */ }
+  });
+  typeSelect.addEventListener('change', () => {
+    // cambiata azione, i vecchi parametri non c'entrano piu': si riparte pulito
+    params = {};
+    rebuild();
+  });
+
+  rebuild();
+
+  return {
+    readParams() {
+      if (advBox && !advBox.hidden) return JSON.parse(textarea.value || '{}');
+      return params;
+    }
+  };
+}
+
 async function editButton(buttonId, cell) {
   const [groups, customIcons] = await Promise.all([loadActions(), loadCustomIcons()]);
   const page = currentPage();
@@ -1028,8 +1247,11 @@ async function editButton(buttonId, cell) {
       <label class="field"><span>${t('edit.label')}</span><input id="ed-label" type="text" maxlength="48" value="${escapeHtml(draft.label)}" /></label>
       <label class="field"><span>${t('edit.action')}</span><select id="ed-type" class="select wide">${options}</select></label>
       <p id="ed-desc" class="sheet-hint"></p>
-      <label class="field"><span>${t('edit.params')}</span><textarea id="ed-params" rows="5" spellcheck="false">${escapeHtml(JSON.stringify(draft.action.params ?? {}, null, 2))}</textarea></label>
-      <p id="ed-help" class="sheet-hint"></p>
+      <div id="ed-fields" class="ed-fields"></div>
+      <button type="button" class="btn ghost small ed-adv-toggle" id="ed-adv-toggle" aria-expanded="false">${t('edit.advanced')}</button>
+      <div id="ed-adv" hidden>
+        <label class="field"><span>${t('edit.paramsJson')}</span><textarea id="ed-params" rows="5" spellcheck="false">${escapeHtml(JSON.stringify(draft.action.params ?? {}, null, 2))}</textarea></label>
+      </div>
 
       <h3 class="sheet-section">${t('edit.icon')}</h3>
       ${iconPickerHtml(draft.icon, customIcons)}
@@ -1037,7 +1259,13 @@ async function editButton(buttonId, cell) {
       <h3 class="sheet-section">${t('edit.hold')}</h3>
       <p class="sheet-hint">${t('edit.holdHint')}</p>
       <label class="field"><span>${t('edit.action')}</span><select id="ed-hold-type" class="select wide">${holdOptions}</select></label>
-      <label class="field" id="ed-hold-params-field"><span>${t('edit.holdParams')}</span><textarea id="ed-hold-params" rows="3" spellcheck="false">${escapeHtml(JSON.stringify(draft.holdAction?.params ?? {}, null, 2))}</textarea></label>
+      <div id="ed-hold-params-field">
+        <div id="ed-hold-fields" class="ed-fields"></div>
+        <button type="button" class="btn ghost small ed-adv-toggle" id="ed-hold-adv-toggle" aria-expanded="false">${t('edit.advanced')}</button>
+        <div id="ed-hold-adv" hidden>
+          <label class="field"><span>${t('edit.paramsJson')}</span><textarea id="ed-hold-params" rows="3" spellcheck="false">${escapeHtml(JSON.stringify(draft.holdAction?.params ?? {}, null, 2))}</textarea></label>
+        </div>
+      </div>
 
       <div class="field-row">
         <label class="field"><span>${t('edit.kind')}</span><select id="ed-kind" class="select">
@@ -1057,23 +1285,44 @@ async function editButton(buttonId, cell) {
     ]
   });
 
-  // I parametri della pressione prolungata servono solo se c'e' un'azione.
+  bindIconPicker({ onPick: (value) => { draft.icon = value; } });
+
+  // Editor guidato dell'azione principale: form dai campi dichiarati, con il
+  // JSON sotto l'interruttore "Avanzato".
+  const typeSelect = el('ed-type');
+  edMainCtl = wireActionEditor({
+    typeSelect,
+    fieldsBox: el('ed-fields'),
+    advToggle: el('ed-adv-toggle'),
+    advBox: el('ed-adv'),
+    textarea: el('ed-params'),
+    allActions,
+    initialParams: draft.action.params
+  });
+
+  // Stesso editor per la pressione prolungata; i suoi campi hanno senso solo
+  // quando un'azione e' scelta.
   const holdSelect = el('ed-hold-type');
+  edHoldCtl = wireActionEditor({
+    typeSelect: holdSelect,
+    fieldsBox: el('ed-hold-fields'),
+    advToggle: el('ed-hold-adv-toggle'),
+    advBox: el('ed-hold-adv'),
+    textarea: el('ed-hold-params'),
+    allActions,
+    initialParams: draft.holdAction?.params
+  });
   const aggiornaHold = () => {
     el('ed-hold-params-field').hidden = holdSelect.value === '';
   };
   holdSelect.addEventListener('change', aggiornaHold);
   aggiornaHold();
 
-  bindIconPicker({ onPick: (value) => { draft.icon = value; } });
-
-  const typeSelect = el('ed-type');
+  // La descrizione dell'azione e le opzioni che dipendono dal tipo (cursore,
+  // stato reale) restano gestite a parte dal form dei parametri.
   const describe = () => {
     const spec = allActions.find((a) => a.type === typeSelect.value);
     el('ed-desc').textContent = spec?.description ?? '';
-    el('ed-help').innerHTML = spec && Object.keys(spec.paramsHelp ?? {}).length
-      ? Object.entries(spec.paramsHelp).map(([k, v]) => `<code>${escapeHtml(k)}</code>: ${escapeHtml(v)}`).join('<br />')
-      : t('edit.noParams');
     if (spec?.control === 'slider') el('ed-kind').value = 'slider';
 
     // Spuntare "mostra lo stato" su un'azione che non sa dichiararlo non
@@ -1087,23 +1336,29 @@ async function editButton(buttonId, cell) {
 }
 
 async function saveButtonDraft(draft, existing) {
+  // I parametri arrivano dal form guidato; se il pannello "Avanzato" e' aperto
+  // la fonte diventa il JSON, che qui puo' lanciare se malformato.
   let params;
   try {
-    params = JSON.parse(el('ed-params').value || '{}');
+    params = edMainCtl.readParams();
   } catch (err) {
     toast(t('edit.paramsInvalid', { message: err.message }), 'err');
     return;
   }
+  if (!params || typeof params !== 'object' || Array.isArray(params)) params = {};
 
   const holdType = el('ed-hold-type').value;
   let holdAction = null;
   if (holdType !== '') {
+    let holdParams;
     try {
-      holdAction = { type: holdType, params: JSON.parse(el('ed-hold-params').value || '{}') };
+      holdParams = edHoldCtl.readParams();
     } catch (err) {
       toast(t('edit.holdParamsInvalid', { message: err.message }), 'err');
       return;
     }
+    if (!holdParams || typeof holdParams !== 'object' || Array.isArray(holdParams)) holdParams = {};
+    holdAction = { type: holdType, params: holdParams };
   }
 
   const kind = el('ed-kind').value;

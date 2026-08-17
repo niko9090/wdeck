@@ -19,6 +19,9 @@ export const miaAzione = {
   description: 'Attiva una scena su OBS Studio tramite obs-websocket.',
   platforms: ['*'],               // oppure ['win32'], ['darwin'], ...
   paramsHelp: { scene: 'nome della scena' },
+  fields: [                       // schema per il form guidato dell'editor
+    { key: 'scene', label: 'Scena', type: 'text', required: true, help: 'nome della scena' }
+  ],
   stub: false,                    // true se non e' ancora implementata
 
   validate(params) {},            // lancia Error se i parametri sono sbagliati
@@ -28,6 +31,28 @@ export const miaAzione = {
   async readState(params, ctx) {}
 };
 ```
+
+### Lo schema dei parametri (`fields`)
+
+`fields` e' cio' che permette all'editor di mostrare un **form guidato** invece
+di un box JSON. Ogni voce descrive un parametro:
+
+| campo | a cosa serve |
+|---|---|
+| `key` | il nome del parametro in `params` |
+| `label` | etichetta breve (in italiano) |
+| `type` | `text`, `number`, `select`, `toggle`, `textarea`, `hotkey`, `profile`, `page` |
+| `help` | nota breve sotto il campo (opzionale) |
+| `required` | `true` se `validate` lancia quando il parametro manca |
+| `default` | valore iniziale per un pulsante nuovo |
+| `min` / `max` / `step` | solo per `type: 'number'` |
+| `options` | solo per `type: 'select'`: `[{ value, label }]` (il `value` e' il valore letterale che l'azione riceve, anche booleano o numerico) |
+
+Un parametro a **lista** o a **oggetto** (es. gli header di `http`, i passi di
+una `sequence`) non entra in un campo semplice: si omette da `fields` e si
+aggiunge `advanced: true`, cosi' l'editor rimanda alla modalita' JSON. Un'azione
+senza parametri usa `fields: []`. `GET /api/actions` riporta `fields` e
+`advanced` per ogni azione.
 
 ### Il contesto `ctx`
 

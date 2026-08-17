@@ -58,6 +58,25 @@ export const browserAction = {
     newWindow: 'true per forzare una nuova finestra',
     kiosk: 'true per lo schermo intero senza barre'
   },
+  fields: [
+    { key: 'url', label: 'Indirizzo', type: 'text', help: 'indirizzo da aprire', placeholder: 'https://esempio.it', required: true },
+    {
+      key: 'browser',
+      label: 'Browser',
+      type: 'select',
+      help: 'default: browser di sistema',
+      options: [
+        { value: 'chrome', label: 'Google Chrome' },
+        { value: 'edge', label: 'Microsoft Edge' },
+        { value: 'firefox', label: 'Mozilla Firefox' }
+      ]
+    },
+    { key: 'path', label: 'Percorso eseguibile', type: 'text', help: 'se non e\' in una posizione standard' },
+    { key: 'profile', label: 'Profilo', type: 'profile', help: 'nome della cartella profilo (Chrome/Edge)', placeholder: 'Profile 2' },
+    { key: 'incognito', label: 'Finestra anonima', type: 'toggle' },
+    { key: 'newWindow', label: 'Nuova finestra', type: 'toggle' },
+    { key: 'kiosk', label: 'Schermo intero (chiosco)', type: 'toggle' }
+  ],
   validate(params) {
     if (typeof params?.url !== 'string' || params.url.trim() === '') throw new Error('parametro "url" mancante');
     if (params?.browser !== undefined && !BROWSERS[params.browser] && !params?.path) {
@@ -132,6 +151,24 @@ export const gameAction = {
     path: 'percorso dell\'eseguibile, richiesto solo con store "exe"',
     args: 'array di stringhe passate al gioco (solo con "exe")'
   },
+  advanced: true,
+  fields: [
+    {
+      key: 'store',
+      label: 'Store',
+      type: 'select',
+      default: 'steam',
+      options: [
+        { value: 'steam', label: 'Steam' },
+        { value: 'epic', label: 'Epic' },
+        { value: 'gog', label: 'GOG' },
+        { value: 'xbox', label: 'Xbox' },
+        { value: 'exe', label: 'Eseguibile' }
+      ]
+    },
+    { key: 'id', label: 'ID gioco', type: 'text', help: 'identificativo nello store (per Steam l\'AppID numerico)' },
+    { key: 'path', label: 'Percorso eseguibile', type: 'text', help: 'richiesto solo con store "exe"' }
+  ],
   validate(params) {
     const store = params?.store ?? 'steam';
     if (!['steam', 'epic', 'gog', 'xbox', 'exe'].includes(store)) {
@@ -204,6 +241,14 @@ export const rdpAction = {
     height: 'altezza in pixel (con fullscreen false)',
     admin: 'true per la sessione di amministrazione (/admin)'
   },
+  fields: [
+    { key: 'host', label: 'PC remoto', type: 'text', help: 'nome o indirizzo, con porta opzionale', placeholder: 'pc-studio:3389' },
+    { key: 'file', label: 'File .rdp', type: 'text', help: 'percorso di un file .rdp gia\' configurato (alternativa a "host")' },
+    { key: 'fullscreen', label: 'Schermo intero', type: 'toggle' },
+    { key: 'width', label: 'Larghezza', type: 'number', help: 'in pixel (con schermo intero disattivo)', min: 200, max: 10000, step: 1 },
+    { key: 'height', label: 'Altezza', type: 'number', help: 'in pixel (con schermo intero disattivo)', min: 200, max: 10000, step: 1 },
+    { key: 'admin', label: 'Sessione amministrazione', type: 'toggle' }
+  ],
   validate(params) {
     if (!params?.host && !params?.file) throw new Error('rdp richiede "host" oppure "file"');
     if (params?.host !== undefined && typeof params.host !== 'string') throw new Error('parametro "host" non valido');

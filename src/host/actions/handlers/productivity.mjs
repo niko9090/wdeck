@@ -32,6 +32,26 @@ export const clipboardAction = {
     mode: 'copy | paste | clear (default copy)',
     text: 'testo da mettere negli appunti (max 20000 caratteri)'
   },
+  fields: [
+    {
+      key: 'mode',
+      label: 'Modalita\'',
+      type: 'select',
+      default: 'copy',
+      options: [
+        { value: 'copy', label: 'Copia' },
+        { value: 'paste', label: 'Copia e incolla' },
+        { value: 'clear', label: 'Svuota appunti' }
+      ]
+    },
+    {
+      key: 'text',
+      label: 'Testo',
+      type: 'textarea',
+      help: 'testo da mettere negli appunti (max 20000 caratteri)',
+      required: true
+    }
+  ],
   validate(params) {
     const mode = params?.mode ?? 'copy';
     if (!['copy', 'paste', 'clear'].includes(mode)) {
@@ -93,6 +113,22 @@ export const folderAction = {
   platforms: ['win32'],
   category: 'productivity',
   paramsHelp: { path: 'percorso della cartella, oppure una shell: location', select: 'percorso di un file da selezionare' },
+  fields: [
+    {
+      key: 'path',
+      label: 'Cartella',
+      type: 'text',
+      help: 'percorso della cartella, oppure una shell: location',
+      placeholder: 'C:\\Progetti oppure shell:Downloads',
+      required: true
+    },
+    {
+      key: 'select',
+      label: 'File da selezionare',
+      type: 'text',
+      help: 'percorso di un file da selezionare'
+    }
+  ],
   validate(params) {
     if (typeof params?.path !== 'string' || params.path.trim() === '') throw new Error('parametro "path" mancante');
     const target = params.path.trim();
@@ -137,6 +173,30 @@ export const screenshotAction = {
     directory: 'cartella di destinazione (default: %USERPROFILE%\\Pictures\\Wdeck)',
     clipboard: 'true per copiare la schermata anche negli appunti'
   },
+  fields: [
+    {
+      key: 'mode',
+      label: 'Modalita\'',
+      type: 'select',
+      default: 'screen',
+      options: [
+        { value: 'screen', label: 'Schermo intero' },
+        { value: 'area', label: 'Area a scelta' }
+      ]
+    },
+    {
+      key: 'directory',
+      label: 'Cartella di destinazione',
+      type: 'text',
+      help: 'default: %USERPROFILE%\\Pictures\\Wdeck'
+    },
+    {
+      key: 'clipboard',
+      label: 'Copia anche negli appunti',
+      type: 'toggle',
+      help: 'copia la schermata anche negli appunti'
+    }
+  ],
   validate(params) {
     const mode = params?.mode ?? 'screen';
     if (!['screen', 'area'].includes(mode)) throw new Error('parametro "mode" non valido: atteso screen o area');
@@ -186,6 +246,28 @@ export const notifyAction = {
   platforms: ['win32'],
   category: 'productivity',
   paramsHelp: { title: 'titolo della notifica', message: 'testo della notifica', sound: 'true per il suono di sistema' },
+  fields: [
+    {
+      key: 'title',
+      label: 'Titolo',
+      type: 'text',
+      help: 'titolo della notifica',
+      placeholder: 'Wdeck'
+    },
+    {
+      key: 'message',
+      label: 'Messaggio',
+      type: 'text',
+      help: 'testo della notifica (max 500 caratteri)',
+      required: true
+    },
+    {
+      key: 'sound',
+      label: 'Suono di sistema',
+      type: 'toggle',
+      help: 'riproduce il suono di sistema'
+    }
+  ],
   validate(params) {
     if (typeof params?.message !== 'string' || params.message.trim() === '') throw new Error('parametro "message" mancante');
     if (params.message.length > 500) throw new Error('parametro "message" troppo lungo (max 500 caratteri)');

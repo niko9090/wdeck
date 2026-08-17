@@ -33,6 +33,23 @@ export const mqttAction = {
     stateTopic: 'topic da leggere per lo stato del controllo (opzionale)',
     onValue: 'valore che significa "acceso" sul topic di stato (default "ON")'
   },
+  fields: [
+    { key: 'topic', label: 'Topic', type: 'text', required: true, help: 'Topic su cui pubblicare', placeholder: 'casa/salotto/luce/set' },
+    { key: 'payload', label: 'Messaggio', type: 'text', help: 'Contenuto del messaggio (default stringa vuota)' },
+    {
+      key: 'qos',
+      label: 'QoS',
+      type: 'select',
+      default: 0,
+      options: [
+        { value: 0, label: '0' },
+        { value: 1, label: '1' }
+      ]
+    },
+    { key: 'retain', label: 'Retain', type: 'toggle', help: 'Lascia il messaggio sul broker' },
+    { key: 'stateTopic', label: 'Topic di stato', type: 'text', help: 'Topic da leggere per lo stato del controllo (opzionale)' },
+    { key: 'onValue', label: 'Valore "acceso"', type: 'text', help: 'Valore che significa "acceso" sul topic di stato', default: 'ON' }
+  ],
   validate(params) {
     if (typeof params?.topic !== 'string' || params.topic.trim() === '') {
       throw new Error('parametro "topic" mancante');
@@ -111,6 +128,40 @@ export const spotifyAction = {
     device: 'id del dispositivo (per "transfer")',
     uri: 'URI Spotify (per "play_uri"), es. spotify:playlist:...'
   },
+  fields: [
+    {
+      key: 'command',
+      label: 'Comando',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'play', label: 'Riprendi' },
+        { value: 'pause', label: 'Pausa' },
+        { value: 'playpause', label: 'Riproduci o metti in pausa' },
+        { value: 'next', label: 'Brano successivo' },
+        { value: 'previous', label: 'Brano precedente' },
+        { value: 'volume', label: 'Volume' },
+        { value: 'shuffle', label: 'Riproduzione casuale' },
+        { value: 'repeat', label: 'Ripetizione' },
+        { value: 'transfer', label: 'Sposta la riproduzione' },
+        { value: 'play_uri', label: 'Riproduci un contesto' }
+      ]
+    },
+    { key: 'value', label: 'Volume', type: 'number', help: 'Volume 0..100 (per "volume")', min: 0, max: 100, step: 1 },
+    {
+      key: 'mode',
+      label: 'Ripetizione',
+      type: 'select',
+      help: 'Modalita\' di ripetizione (per "repeat")',
+      options: [
+        { value: 'off', label: 'Spenta' },
+        { value: 'context', label: 'Contesto' },
+        { value: 'track', label: 'Brano' }
+      ]
+    },
+    { key: 'device', label: 'Dispositivo', type: 'text', help: 'Id del dispositivo (per "transfer")' },
+    { key: 'uri', label: 'URI', type: 'text', help: 'URI Spotify (per "play_uri")', placeholder: 'spotify:playlist:...' }
+  ],
   validate(params) {
     const spec = SPOTIFY_COMMANDS[params?.command];
     if (!spec) {
@@ -175,6 +226,25 @@ export const discordAction = {
     content: 'testo del messaggio (per "message", max 2000 caratteri)',
     username: 'nome mostrato al posto di quello del webhook (opzionale)'
   },
+  fields: [
+    {
+      key: 'command',
+      label: 'Comando',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'message', label: 'Manda messaggio' },
+        { value: 'mute', label: 'Microfono muto' },
+        { value: 'unmute', label: 'Microfono attivo' },
+        { value: 'toggle-mute', label: 'Inverti microfono' },
+        { value: 'deafen', label: 'Cuffie mute' },
+        { value: 'undeafen', label: 'Cuffie attive' },
+        { value: 'toggle-deafen', label: 'Inverti cuffie' }
+      ]
+    },
+    { key: 'content', label: 'Messaggio', type: 'textarea', help: 'Testo del messaggio (per "message", max 2000 caratteri)' },
+    { key: 'username', label: 'Nome mostrato', type: 'text', help: 'Nome mostrato al posto di quello del webhook (opzionale)' }
+  ],
   validate(params) {
     const command = params?.command;
     if (command !== 'message' && !DISCORD_VOICE.includes(command)) {

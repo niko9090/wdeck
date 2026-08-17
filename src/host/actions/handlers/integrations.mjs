@@ -211,6 +211,31 @@ export const obsAction = {
     source: 'nome della sorgente audio o dell\'elemento di scena',
     itemId: 'id numerico dell\'elemento di scena (per "toggle-source")'
   },
+  fields: [
+    {
+      key: 'command',
+      label: 'Comando',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'scene', label: 'Cambia scena' },
+        { value: 'start-record', label: 'Avvia registrazione' },
+        { value: 'stop-record', label: 'Ferma registrazione' },
+        { value: 'toggle-record', label: 'Avvia/ferma registrazione' },
+        { value: 'pause-record', label: 'Pausa registrazione' },
+        { value: 'start-stream', label: 'Avvia diretta' },
+        { value: 'stop-stream', label: 'Ferma diretta' },
+        { value: 'toggle-stream', label: 'Avvia/ferma diretta' },
+        { value: 'toggle-mute', label: 'Muto sorgente audio' },
+        { value: 'toggle-source', label: 'Mostra/nascondi sorgente' },
+        { value: 'virtual-cam', label: 'Webcam virtuale on/off' },
+        { value: 'replay', label: 'Salva replay' }
+      ]
+    },
+    { key: 'scene', label: 'Scena', type: 'text', help: 'Nome della scena (per "scene" e "toggle-source")', placeholder: 'Scena 1' },
+    { key: 'source', label: 'Sorgente', type: 'text', help: 'Nome della sorgente audio o dell\'elemento di scena', placeholder: 'Microfono' },
+    { key: 'itemId', label: 'ID elemento', type: 'number', help: 'Id numerico dell\'elemento di scena (per "toggle-source")', step: 1 }
+  ],
   validate(params) {
     const spec = OBS_COMMANDS[params?.command];
     if (!spec) throw new Error(`parametro "command" non valido: atteso uno fra ${Object.keys(OBS_COMMANDS).join(', ')}`);
@@ -278,6 +303,11 @@ export const homeAssistantAction = {
     entity: 'entita\' su cui agire, es. "light.salotto"',
     data: 'oggetto con i parametri aggiuntivi del servizio'
   },
+  advanced: true,
+  fields: [
+    { key: 'service', label: 'Servizio', type: 'text', required: true, help: 'Formato dominio.servizio, es. "light.turn_on"', placeholder: 'light.turn_on' },
+    { key: 'entity', label: 'Entita\'', type: 'text', help: 'Entita\' su cui agire, es. "light.salotto"', placeholder: 'light.salotto' }
+  ],
   validate(params) {
     if (typeof params?.service !== 'string' || !/^[a-z_]+\.[a-z_]+$/.test(params.service)) {
       throw new Error('parametro "service" non valido: atteso "dominio.servizio", es. "light.turn_on"');
@@ -326,6 +356,33 @@ export const hueAction = {
     saturation: 'saturazione 0..254',
     scene: 'id della scena da attivare (solo con target "group")'
   },
+  fields: [
+    {
+      key: 'target',
+      label: 'Bersaglio',
+      type: 'select',
+      default: 'light',
+      options: [
+        { value: 'light', label: 'Luce' },
+        { value: 'group', label: 'Gruppo' }
+      ]
+    },
+    { key: 'id', label: 'ID', type: 'number', required: true, help: 'Numero della luce o del gruppo sul bridge', min: 1, step: 1 },
+    {
+      key: 'on',
+      label: 'Stato',
+      type: 'select',
+      options: [
+        { value: true, label: 'Accendi' },
+        { value: false, label: 'Spegni' },
+        { value: 'toggle', label: 'Inverti' }
+      ]
+    },
+    { key: 'brightness', label: 'Luminosita\'', type: 'number', help: 'Luminosita\' 0..100', min: 0, max: 100, step: 1 },
+    { key: 'hue', label: 'Tonalita\'', type: 'number', help: 'Tonalita\' 0..65535', min: 0, max: 65535, step: 1 },
+    { key: 'saturation', label: 'Saturazione', type: 'number', help: 'Saturazione 0..254', min: 0, max: 254, step: 1 },
+    { key: 'scene', label: 'Scena', type: 'text', help: 'Id della scena da attivare (solo con target "group")' }
+  ],
   validate(params) {
     if (params?.id === undefined) throw new Error('parametro "id" mancante');
     // "id" finisce nel percorso dell'URL del bridge: deve essere un intero

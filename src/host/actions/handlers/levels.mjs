@@ -60,6 +60,22 @@ function makeVolumeAction({ type, target, title, description, category }) {
       delta: 'variazione relativa -100..100, es. -5 per abbassare',
       mute: 'true | false | "toggle"'
     },
+    fields: [
+      { key: 'value', label: 'Livello', type: 'number', help: 'livello assoluto 0..100 (inviato dallo slider)', min: 0, max: 100, step: 1, default: 50 },
+      { key: 'set', label: 'Livello fisso', type: 'number', help: 'livello assoluto 0..100 (alternativa a value, per un pulsante fisso)', min: 0, max: 100, step: 1 },
+      { key: 'delta', label: 'Variazione', type: 'number', help: 'variazione relativa -100..100, es. -5 per abbassare', min: -100, max: 100, step: 1 },
+      {
+        key: 'mute',
+        label: 'Muto',
+        type: 'select',
+        help: 'accendi, spegni o alterna il muto',
+        options: [
+          { value: true, label: 'Accendi' },
+          { value: false, label: 'Spegni' },
+          { value: 'toggle', label: 'Alterna' }
+        ]
+      }
+    ],
     validate(params) {
       validateLevelParams(params);
       if (params?.mute !== undefined && ![true, false, 'toggle'].includes(params.mute)) {
@@ -147,6 +163,11 @@ export const brightnessAction = {
     set: 'livello assoluto 0..100',
     delta: 'variazione relativa -100..100'
   },
+  fields: [
+    { key: 'value', label: 'Livello', type: 'number', help: 'livello assoluto 0..100 (inviato dallo slider)', min: 0, max: 100, step: 1, default: 50 },
+    { key: 'set', label: 'Livello fisso', type: 'number', help: 'livello assoluto 0..100', min: 0, max: 100, step: 1 },
+    { key: 'delta', label: 'Variazione', type: 'number', help: 'variazione relativa -100..100', min: -100, max: 100, step: 1 }
+  ],
   validate: validateLevelParams,
   describe(params) {
     const { mode, amount } = resolveMode(params);

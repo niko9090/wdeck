@@ -27,6 +27,10 @@ export const focusAction = {
     process: 'nome del processo, es. "chrome" o "Code" (ammette * come jolly)',
     title: 'porzione del titolo della finestra, es. "Posta in arrivo"'
   },
+  fields: [
+    { key: 'process', label: 'Processo', type: 'text', help: 'nome del processo, es. "chrome" o "Code" (ammette * come jolly)', placeholder: 'chrome' },
+    { key: 'title', label: 'Titolo finestra', type: 'text', help: 'porzione del titolo della finestra', placeholder: 'Posta in arrivo' }
+  ],
   validate(params) {
     if (!params?.process && !params?.title) {
       throw new Error('focus richiede almeno uno fra "process" e "title"');
@@ -65,6 +69,20 @@ export const desktopAction = {
     name: 'nome del desktop assegnato in Windows',
     direction: '"next" | "prev" (alternativa a index/name)'
   },
+  fields: [
+    { key: 'index', label: 'Numero desktop', type: 'number', help: 'numero del desktop, 1-based', min: 1, step: 1, placeholder: '1' },
+    { key: 'name', label: 'Nome desktop', type: 'text', help: 'nome del desktop assegnato in Windows' },
+    {
+      key: 'direction',
+      label: 'Direzione',
+      type: 'select',
+      help: 'alternativa a numero/nome',
+      options: [
+        { value: 'next', label: 'Successivo' },
+        { value: 'prev', label: 'Precedente' }
+      ]
+    }
+  ],
   validate(params) {
     const hasTarget = params?.index !== undefined || params?.name !== undefined;
     const hasDirection = params?.direction !== undefined;
@@ -120,6 +138,23 @@ export const windowCommandAction = {
   platforms: ['win32'],
   category: 'window',
   paramsHelp: { command: 'show-desktop | minimize-all | close | snap-left | snap-right | maximize | switch' },
+  fields: [
+    {
+      key: 'command',
+      label: 'Comando',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'show-desktop', label: 'Mostra il desktop' },
+        { value: 'minimize-all', label: 'Minimizza tutte le finestre' },
+        { value: 'close', label: 'Chiudi la finestra attiva' },
+        { value: 'snap-left', label: 'Affianca a sinistra' },
+        { value: 'snap-right', label: 'Affianca a destra' },
+        { value: 'maximize', label: 'Massimizza' },
+        { value: 'switch', label: 'Finestra successiva' }
+      ]
+    }
+  ],
   validate(params) {
     if (!WINDOW_COMMANDS[params?.command]) {
       throw new Error(`parametro "command" non valido: atteso uno fra ${Object.keys(WINDOW_COMMANDS).join(', ')}`);

@@ -77,6 +77,40 @@ export const httpAction = {
     body: 'stringa (opzionale)',
     timeoutMs: 'intero 100..30000 (default 5000)'
   },
+  advanced: true,
+  fields: [
+    {
+      key: 'url',
+      label: 'URL',
+      type: 'text',
+      help: 'URL http/https',
+      placeholder: 'https://example.com/webhook',
+      required: true
+    },
+    {
+      key: 'method',
+      label: 'Metodo',
+      type: 'select',
+      default: 'GET',
+      options: ALLOWED_METHODS.map((m) => ({ value: m, label: m }))
+    },
+    {
+      key: 'body',
+      label: 'Corpo',
+      type: 'textarea',
+      help: 'corpo della richiesta (opzionale)'
+    },
+    {
+      key: 'timeoutMs',
+      label: 'Timeout (ms)',
+      type: 'number',
+      help: 'intero 100..30000',
+      min: 100,
+      max: 30000,
+      step: 1,
+      default: 5000
+    }
+  ],
   validate(params) {
     if (typeof params?.url !== 'string' || params.url.trim() === '') throw new Error('parametro "url" mancante');
     let parsed;

@@ -26,6 +26,30 @@ export const launchAction = {
     cwd: 'directory di lavoro (opzionale)',
     foreground: 'true (default) porta la finestra in primo piano dopo l\'avvio'
   },
+  advanced: true,
+  fields: [
+    {
+      key: 'path',
+      label: 'Eseguibile',
+      type: 'text',
+      help: 'percorso eseguibile (deve essere in allowExec)',
+      placeholder: 'C:\\Windows\\notepad.exe',
+      required: true
+    },
+    {
+      key: 'cwd',
+      label: 'Directory di lavoro',
+      type: 'text',
+      help: 'directory di lavoro (opzionale)'
+    },
+    {
+      key: 'foreground',
+      label: 'In primo piano',
+      type: 'toggle',
+      help: 'porta la finestra in primo piano dopo l\'avvio',
+      default: true
+    }
+  ],
   validate(params) {
     if (typeof params?.path !== 'string' || params.path.trim() === '') throw new Error('parametro "path" mancante');
     assertArgs(params?.args);
@@ -76,6 +100,16 @@ export const urlAction = {
   platforms: [...SUPPORTED_PLATFORMS],
   category: 'browser',
   paramsHelp: { url: 'URL completo, es. https://example.com' },
+  fields: [
+    {
+      key: 'url',
+      label: 'URL',
+      type: 'text',
+      help: 'URL completo (lo schema deve essere in allowUrlSchemes)',
+      placeholder: 'https://example.com',
+      required: true
+    }
+  ],
   validate(params) {
     if (typeof params?.url !== 'string' || params.url.trim() === '') throw new Error('parametro "url" mancante');
   },
@@ -109,6 +143,32 @@ export const scriptAction = {
     cwd: 'directory di lavoro (opzionale)',
     timeoutMs: 'intero 1000..120000 (default 30000)'
   },
+  advanced: true,
+  fields: [
+    {
+      key: 'path',
+      label: 'Script',
+      type: 'text',
+      help: 'percorso dello script .ps1/.bat/.cmd/.py/.mjs (deve essere in allowExec)',
+      required: true
+    },
+    {
+      key: 'cwd',
+      label: 'Directory di lavoro',
+      type: 'text',
+      help: 'directory di lavoro (opzionale)'
+    },
+    {
+      key: 'timeoutMs',
+      label: 'Timeout (ms)',
+      type: 'number',
+      help: 'intero 1000..120000',
+      min: 1000,
+      max: 120000,
+      step: 1,
+      default: 30000
+    }
+  ],
   validate(params) {
     if (typeof params?.path !== 'string' || params.path.trim() === '') throw new Error('parametro "path" mancante');
     assertArgs(params?.args);

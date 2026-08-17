@@ -6,6 +6,7 @@ export const noopAction = {
   description: 'Non fa nulla. Utile come segnaposto o per bottoni puramente decorativi.',
   platforms: ['*'],
   category: 'deck',
+  fields: [],
   describe: () => 'nessuna azione',
   async run() {
     return { ok: true, detail: 'noop' };
@@ -19,6 +20,9 @@ export const delayAction = {
   platforms: ['*'],
   category: 'deck',
   paramsHelp: { ms: 'intero 0..10000' },
+  fields: [
+    { key: 'ms', label: 'Millisecondi', type: 'number', help: 'intero 0..10000', min: 0, max: 10000, step: 1, required: true, default: 500 }
+  ],
   validate(params) {
     const ms = Number(params?.ms);
     if (!Number.isFinite(ms) || ms < 0 || ms > 10000) {
@@ -41,6 +45,10 @@ export const navigateAction = {
   platforms: ['*'],
   category: 'deck',
   paramsHelp: { profile: 'id profilo (opzionale)', page: 'id pagina (opzionale)' },
+  fields: [
+    { key: 'profile', label: 'Profilo', type: 'profile', help: 'id profilo (opzionale)' },
+    { key: 'page', label: 'Pagina', type: 'page', help: 'id pagina (opzionale)' }
+  ],
   validate(params) {
     if (!params?.profile && !params?.page) {
       throw new Error('navigate richiede almeno uno fra "profile" e "page"');
@@ -70,6 +78,9 @@ export const stubAction = {
   category: 'deck',
   stub: true,
   paramsHelp: { note: 'testo libero mostrato nella risposta' },
+  fields: [
+    { key: 'note', label: 'Nota', type: 'text', help: 'testo libero mostrato nella risposta' }
+  ],
   describe: (params) => `stub: ${params?.note ?? 'non implementata'}`,
   async run(params) {
     return {

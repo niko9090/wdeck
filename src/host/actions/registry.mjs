@@ -121,6 +121,13 @@ export class ActionRegistry {
         control: h.control ?? 'button',
         platforms: h.platforms,
         paramsHelp: h.paramsHelp,
+        // Schema dei parametri per il form guidato dell'editor: ogni voce e' un
+        // campo (etichetta, tipo, opzioni, limiti). Vuoto = azione senza
+        // parametri o solo avanzata.
+        fields: Array.isArray(h.fields) ? h.fields : [],
+        // Vero quando l'azione ha parametri che non stanno in un campo semplice
+        // (oggetti annidati, liste): l'editor invita a usare la modalita' JSON.
+        advanced: h.advanced === true,
         stub: h.stub === true,
         // L'editor lo usa per dire quali azioni sanno mostrare lo stato reale.
         reportsState: typeof h.readState === 'function'

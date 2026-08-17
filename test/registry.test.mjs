@@ -70,7 +70,7 @@ test('registry: types() e list() sono ordinati e serializzabili', () => {
   assert.equal(list.length, 2);
   assert.deepEqual(
     Object.keys(list[0]).sort(),
-    ['category', 'control', 'description', 'paramsHelp', 'platforms', 'reportsState', 'stub', 'title', 'type']
+    ['advanced', 'category', 'control', 'description', 'fields', 'paramsHelp', 'platforms', 'reportsState', 'stub', 'title', 'type']
   );
   assert.doesNotThrow(() => JSON.stringify(list));
 });
