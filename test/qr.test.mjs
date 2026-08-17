@@ -246,6 +246,14 @@ test('qr: la resa a caratteri usa due righe di moduli per riga di testo', () => 
   assert.equal(righe[0].length, size + 4);
 });
 
+test('qr: la resa a caratteri usa lo stesso margine dell\'SVG', () => {
+  // Margine 4 di default, come qrSvg: una zona di quiete piu' stretta rende
+  // meno affidabile la lettura.
+  const righe = qrText('https://esempio.it').split('\n');
+  const { size } = encodeQr('https://esempio.it');
+  assert.equal(righe[0].length, size + 8, 'quattro moduli di quiete per lato');
+});
+
 // ------------------------------------------------------------------ mDNS
 
 test('mdns: i nomi sono codificati in etichette lunghezza+byte', () => {

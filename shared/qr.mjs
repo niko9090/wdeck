@@ -586,7 +586,7 @@ export function qrSvg(text, { level = 'M', scale = 6, margin = 4, dark = '#00000
  * @param {{level?: string, margin?: number}} [options]
  * @returns {string}
  */
-export function qrText(text, { level = 'M', margin = 2 } = {}) {
+export function qrText(text, { level = 'M', margin = 4 } = {}) {
   const { modules, size } = encodeQr(text, { level });
   const at = (row, col) => {
     const r = row - margin;

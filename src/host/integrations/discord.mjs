@@ -126,9 +126,16 @@ export async function connectDiscordRpc(config, { paths = ipcPaths() } = {}) {
   });
 
   const waitFor = (match, label) => new Promise((resolve, reject) => {
-    const waiter = { match, resolve, reject };
+    let timer;
+    // Il timer va spento quando l'attesa si conclude, altrimenti scatterebbe
+    // piu' tardi su una promessa gia' risolta - innocuo, ma si accumula.
+    const waiter = {
+      match,
+      resolve: (value) => { clearTimeout(timer); resolve(value); },
+      reject: (err) => { clearTimeout(timer); reject(err); }
+    };
     waiters.push(waiter);
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       const index = waiters.indexOf(waiter);
       if (index !== -1) waiters.splice(index, 1);
       reject(new Error(`Discord: nessuna risposta a ${label} entro ${timeoutMs} ms`));
@@ -179,7 +186,14 @@ export async function connectDiscordRpc(config, { paths = ipcPaths() } = {}) {
   // L'autenticazione serve alla maggior parte dei comandi; senza token si prova
   // lo stesso, cosi' chi ha solo bisogno di leggere non deve configurarla.
   if (config.accessToken) {
-    await api.command('AUTHENTICATE', { access_token: config.accessToken });
+    try {
+      await api.command('AUTHENTICATE', { access_token: config.accessToken });
+    } catch (err) {
+      // Un'autenticazione fallita lascerebbe il socket IPC aperto a tenere vivo
+      // il loop degli eventi: va chiuso prima di propagare l'errore.
+      api.close();
+      throw err;
+    }
   }
   return api;
 }

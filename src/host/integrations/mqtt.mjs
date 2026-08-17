@@ -103,6 +103,9 @@ function packet(type, flags, body) {
  * @returns {Buffer}
  */
 export function buildConnect({ clientId = 'wdeck', username, password, keepAlive = 30, clean = true } = {}) {
+  // MQTT 3.1.1 non ammette una password senza nome utente: il flag della
+  // password implica quello dell'utente, e un broker rifiuterebbe il pacchetto.
+  if (password && !username) throw new Error('MQTT: una password richiede un nome utente');
   let flags = clean ? 0x02 : 0x00;
   if (username) flags |= 0x80;
   if (password) flags |= 0x40;
@@ -242,6 +245,7 @@ export function connectMqtt(config = {}) {
     const fail = (err) => {
       if (closed) return;
       closed = true;
+      clearTimeout(timer);
       for (const waiter of waiters.splice(0)) waiter.reject(err);
       socket.destroy();
       reject(err);
@@ -255,9 +259,11 @@ export function connectMqtt(config = {}) {
     });
 
     socket.on('close', () => {
-      const err = new Error('connessione MQTT chiusa dal broker');
-      for (const waiter of waiters.splice(0)) waiter.reject(err);
-      closed = true;
+      // Se il broker accetta il TCP e poi chiude senza CONNACK (auth rifiutata,
+      // sovraccarico), la promessa esterna deve comunque fallire: `fail` rifiuta
+      // sia le attese interne sia `connectMqtt(...)`, che altrimenti resterebbe
+      // appesa per sempre. A connessione gia' risolta il reject e' un no-op.
+      fail(new Error('connessione MQTT chiusa dal broker'));
     });
 
     socket.on('data', (chunk) => {
@@ -281,9 +287,16 @@ export function connectMqtt(config = {}) {
 
     /** Attende il primo pacchetto che soddisfa il predicato. */
     const waitFor = (match, { label = 'risposta del broker', ms = timeoutMs } = {}) => new Promise((res, rej) => {
-      const waiter = { match, resolve: res, reject: rej };
+      let t;
+      // Il timer va spento quando l'attesa si risolve o viene rifiutata,
+      // altrimenti scatterebbe piu' tardi su una promessa gia' conclusa.
+      const waiter = {
+        match,
+        resolve: (value) => { clearTimeout(t); res(value); },
+        reject: (err) => { clearTimeout(t); rej(err); }
+      };
       waiters.push(waiter);
-      const t = setTimeout(() => {
+      t = setTimeout(() => {
         const index = waiters.indexOf(waiter);
         if (index !== -1) waiters.splice(index, 1);
         rej(new Error(`MQTT: nessuna ${label} entro ${ms} ms`));
@@ -351,6 +364,10 @@ export function connectMqtt(config = {}) {
             label: `messaggio su "${topic}"`,
             ms
           });
+          // Se l'iscrizione fallisce non arriveremo mai ad attendere questo
+          // messaggio: un gestore vuoto evita che la sua rejection, quando il
+          // socket cade o scade il timeout, resti orfana.
+          attesaMessaggio.catch(() => {});
           socket.write(buildSubscribe({ packetId, topic }));
 
           const suback = await attesaConferma;

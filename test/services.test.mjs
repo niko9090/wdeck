@@ -233,6 +233,26 @@ test('mqtt: un broker irraggiungibile non blocca l\'host', async () => {
   );
 });
 
+test('mqtt: un broker che chiude durante l\'handshake fa fallire, non appende', async (t) => {
+  // Accetta il TCP ma chiude senza mai mandare il CONNACK (auth rifiutata,
+  // sovraccarico): senza il rifiuto esplicito `await connectMqtt(...)` non
+  // tornerebbe mai. Se il test scade e' proprio quel blocco a essere tornato.
+  const server = net.createServer((socket) => {
+    socket.on('data', () => socket.end());
+  });
+  const port = await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
+  t.after(() => new Promise((r) => server.close(r)));
+
+  await assert.rejects(
+    () => connectMqtt({ host: '127.0.0.1', port, timeoutMs: 2000 }),
+    /connessione MQTT chiusa dal broker|broker MQTT/
+  );
+});
+
+test('mqtt: una password senza nome utente e\' rifiutata', () => {
+  assert.throws(() => buildConnect({ password: 'segreto' }), /richiede un nome utente/);
+});
+
 // ------------------------------------------------------------------ Spotify
 
 const spotifyConfig = { clientId: 'id-1', clientSecret: 'segreto', refreshToken: 'refresh-1' };
@@ -265,6 +285,30 @@ test('spotify: il token viene rinnovato dal refresh token e riusato finche\' val
   assert.equal(await accessToken(spotifyConfig, { fetchImpl: impl }), 'abc');
   assert.equal(await accessToken(spotifyConfig, { fetchImpl: impl }), 'abc');
   assert.equal(calls.length, 1, 'il secondo accesso usa il token in cache');
+});
+
+test('spotify: due richieste concorrenti condividono un solo rinnovo', async () => {
+  forgetTokens();
+  let chiamate = 0;
+  // Un piccolo ritardo perche' le due chiamate si sovrappongano davvero: senza
+  // la deduplica ognuna farebbe partire il proprio refresh.
+  const impl = async () => {
+    chiamate += 1;
+    await new Promise((r) => setTimeout(r, 20));
+    return {
+      ok: true, status: 200,
+      json: async () => ({ access_token: 'uno', expires_in: 3600 }),
+      text: async () => ''
+    };
+  };
+
+  const [a, b] = await Promise.all([
+    accessToken(spotifyConfig, { fetchImpl: impl }),
+    accessToken(spotifyConfig, { fetchImpl: impl })
+  ]);
+  assert.equal(a, 'uno');
+  assert.equal(b, 'uno');
+  assert.equal(chiamate, 1, 'una sola richiesta di rete per due chiamate concorrenti');
 });
 
 test('spotify: un token scaduto viene rinnovato', async () => {
@@ -328,6 +372,13 @@ test('spotify: il volume viaggia come parametro di query', async () => {
 
   await runSpotifyCommand(spotifyConfig, 'volume', { value: 35 }, { fetchImpl: impl });
   assert.ok(calls.some((c) => c.url.includes('volume_percent=35')), calls.map((c) => c.url).join(' '));
+});
+
+test('spotify: un volume non numerico e\' rifiutato invece di diventare NaN', () => {
+  assert.throws(() => SPOTIFY_COMMANDS.volume.build({}), /numero/);
+  assert.throws(() => SPOTIFY_COMMANDS.volume.build({ value: 'forte' }), /numero/);
+  // Un valore valido resta clampato fra 0 e 100.
+  assert.equal(SPOTIFY_COMMANDS.volume.build({ value: 250 }).query.volume_percent, 100);
 });
 
 test('spotify: "nessun dispositivo attivo" e\' spiegato, non un 404', async () => {
