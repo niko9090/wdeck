@@ -558,6 +558,26 @@ body {
 .sheet-hint code { color: var(--accent); }
 .sheet-text { margin: 0 0 8px; font-size: 15px; line-height: 1.5; }
 
+/* Barra di avanzamento dell'aggiornamento: riempita fase per fase dagli
+   eventi WebSocket dell'host. */
+.update-bar {
+  position: relative;
+  height: 10px;
+  margin: 14px 0 10px;
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.update-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 200ms ease;
+}
+
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1 1 0; min-width: 0; }
 .field.checkbox { display: flex; align-items: center; gap: 10px; }

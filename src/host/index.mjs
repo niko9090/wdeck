@@ -358,7 +358,17 @@ export function createHost(options = {}) {
         const esito = await applyUpdate({
           release: stato.latest,
           exePath: supporto.exePath,
-          onProgress: (fase) => logger.debug?.(`[wdeck] aggiornamento: ${fase}`)
+          // Ogni fase viene inoltrata via WebSocket: e' cosi' che il client
+          // disegna la barra di avanzamento invece di restare fermo su "attendi".
+          onProgress: (fase, dettaglio = {}) => {
+            logger.debug?.(`[wdeck] aggiornamento: ${fase}`);
+            hub.broadcastUpdateProgress?.({
+              phase: fase,
+              done: dettaglio.fatti,
+              total: dettaglio.totale ?? dettaglio.size,
+              version: stato.latest.version
+            });
+          }
         });
         logger.info?.(`[wdeck] versione ${esito.version} installata; la precedente resta in ${path.basename(esito.backup)}`);
         return { ok: true, from: host.version, restart: true, ...esito };

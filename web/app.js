@@ -432,6 +432,7 @@ function handleMessage(msg) {
     case MSG.event:
       if (msg.event === 'press') renderLastAction(msg.data);
       if (msg.event === 'update') showUpdate(msg.data);
+      if (msg.event === 'update-progress') renderUpdateProgress(msg.data);
       break;
 
     case MSG.error:
@@ -1596,34 +1597,111 @@ async function checkUpdate({ force = false } = {}) {
   if (force && !res.data.update?.available) toast(t('settings.noUpdate'), 'ok');
 }
 
-/**
- * Scarica e installa la versione nuova. Chiede conferma perche' da qui in poi
- * l'host si sostituisce e riparte: chi sta usando il deck lo vede sparire per
- * qualche secondo, e vale la pena saperlo prima.
- */
-async function applyUpdate() {
-  const versione = state.update?.latest?.version ?? '';
-  if (!confirm(t('settings.installConfirm', { version: versione }))) return;
+/** Dimensione in byte resa leggibile: 84 MB invece di 88080384. */
+function formatBytes(n) {
+  const num = Number(n) || 0;
+  if (num < 1024) return `${num} B`;
+  const kib = num / 1024;
+  if (kib < 1024) return `${kib.toFixed(0)} KB`;
+  return `${(kib / 1024).toFixed(1)} MB`;
+}
 
-  const bottone = el('set-apply-update');
-  if (bottone) {
-    bottone.disabled = true;
-    bottone.textContent = t('settings.installing');
-  }
-  toast(t('settings.installing'), 'ok');
+/**
+ * Scarica e installa la versione nuova. Prima chiede conferma con un pannello
+ * in stile (non l'alert grezzo del browser), poi lo trasforma in una finestra
+ * di avanzamento: l'host riferisce ogni fase via WebSocket e qui diventa una
+ * barra. Da qui in poi l'host si sostituisce e riparte, quindi vale la pena
+ * saperlo prima e vederlo mentre accade.
+ */
+function applyUpdate() {
+  const versione = state.update?.latest?.version ?? '';
+  openSheet({
+    title: t('settings.installTitle'),
+    body: `<p class="sheet-text">${t('settings.installConfirm', { version: escapeHtml(versione) })}</p>`,
+    actions: [
+      { label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() },
+      { label: t('settings.installUpdate'), kind: 'primary', onClick: () => startUpdate(versione) }
+    ]
+  });
+}
+
+/** Passa il pannello dalla conferma alla barra di avanzamento e lancia il POST. */
+async function startUpdate(versione) {
+  // Il pannello diventa una finestra di caricamento: niente pulsanti su cui
+  // cliccare mentre scarica, solo la barra e la fase in corso.
+  openSheet({
+    title: t('settings.installTitle'),
+    body: `
+      <p class="sheet-text" id="upd-phase">${t('settings.installing')}</p>
+      <div class="update-bar"><div class="update-bar-fill" id="upd-fill"></div></div>
+      <p class="sheet-hint" id="upd-detail"></p>
+    `
+  });
 
   const res = await api(ENDPOINTS.updateApply, { method: 'POST' });
   if (!res.ok) {
-    if (bottone) {
-      bottone.disabled = false;
-      bottone.textContent = t('settings.installUpdate');
-    }
-    toast(res.data?.message ?? t('settings.installFailed'), 'err');
+    // La riga della firma non integra o l'impronta diversa arrivano qui: si
+    // torna alla conferma, spiegando cosa non ha funzionato.
+    openSheet({
+      title: t('settings.installTitle'),
+      body: `<p class="sheet-text">${escapeHtml(res.data?.error?.message ?? res.data?.message ?? t('settings.installFailed'))}</p>`,
+      actions: [
+        { label: t('sheet.close'), kind: 'ghost', onClick: () => closeSheet() },
+        { label: t('settings.installUpdate'), kind: 'primary', onClick: () => startUpdate(versione) }
+      ]
+    });
     return;
   }
-  // L'host si sta riavviando: la riconnessione automatica fara' il resto.
+
+  // 200 = binario sostituito: l'host sta per ripartire. Portiamo la barra a
+  // fondo corsa, poi chiudiamo il pannello: la riconnessione automatica
+  // ricarica il deck da sola quando il nuovo processo e' su.
+  renderUpdateProgress({ phase: 'riavvio' });
   toast(t('settings.installed', { version: res.data.version ?? versione }), 'ok');
-  closeSheet();
+  setTimeout(() => {
+    if (el('upd-fill')) closeSheet(); // solo se e' ancora il pannello di avanzamento
+  }, 2500);
+}
+
+/**
+ * Disegna l'avanzamento dell'aggiornamento dentro il pannello aperto.
+ * Riceve le fasi cosi' come le manda l'host in `update-apply.mjs`.
+ * @param {{phase: string, done?: number, total?: number}} avanzamento
+ */
+function renderUpdateProgress({ phase, done, total } = {}) {
+  const fill = el('upd-fill');
+  const fase = el('upd-phase');
+  const dettaglio = el('upd-detail');
+  if (!fill || !fase) return; // il pannello di avanzamento non e' aperto
+
+  let percento = null;
+  let testo = '';
+  let nota = '';
+  switch (phase) {
+    case 'download':
+      percento = 3;
+      testo = t('settings.updDownloading');
+      if (total) nota = formatBytes(total);
+      break;
+    case 'progresso':
+      percento = total ? Math.min(90, Math.round((done / total) * 90)) : null;
+      testo = t('settings.updDownloading');
+      nota = total ? `${formatBytes(done)} / ${formatBytes(total)}` : formatBytes(done);
+      break;
+    case 'verifica':
+      percento = 93; testo = t('settings.updVerifying'); break;
+    case 'firma':
+      percento = 96; testo = t('settings.updSigning'); break;
+    case 'sostituzione':
+      percento = 99; testo = t('settings.updInstalling'); break;
+    case 'riavvio':
+      percento = 100; testo = t('settings.updRestarting'); break;
+    default:
+      break;
+  }
+  if (percento != null) fill.style.width = `${percento}%`;
+  if (testo) fase.textContent = testo;
+  if (dettaglio) dettaglio.textContent = nota;
 }
 
 function showUpdate(status) {

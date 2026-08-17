@@ -405,6 +405,17 @@ export function createHub(host) {
       broadcastFull({ type: MSG.event, event: 'update', data: status });
     },
 
+    /**
+     * Riferisce l'avanzamento di un aggiornamento in corso, fase per fase, cosi'
+     * il client puo' mostrare una barra invece di un'attesa muta. Va ai soli
+     * client "full": e' l'app da cui si e' chiesto l'aggiornamento a volerlo
+     * vedere, non i telecomandi.
+     * @param {{phase: string, done?: number, total?: number, version?: string}} avanzamento
+     */
+    broadcastUpdateProgress(avanzamento) {
+      broadcastFull({ type: MSG.event, event: 'update-progress', data: avanzamento });
+    },
+
     close() {
       for (const conn of [...fullClients, ...liteClients]) conn.close(1001, 'server in chiusura');
       fullClients.clear();

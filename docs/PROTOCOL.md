@@ -581,9 +581,13 @@ Tre cose che questo endpoint fa e che vale la pena sapere:
 Ogni esito, riuscito o no, finisce nel registro di audit (`update-applied`,
 `update-failed`) con chi l'ha chiesto e da dove.
 
-L'host non scarica e non installa nulla: si limita a segnalarlo. Quando un
-aggiornamento compare, i client ricevono anche l'evento WebSocket
-`{ "type": "event", "event": "update" }`.
+Quando un aggiornamento compare, i client ricevono l'evento WebSocket
+`{ "type": "event", "event": "update" }`. Mentre `POST /api/update/apply` e' in
+corso, l'host trasmette anche l'avanzamento fase per fase con
+`{ "type": "event", "event": "update-progress", "data": { "phase", "done?", "total?", "version" } }`,
+cosi' il client puo' mostrare una barra invece di un'attesa muta. Le fasi, in
+ordine, sono: `download`, `progresso` (con `done`/`total` in byte), `verifica`,
+`firma`, `sostituzione`.
 
 ---
 
@@ -604,7 +608,7 @@ viene chiusa con codice `1008`.
 | `status` | `states`, `changed` | stato reale dei controlli: dopo `auth-ok`, dopo ogni pressione e a ogni variazione letta dal sistema |
 | `navigate` | `activeProfile`, `activePage` | cambio pagina/profilo |
 | `ack` | `requestId`, `ok`, `result` | risposta a `press` / `navigate` / `reload` |
-| `event` | `event: "press"`, `data` | notifica broadcast di una pressione |
+| `event` | `event`, `data` | broadcast di `press`, `update` (nuova versione) e `update-progress` (avanzamento dell'installazione) |
 | `error` | `code`, `message`, `requestId?` | errore applicativo |
 | `pong` | `requestId`, `ts` | risposta a `ping` |
 

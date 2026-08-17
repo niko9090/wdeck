@@ -3,6 +3,27 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.7.2] - 2026-08-17
+
+Aggiornamento con **finestra di avanzamento**: cliccando "Scarica e installa"
+compare un pannello in stile con una barra che avanza fase per fase, invece
+dell'avviso grezzo del browser e di un'attesa muta.
+
+### Aggiunto
+
+- **Barra di avanzamento dell'aggiornamento.** La conferma non e' piu' l'`alert`
+  del browser ma un pannello dell'app; una volta accettato, diventa una finestra
+  di caricamento che mostra le fasi reali - scaricamento (con i MB), verifica
+  dell'impronta, verifica della firma, installazione, riavvio. L'host trasmette
+  ogni fase via WebSocket (`event: "update-progress"`), il client la disegna.
+
+### Note
+
+L'installazione resta **per-utente** (in `%LOCALAPPDATA%\Programs\Wdeck`), come
+fanno Chrome, VS Code e Discord: nessun UAC, l'aggiornamento si applica da solo
+e riparte. E' la scelta che tiene l'auto-update senza chiedere i diritti di
+amministratore a ogni versione.
+
 ## [0.7.1] - 2026-08-17
 
 Correzione del riavvio dopo l'aggiornamento e firma delle release con
