@@ -26,18 +26,33 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
+  // Nessun .catch sull'addAll: se il precache fallisce l'installazione deve
+  // fallire con lui, cosi' il vecchio service worker (funzionante) resta attivo
+  // e il browser ritenta piu' tardi. Attivare uno shell incompleto romperebbe
+  // l'offline in silenzio.
   event.waitUntil(
     caches.open(CACHE)
-      .then((cache) => cache.addAll(SHELL).catch(() => undefined))
+      .then((cache) => cache.addAll(SHELL))
       .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
+    caches.keys().then((keys) => {
+      const stale = keys.filter((k) => k !== CACHE && k.startsWith('wdeck-shell-'));
+      return Promise.all(stale.map((k) => caches.delete(k)))
+        .then(() => self.clients.claim())
+        .then(() => {
+          // Solo quando c'era gia' una build precedente (aggiornamento vero, non
+          // primo avvio) si avvisano le pagine: la strategia stale-while-revalidate
+          // servirebbe altrimenti il vecchio app.js/index.html senza dirlo a nessuno.
+          if (stale.length === 0) return undefined;
+          return self.clients.matchAll({ type: 'window' }).then((clients) => {
+            for (const client of clients) client.postMessage({ type: 'wdeck-shell-updated' });
+          });
+        });
+    })
   );
 });
 
