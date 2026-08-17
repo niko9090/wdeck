@@ -156,10 +156,18 @@ export function firmaEseguibile(exe, env = process.env) {
     throw new Error('signtool.exe non trovato: installa il Windows SDK o imposta WDECK_SIGNTOOL');
   }
   execFileSync(signtool, costruisciArgomentiFirma(exe, opts), { stdio: 'pipe' });
-  // La stessa verifica che l'host fara' prima di sostituirsi: se non passa qui,
-  // non passerebbe nemmeno la' e l'aggiornamento si fermerebbe.
-  execFileSync(signtool, ['verify', '/pa', exe], { stdio: 'pipe' });
-  return { firmato: true, signtool };
+  // Verifica con la stessa tolleranza del pin dell'host: la firma dev'esserci ed
+  // essere integra - `Valid` (fidata dal sistema) o `UnknownError` (self-signed,
+  // catena non fidata ma firma intatta). `signtool verify /pa` invece pretende
+  // la fiducia del sistema e boccerebbe un self-signed, che qui e' normale.
+  const stato = execFileSync('powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-Command',
+    '(Get-AuthenticodeSignature -LiteralPath $Env:WDECK_EXE_FIRMATO).Status'
+  ], { env: { ...env, WDECK_EXE_FIRMATO: exe }, encoding: 'utf8' }).trim();
+  if (stato !== 'Valid' && stato !== 'UnknownError') {
+    throw new Error(`la firma non risulta applicata (stato ${stato || 'ignoto'})`);
+  }
+  return { firmato: true, signtool, stato };
 }
 
 function walk(dir, base = dir, out = []) {
@@ -236,6 +244,23 @@ function main() {
   const exe = path.join(ROOT, 'release', 'wdeck.exe');
   fs.mkdirSync(path.dirname(exe), { recursive: true });
   fs.copyFileSync(process.execPath, exe);
+
+  // `node.exe` e' firmato da Node. Se prima gli si appende il blob (postject) e
+  // poi si prova a firmarlo, signtool fallisce con 0x800700C1: trova una firma
+  // che non corrisponde piu' e non riesce a sostituirla. La firma di Node va
+  // tolta ORA, da un binario ancora pulito, prima di postject. Serve solo se poi
+  // firmeremo noi; senza, si lascia com'e' (postject la invalida comunque).
+  if (process.env.WDECK_SIGN_PFX || process.env.WDECK_SIGN_THUMBPRINT) {
+    const signtool = trovaSigntool();
+    if (signtool) {
+      console.log('  tolgo la firma di Node dalla base...');
+      try {
+        execFileSync(signtool, ['remove', '/s', exe], { stdio: 'pipe' });
+      } catch {
+        // Nessuna firma da togliere: non e' un problema, si prosegue.
+      }
+    }
+  }
 
   console.log('  scrivo il blob nel binario (postject)...');
   execFileSync(

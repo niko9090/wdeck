@@ -19,11 +19,13 @@ import {
   applyUpdate,
   cleanupOldExe,
   downloadTo,
+  FIRMA_ATTESA_SHA1,
   parseChecksums,
   restart,
   selfUpdateSupport,
   sha256File,
-  SUFFISSO_VECCHIO
+  SUFFISSO_VECCHIO,
+  verificaFirmaWindows
 } from '../src/host/update-apply.mjs';
 
 function tempDir() {
@@ -33,17 +35,18 @@ function tempDir() {
 const sha = (testo) => crypto.createHash('sha256').update(testo).digest('hex');
 
 /**
- * Finto `spawn` per la verifica Authenticode: restituisce lo stato indicato
- * senza chiamare PowerShell (la verifica scatta solo su win32, dove i test
- * girano su binari finti che non sarebbero firmati).
+ * Finto `spawn` per la verifica Authenticode: restituisce lo stato e l'impronta
+ * indicati senza chiamare PowerShell (la verifica scatta solo su win32, dove i
+ * test girano su binari finti). Di default l'impronta e' quella attesa dal pin,
+ * cosi' basta variare lo stato per collaudare i vari esiti.
  */
-function firmaFinta(stato) {
+function firmaFinta(stato, impronta = FIRMA_ATTESA_SHA1) {
   return () => {
     const proc = new EventEmitter();
     proc.stdout = new EventEmitter();
     proc.stderr = new EventEmitter();
     setImmediate(() => {
-      proc.stdout.emit('data', Buffer.from(`${stato}\n`));
+      proc.stdout.emit('data', Buffer.from(`${stato}\r\n${impronta}\r\n`));
       proc.emit('close', stato === 'Valid' ? 0 : 1);
     });
     return proc;
@@ -215,26 +218,80 @@ test('aggiornamento: impronta diversa -> non si tocca nulla', async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('aggiornamento: firma non valida -> non si sostituisce nulla', { skip: process.platform !== 'win32' }, async () => {
+test('aggiornamento: firma assente -> non si sostituisce nulla', { skip: process.platform !== 'win32' }, async () => {
   const dir = tempDir();
   const exe = path.join(dir, 'wdeck.exe');
   fs.writeFileSync(exe, 'EXE VECCHIO');
 
-  // Impronta corretta ma firma assente: la verifica Authenticode deve bloccare
-  // tutto prima del rename, lasciando l'eseguibile in uso intatto.
+  // Impronta corretta del file (SHA-256) ma eseguibile non firmato: la verifica
+  // deve bloccare tutto prima del rename, lasciando l'eseguibile in uso intatto.
   await assert.rejects(
     () => applyUpdate({
       release: release(),
       exePath: exe,
       fetchImpl: finteRisposte({ contenuto: 'EXE NUOVO' }),
-      spawnImpl: firmaFinta('NotSigned')
+      spawnImpl: firmaFinta('NotSigned', '')
     }),
-    /firma Authenticode non valida/
+    /firma non attesa/
   );
 
   assert.equal(fs.readFileSync(exe, 'utf8'), 'EXE VECCHIO', 'l\'eseguibile in uso non va toccato');
   assert.equal(fs.existsSync(`${exe}${SUFFISSO_VECCHIO}`), false, 'nessuna copia a meta\' strada');
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('aggiornamento: un self-signed con l\'impronta attesa viene accettato', { skip: process.platform !== 'win32' }, async () => {
+  const dir = tempDir();
+  const exe = path.join(dir, 'wdeck.exe');
+  fs.writeFileSync(exe, 'EXE VECCHIO');
+
+  // Un certificato self-signed da' stato "UnknownError" (catena non fidata) ma
+  // firma integra: col pinning, se l'impronta e' quella del progetto, va bene.
+  const esito = await applyUpdate({
+    release: release(),
+    exePath: exe,
+    fetchImpl: finteRisposte({ contenuto: 'EXE NUOVO' }),
+    spawnImpl: firmaFinta('UnknownError')
+  });
+  assert.equal(esito.ok, true);
+  assert.equal(fs.readFileSync(exe, 'utf8'), 'EXE NUOVO');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('aggiornamento: una firma di un altro certificato viene rifiutata', { skip: process.platform !== 'win32' }, async () => {
+  const dir = tempDir();
+  const exe = path.join(dir, 'wdeck.exe');
+  fs.writeFileSync(exe, 'EXE VECCHIO');
+
+  // Firma perfettamente valida, ma di un certificato che non e' il nostro: il
+  // pin deve rifiutarla, altrimenti chiunque potrebbe firmare un aggiornamento.
+  await assert.rejects(
+    () => applyUpdate({
+      release: release(),
+      exePath: exe,
+      fetchImpl: finteRisposte({ contenuto: 'EXE NUOVO' }),
+      spawnImpl: firmaFinta('Valid', 'AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555')
+    }),
+    /firma non attesa/
+  );
+  assert.equal(fs.readFileSync(exe, 'utf8'), 'EXE VECCHIO', 'l\'eseguibile in uso non va toccato');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('firma: il pin accetta Valid e UnknownError con l\'impronta giusta, non gli altri', async () => {
+  const buono = FIRMA_ATTESA_SHA1;
+  assert.equal(await verificaFirmaWindows('x', { spawnImpl: firmaFinta('Valid', buono) }), 'Valid');
+  assert.equal(await verificaFirmaWindows('x', { spawnImpl: firmaFinta('UnknownError', buono) }), 'UnknownError');
+  await assert.rejects(() => verificaFirmaWindows('x', { spawnImpl: firmaFinta('HashMismatch', buono) }), /firma non attesa/);
+  await assert.rejects(() => verificaFirmaWindows('x', { spawnImpl: firmaFinta('Valid', 'FF00') }), /firma non attesa/);
+});
+
+test('firma: senza pin (impronta vuota) si torna a pretendere Valid dal sistema', async () => {
+  assert.equal(await verificaFirmaWindows('x', { spawnImpl: firmaFinta('Valid'), attesaSha1: '' }), 'Valid');
+  await assert.rejects(
+    () => verificaFirmaWindows('x', { spawnImpl: firmaFinta('UnknownError'), attesaSha1: '' }),
+    /firma Authenticode non valida/
+  );
 });
 
 test('aggiornamento: senza impronte pubblicate ci si ferma', async () => {

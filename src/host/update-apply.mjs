@@ -158,24 +158,45 @@ export async function downloadTo(url, dest, { onProgress, fetchImpl = fetch, tim
 }
 
 /**
+ * Impronta SHA-1 del certificato con cui Wdeck firma le proprie release: il
+ * "pin". L'aggiornamento automatico si fida **solo** di questo certificato,
+ * confrontandone l'impronta, invece di chiedere al sistema se la catena e'
+ * attendibile. Cosi' un certificato self-signed (che nessun PC conosce) va bene
+ * lo stesso, senza doverlo installare come radice fidata su ogni macchina - ma
+ * un binario firmato da chiunque altro, o non firmato, viene rifiutato.
+ *
+ * Se un giorno il certificato cambia, qui va messa la nuova impronta e le
+ * versioni pubblicate con quella nuova; i client sulle versioni vecchie non
+ * potranno aggiornarsi da soli alla nuova (e' il prezzo del pinning) e andranno
+ * reinstallati a mano una volta.
+ */
+export const FIRMA_ATTESA_SHA1 = '7BD743F7006625EB92FB055687DEB63EED9284B2';
+
+/**
  * Verifica la firma Authenticode di un eseguibile su Windows.
  *
- * Chiede a PowerShell lo stato della firma e pretende `Valid`: qualunque altro
- * esito (non firmato, firma manomessa, certificato non attendibile) fa fallire
- * l'aggiornamento. **Un binario di release non firmato viene percio' rifiutato
- * dall'auto-update.** Il percorso non si concatena mai in una stringa di comando:
- * passa in una variabile d'ambiente e si legge con `-LiteralPath`, cosi' non c'e'
- * modo di iniettare altro.
+ * Con un'impronta attesa (`attesaSha1`, di default quella del progetto) si fa
+ * **certificate pinning**: la firma deve essere integra e appartenere a quel
+ * preciso certificato. Un self-signed risulta `UnknownError` (catena non
+ * fidata) ma con firma intatta: va bene, perche' ci fidiamo dell'impronta, non
+ * della catena. Un file manomesso risulta `HashMismatch` ed e' rifiutato.
+ *
+ * Senza impronta attesa si torna al comportamento severo: si pretende `Valid`,
+ * cioe' una firma pienamente fidata dal sistema (utile con un certificato vero).
+ *
+ * Il percorso non si concatena mai in una stringa di comando: passa in una
+ * variabile d'ambiente e si legge con `-LiteralPath`.
  *
  * @param {string} exePath
- * @param {{spawnImpl?: Function}} [options]
- * @returns {Promise<string>} risolve con "Valid" solo a firma valida
+ * @param {{spawnImpl?: Function, attesaSha1?: string}} [options]
+ * @returns {Promise<string>} risolve con lo stato della firma se accettata
  */
-export function verificaFirmaWindows(exePath, { spawnImpl = spawn } = {}) {
+export function verificaFirmaWindows(exePath, { spawnImpl = spawn, attesaSha1 = FIRMA_ATTESA_SHA1 } = {}) {
   return new Promise((resolve, reject) => {
     const figlio = spawnImpl('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-Command',
-      '(Get-AuthenticodeSignature -LiteralPath $Env:WDECK_EXE_DA_VERIFICARE).Status'
+      '$f = Get-AuthenticodeSignature -LiteralPath $Env:WDECK_EXE_DA_VERIFICARE; '
+        + 'Write-Output $f.Status; Write-Output $f.SignerCertificate.Thumbprint'
     ], {
       env: { ...process.env, WDECK_EXE_DA_VERIFICARE: exePath },
       stdio: ['ignore', 'pipe', 'pipe']
@@ -186,9 +207,24 @@ export function verificaFirmaWindows(exePath, { spawnImpl = spawn } = {}) {
     figlio.stderr?.on('data', (d) => { err += d; });
     figlio.on('error', reject);
     figlio.on('close', (code) => {
-      const stato = out.trim();
-      if (stato === 'Valid') resolve(stato);
-      else reject(new Error(`firma Authenticode non valida (${stato || err.trim() || `uscita ${code}`}): aggiornamento annullato`));
+      const righe = out.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+      const stato = righe[0] ?? '';
+      const impronta = (righe[1] ?? '').toUpperCase();
+      const atteso = String(attesaSha1 ?? '').toUpperCase().replace(/[^0-9A-F]/g, '');
+
+      if (atteso) {
+        // Firma integra: `Valid` (fidata dal sistema) o `UnknownError` (catena
+        // non fidata ma firma non manomessa, tipico di un self-signed). Un
+        // `HashMismatch` o `NotSigned` non passano di qui.
+        const integra = stato === 'Valid' || stato === 'UnknownError';
+        if (impronta === atteso && integra) return resolve(stato);
+        return reject(new Error(
+          `firma non attesa (stato ${stato || 'ignoto'}, impronta ${impronta || 'assente'}): aggiornamento annullato`
+        ));
+      }
+
+      if (stato === 'Valid') return resolve(stato);
+      return reject(new Error(`firma Authenticode non valida (${stato || err.trim() || `uscita ${code}`}): aggiornamento annullato`));
     });
   });
 }
@@ -227,7 +263,7 @@ export function cleanupOldExe(exePath) {
  * @param {Function} [spec.spawnImpl] iniettabile per la verifica della firma nei test
  * @returns {Promise<{ok: true, version: string, exePath: string, backup: string, sha256: string}>}
  */
-export async function applyUpdate({ release, exePath, onProgress, fetchImpl = fetch, spawnImpl = spawn }) {
+export async function applyUpdate({ release, exePath, onProgress, fetchImpl = fetch, spawnImpl = spawn, attesaSha1 = FIRMA_ATTESA_SHA1 }) {
   if (!release?.asset?.url) throw new Error('la release non contiene un eseguibile da scaricare');
   if (!/\.exe$/i.test(release.asset.name ?? '')) {
     throw new Error(`l'allegato "${release.asset.name}" non e' un eseguibile`);
@@ -275,7 +311,7 @@ export async function applyUpdate({ release, exePath, onProgress, fetchImpl = fe
     // rifiutato qui, senza toccare nulla.
     if (process.platform === 'win32') {
       onProgress?.('firma');
-      await verificaFirmaWindows(scaricato, { spawnImpl });
+      await verificaFirmaWindows(scaricato, { spawnImpl, attesaSha1 });
     }
 
     // --- sostituzione ------------------------------------------------------

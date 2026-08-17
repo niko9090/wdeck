@@ -17,14 +17,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { firmaEseguibile } from './build-exe.mjs';
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
-/** Dove Inno Setup si installa di suo. */
+/** Dove Inno Setup si installa di suo (anche l'installazione per-utente via winget). */
 const CANDIDATI = [
   'C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe',
   'C:\\Program Files\\Inno Setup 6\\ISCC.exe',
-  'C:\\Program Files (x86)\\Inno Setup 5\\ISCC.exe'
+  'C:\\Program Files (x86)\\Inno Setup 5\\ISCC.exe',
+  path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Inno Setup 6', 'ISCC.exe')
 ];
 
 function trovaCompilatore() {
@@ -60,8 +63,18 @@ function main() {
   const setup = path.join(ROOT, 'release', `WdeckSetup-${pkg.version}.exe`);
   if (!fs.existsSync(setup)) throw new Error('Inno Setup non ha prodotto il file atteso');
 
+  // Anche l'installer va firmato: e' il file che l'utente scarica ed esegue per
+  // primo, quindi e' quello su cui Windows mostra (o no) l'avviso dell'editore.
+  console.log('  firmo l\'installer...');
+  const firma = firmaEseguibile(setup);
+  if (!firma.firmato) {
+    console.warn(`  ATTENZIONE: installer NON firmato (${firma.motivo}).`);
+    console.warn('  Imposta WDECK_SIGN_PFX (+ WDECK_SIGN_PASSWORD) o WDECK_SIGN_THUMBPRINT per firmare.');
+  }
+
   const mb = (fs.statSync(setup).size / 1048576).toFixed(1);
   console.log(`\n  versione  : ${pkg.version}`);
+  console.log(`  firma     : ${firma.firmato ? 'applicata e verificata' : 'assente'}`);
   console.log(`  installer : ${path.relative(ROOT, setup)} (${mb} MB)`);
   console.log('\nINSTALLER OK');
 }
