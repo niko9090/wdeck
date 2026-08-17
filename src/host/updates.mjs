@@ -55,8 +55,13 @@ export async function fetchLatestRelease(repository, { timeoutMs = 8000, fetchIm
   }
   const data = await response.json();
   const assets = data.assets ?? [];
-  // L'eseguibile vince sull'archivio: e' quello che si sa sostituire da solo.
-  const installer = assets.find((a) => /\.exe$/i.test(a.name ?? ''))
+  // L'aggiornamento a caldo sostituisce il PROPRIO eseguibile rinominandolo:
+  // deve percio' scaricare il binario nudo `wdeck.exe`, non l'installer
+  // `WdeckSetup-x.exe` (che pure finisce in .exe). Una release ne pubblica
+  // entrambi, quindi il nudo va scelto per nome, non "il primo .exe capitato".
+  const installer = assets.find((a) => /^wdeck\.exe$/i.test(a.name ?? ''))
+    ?? assets.find((a) => /\.exe$/i.test(a.name ?? '') && !/setup/i.test(a.name ?? ''))
+    ?? assets.find((a) => /\.exe$/i.test(a.name ?? ''))
     ?? assets.find((a) => /\.(msi|zip)$/i.test(a.name ?? ''));
   const impronte = assets.find((a) => a.name === FILE_IMPRONTE);
   return {
