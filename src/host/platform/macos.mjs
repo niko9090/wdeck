@@ -12,7 +12,7 @@
  * risponde con l'errore -1719 e qui viene tradotto in un messaggio esplicito.
  */
 
-import { runCommand } from './exec.mjs';
+import { assertSafeUrl, runCommand } from './exec.mjs';
 import {
   buildMacKeyScript,
   buildMacTypeScript,
@@ -78,7 +78,10 @@ export function typeText(text) {
  * @param {string} url
  */
 export async function openUrl(url) {
-  const res = await runCommand('open', [String(url)], { timeoutMs: 10000 });
+  assertSafeUrl(url);
+  // `--` chiude le opzioni: un valore che inizia con "-" non viene scambiato
+  // per un flag di `open`.
+  const res = await runCommand('open', ['--', String(url)], { timeoutMs: 10000 });
   if (res.code !== 0) throw new Error(`apertura URL fallita: ${res.stderr || `uscita ${res.code}`}`);
   return res.stdout;
 }

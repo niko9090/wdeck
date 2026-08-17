@@ -115,9 +115,22 @@ export function x11Key(name) {
   throw new Error(`tasto non supportato su X11: "${name}"`);
 }
 
-/** Protegge una stringa da inserire fra virgolette in AppleScript. */
+/**
+ * Protegge una stringa da inserire fra virgolette in AppleScript.
+ * I caratteri di controllo (a capo, tabulazione, ritorno carrello) non possono
+ * stare dentro un letterale fra virgolette: spezzerebbero la riga e osascript
+ * darebbe errore di sintassi. Vengono chiusi e riaperti con la costante
+ * AppleScript corrispondente (`return`, `linefeed`, `tab`), cosi' un testo su
+ * piu' righe resta un unico letterale valido.
+ */
 export function escapeAppleScript(text) {
-  return String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return String(text)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r\n/g, '" & return & "')
+    .replace(/\r/g, '" & return & "')
+    .replace(/\n/g, '" & linefeed & "')
+    .replace(/\t/g, '" & tab & "');
 }
 
 /**

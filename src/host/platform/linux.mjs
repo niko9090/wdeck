@@ -15,7 +15,7 @@
  * | URL | `xdg-open` | `gio open` |
  */
 
-import { firstAvailable, runCommand } from './exec.mjs';
+import { assertSafeUrl, firstAvailable, runCommand } from './exec.mjs';
 import { buildXdotoolKeyArgs, buildXdotoolTypeArgs, x11Key, X11_MODIFIERS } from './keymaps.mjs';
 
 export const isLinux = () => process.platform === 'linux';
@@ -94,6 +94,16 @@ const YDOTOOL_ALIASES = Object.freeze({
 });
 
 /**
+ * Argomenti di `ydotool type` per digitare un testo.
+ * `--` chiude le opzioni: un testo che inizia con "-" non diventa un flag.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function buildYdotoolTypeArgs(text) {
+  return ['type', '--', String(text)];
+}
+
+/**
  * Nome del tasto nella nomenclatura del kernel Linux.
  * @param {string} name
  * @returns {string}
@@ -125,7 +135,8 @@ export async function sendKey(spec) {
  */
 export async function typeText(text) {
   const tool = pickInputTool();
-  const args = tool.name === 'xdotool' ? buildXdotoolTypeArgs(text) : ['type', String(text)];
+  // `--` chiude le opzioni: un testo che inizia con "-" non diventa un flag.
+  const args = tool.name === 'xdotool' ? buildXdotoolTypeArgs(text) : buildYdotoolTypeArgs(text);
   const res = await runCommand(tool.path, args, { timeoutMs: 20000 });
   if (res.code !== 0) throw new Error(`${tool.name}: ${res.stderr || `uscita ${res.code}`}`);
   return res.stdout;
@@ -136,9 +147,14 @@ export async function typeText(text) {
  * @param {string} url
  */
 export async function openUrl(url) {
+  // Convalida lo schema: impedisce sia gli URL con schema inatteso sia i valori
+  // che inizierebbero con "-" e verrebbero scambiati per un flag dell'opener.
+  const safe = assertSafeUrl(url);
   const opener = firstAvailable(['xdg-open', 'gio']);
   if (!opener) throw new Error('apertura URL non disponibile: installa "xdg-utils" (xdg-open)');
-  const args = opener.name === 'gio' ? ['open', String(url)] : [String(url)];
+  // gio interpreta "--" come fine delle opzioni; xdg-open lo passerebbe di peso
+  // al browser, quindi li' ci si affida alla convalida dello schema.
+  const args = opener.name === 'gio' ? ['open', '--', safe] : [safe];
   const res = await runCommand(opener.path, args, { timeoutMs: 10000 });
   if (res.code !== 0) throw new Error(`apertura URL fallita: ${res.stderr || `uscita ${res.code}`}`);
   return res.stdout;
