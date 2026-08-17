@@ -61,6 +61,16 @@ static int highlightIndex = -1;
 static uint32_t highlightUntil = 0;
 static uint16_t highlightColor = TFT_WHITE;
 
+// Riconnessione Wi-Fi non bloccante: stato online e prossimo tentativo.
+static bool wifiOnline = false;
+static uint32_t wifiRetryAt = 0;
+
+// Richiesta di layout differita al loop: i fetch non girano piu' dentro la
+// callback del WebSocket (bloccherebbero ping e touch), ma nel loop principale.
+static bool layoutPending = false;
+static char pendingProfile[24] = {0};
+static char pendingPage[24] = {0};
+
 // ---------------------------------------------------------------- utilita'
 
 /** Converte "#rrggbb" nel formato RGB565 usato dal TFT. */
@@ -133,6 +143,13 @@ static void drawGrid() {
   int cellW = (tft.width() - 2 * WDECK_GRID_MARGIN - (gridCols - 1) * WDECK_GRID_GAP) / gridCols;
   int cellH = (usableH - 2 * WDECK_GRID_MARGIN - (gridRows - 1) * WDECK_GRID_GAP) / gridRows;
 
+  // Con troppe righe/colonne le celle diventano nulle o negative: meglio non
+  // disegnare nulla che riempire lo schermo di rettangoli degeneri.
+  if (cellW <= 0 || cellH <= 0) {
+    drawStatus("griglia non valida", TFT_RED);
+    return;
+  }
+
   for (int i = 0; i < buttonCount; i++) {
     WdeckButton &b = buttons[i];
     b.x = WDECK_GRID_MARGIN + b.col * (cellW + WDECK_GRID_GAP);
@@ -151,7 +168,10 @@ static void drawGrid() {
 
 /** Costruisce un URL completo verso l'host, con token in querystring. */
 static String buildUrl(const char *endpoint, const String &extraQuery) {
-  String url = "http://";
+  String url;
+  // Prealloca per evitare riallocazioni ripetute mentre si concatena l'URL.
+  url.reserve(96 + extraQuery.length());
+  url = "http://";
   url += WDECK_HOST_ADDR;
   url += ":";
   url += String(WDECK_HOST_PORT);
@@ -175,6 +195,9 @@ static bool fetchLayout(const char *profile, const char *page) {
   HTTPClient http;
   http.begin(buildUrl(WDECK_EP_LITE_DECK, extra));
   http.addHeader(WDECK_TOKEN_HEADER, WDECK_TOKEN);
+  // Timeout brevi: un host lento o irraggiungibile non deve bloccare il loop.
+  http.setConnectTimeout(WDECK_HTTP_TIMEOUT_MS);
+  http.setTimeout(WDECK_HTTP_TIMEOUT_MS);
   int status = http.GET();
 
   if (status != 200) {
@@ -184,9 +207,26 @@ static bool fetchLayout(const char *profile, const char *page) {
     return false;
   }
 
-  JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, http.getStream());
+  // Limita il payload accettato a WDECK_JSON_CAPACITY: leggendo in un buffer
+  // di dimensione fissa il JsonDocument non puo' crescere senza controllo
+  // sull'heap, nemmeno con una risposta enorme o malformata.
+  int contentLength = http.getSize();
+  if (contentLength > (int)WDECK_JSON_CAPACITY) {
+    Serial.printf("[wdeck] layout troppo grande: %d byte\n", contentLength);
+    http.end();
+    drawStatus("layout troppo grande", TFT_RED);
+    return false;
+  }
+
+  static char jsonBuffer[WDECK_JSON_CAPACITY];
+  size_t toRead = sizeof(jsonBuffer) - 1;
+  if (contentLength > 0 && (size_t)contentLength < toRead) toRead = contentLength;
+  size_t read = http.getStream().readBytes(jsonBuffer, toRead);
+  jsonBuffer[read] = '\0';
   http.end();
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, jsonBuffer, read);
 
   if (err) {
     Serial.printf("[wdeck] JSON non valido: %s\n", err.c_str());
@@ -216,6 +256,9 @@ static bool fetchLayout(const char *profile, const char *page) {
     copyString(b.label, sizeof(b.label), item[WDECK_F_LABEL] | "");
     b.row = item[WDECK_F_ROW] | 0;
     b.col = item[WDECK_F_COL] | 0;
+    // Scarta i bottoni con coordinate fuori dalla griglia dichiarata: valori
+    // negativi o oltre i limiti darebbero rettangoli fuori schermo in drawGrid.
+    if (b.row < 0 || b.col < 0 || b.row >= gridRows || b.col >= gridCols) continue;
     b.color = parseColor(item[WDECK_F_COLOR] | "", TFT_NAVY);
     b.on = -1;  // sconosciuto finche' non arriva il messaggio di stato
     // item[WDECK_F_ICON] e item[WDECK_F_TYPE] sono disponibili per estensioni
@@ -248,6 +291,10 @@ static void sendPress(int index) {
     http.begin(buildUrl(WDECK_EP_LITE_PRESS, ""));
     http.addHeader("Content-Type", "application/json");
     http.addHeader(WDECK_TOKEN_HEADER, WDECK_TOKEN);
+    // Timeout brevi: con WS giu' e host irraggiungibile la pressione non deve
+    // inchiodare il loop (e quindi il touch) per l'intero timeout di default.
+    http.setConnectTimeout(WDECK_HTTP_TIMEOUT_MS);
+    http.setTimeout(WDECK_HTTP_TIMEOUT_MS);
     JsonDocument body;
     body[WDECK_F_ID] = buttons[index].id;
     String bodyText;
@@ -274,10 +321,21 @@ static int findButtonById(const char *id) {
   return -1;
 }
 
+/** Segna un layout da scaricare: il fetch vero avviene nel loop, non qui. */
+static void requestLayout(const char *profile, const char *page) {
+  copyString(pendingProfile, sizeof(pendingProfile), profile);
+  copyString(pendingPage, sizeof(pendingPage), page);
+  layoutPending = true;
+}
+
 /** Gestisce un messaggio JSON ricevuto dal canale lite. */
-static void handleWsMessage(const char *text) {
+static void handleWsMessage(const uint8_t *payload, size_t length) {
+  // Rifiuta i payload oltre il limite: il JsonDocument non deve crescere
+  // senza controllo sull'heap a partire da un messaggio del WebSocket.
+  if (length > WDECK_JSON_CAPACITY) return;
+
   JsonDocument doc;
-  if (deserializeJson(doc, text)) return;
+  if (deserializeJson(doc, reinterpret_cast<const char *>(payload), length)) return;
 
   const char *type = doc[WDECK_F_TYPE] | "";
 
@@ -286,7 +344,7 @@ static void handleWsMessage(const char *text) {
     const char *profile = doc[WDECK_F_PROFILE] | "";
     const char *page = doc[WDECK_F_PAGE] | "";
     if (page[0] != '\0' && strcmp(page, currentPage) != 0) {
-      fetchLayout(profile, page);
+      requestLayout(profile, page);
     } else {
       char status[48];
       snprintf(status, sizeof(status), "%s / %s", currentProfile, currentPage);
@@ -296,7 +354,7 @@ static void handleWsMessage(const char *text) {
   }
 
   if (strcmp(type, WDECK_MSG_NAVIGATE) == 0) {
-    fetchLayout(doc[WDECK_F_PROFILE] | "", doc[WDECK_F_PAGE] | "");
+    requestLayout(doc[WDECK_F_PROFILE] | "", doc[WDECK_F_PAGE] | "");
     return;
   }
 
@@ -340,7 +398,6 @@ static void handleWsMessage(const char *text) {
 }
 
 static void onWsEvent(WStype_t type, uint8_t *payload, size_t length) {
-  (void)length;
   switch (type) {
     case WStype_CONNECTED:
       wsConnected = true;
@@ -353,7 +410,7 @@ static void onWsEvent(WStype_t type, uint8_t *payload, size_t length) {
       drawStatus("riconnessione...", TFT_ORANGE);
       break;
     case WStype_TEXT:
-      handleWsMessage(reinterpret_cast<const char *>(payload));
+      handleWsMessage(payload, length);
       break;
     default:
       break;
@@ -361,7 +418,14 @@ static void onWsEvent(WStype_t type, uint8_t *payload, size_t length) {
 }
 
 static void connectWebSocket() {
-  String path = String(WDECK_EP_WS_LITE) + "?" + WDECK_TOKEN_QUERY + "=" + WDECK_TOKEN;
+  String path;
+  // Prealloca per evitare la sfilza di riallocazioni delle concatenazioni.
+  path.reserve(64);
+  path = WDECK_EP_WS_LITE;
+  path += "?";
+  path += WDECK_TOKEN_QUERY;
+  path += "=";
+  path += WDECK_TOKEN;
   wsClient.begin(WDECK_HOST_ADDR, WDECK_HOST_PORT, path);
   wsClient.onEvent(onWsEvent);
   wsClient.setReconnectInterval(3000);
@@ -383,9 +447,43 @@ static void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("\n[wdeck] Wi-Fi ok, ip %s\n", WiFi.localIP().toString().c_str());
     drawStatus(WiFi.localIP().toString().c_str(), TFT_GREEN);
+    wifiOnline = true;
   } else {
     Serial.println("\n[wdeck] Wi-Fi non disponibile");
     drawStatus("Wi-Fi non disponibile", TFT_RED);
+    wifiOnline = false;
+  }
+}
+
+/**
+ * Riconnessione Wi-Fi non bloccante, da chiamare a ogni giro di loop.
+ *
+ * Alla caduta rilancia WiFi.begin() a intervalli di WDECK_WIFI_RETRY_MS e
+ * lascia che sia WiFi.status() a segnalare il ritorno online, senza spin-wait:
+ * cosi' wsClient.loop() e il touch continuano a girare durante la riconnessione.
+ */
+static void serviceWifi() {
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiOnline) {
+      wifiOnline = true;
+      Serial.printf("\n[wdeck] Wi-Fi ripristinato, ip %s\n", WiFi.localIP().toString().c_str());
+      drawStatus(WiFi.localIP().toString().c_str(), TFT_GREEN);
+      // Ricarica il layout corrente ora che l'host e' di nuovo raggiungibile.
+      fetchLayout(currentProfile, currentPage);
+    }
+    return;
+  }
+
+  if (wifiOnline) {
+    wifiOnline = false;
+    Serial.println("[wdeck] Wi-Fi perso, riconnessione...");
+    drawStatus("Wi-Fi perso, riconnessione...", TFT_ORANGE);
+    wifiRetryAt = 0;  // primo nuovo tentativo subito
+  }
+
+  if (millis() >= wifiRetryAt) {
+    WiFi.begin(WDECK_WIFI_SSID, WDECK_WIFI_PASS);
+    wifiRetryAt = millis() + WDECK_WIFI_RETRY_MS;
   }
 }
 
@@ -438,6 +536,13 @@ void loop() {
   wsClient.loop();
   handleTouch();
 
+  // I fetch richiesti dalle callback WebSocket girano qui, fuori dal loop del
+  // WS: una GET lenta non blocca piu' ping e touch dentro handleWsMessage.
+  if (layoutPending) {
+    layoutPending = false;
+    fetchLayout(pendingProfile, pendingPage);
+  }
+
   if (highlightIndex >= 0 && millis() > highlightUntil) {
     drawButton(highlightIndex, false);
     highlightIndex = -1;
@@ -452,8 +557,5 @@ void loop() {
     wsClient.sendTXT(payload);
   }
 
-  if (WiFi.status() != WL_CONNECTED) {
-    connectWifi();
-    if (WiFi.status() == WL_CONNECTED) fetchLayout(currentProfile, currentPage);
-  }
+  serviceWifi();
 }
