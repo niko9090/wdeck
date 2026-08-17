@@ -27,6 +27,25 @@ export const DEFAULT_KEEP = 3;
 const REDACTED_KEYS = /^(token|pin|password|secret|authorization|apikey|api_key|accesstoken|refreshtoken)$/i;
 
 /**
+ * Ripulisce i segreti trasportati *dentro* una stringa, non solo quelli in un
+ * campo dal nome sospetto: un token in un URL (`?token=...`) o in un header
+ * (`Bearer ...`) finirebbe altrimenti in chiaro nel registro.
+ * @param {string} text
+ * @returns {string}
+ */
+export function scrubSecrets(text) {
+  return text
+    // token e affini passati in querystring: ?token=..., &api_key=...
+    .replace(/([?&](?:token|apikey|api_key|access_token|auth|secret)=)[^&#\s]+/gi, '$1[omesso]')
+    // Authorization: Bearer <token> (anche JWT con i punti)
+    .replace(/\b(bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[omesso]')
+    // lunghe sequenze ad alta entropia (hex o base64url): probabili token, ma
+    // solo se mescolano lettere e cifre, per non oscurare parole o riempimenti.
+    .replace(/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])/g,
+      (m) => (/[0-9]/.test(m) && /[A-Za-z]/.test(m) ? '[omesso]' : m));
+}
+
+/**
  * Copia un valore togliendo i campi sensibili.
  *
  * I parametri di un'azione sono liberi: una richiesta HTTP puo' portarsi
@@ -47,7 +66,10 @@ export function redact(value, depth = 0) {
     }
     return out;
   }
-  if (typeof value === 'string') return value.length > 300 ? `${value.slice(0, 300)}...` : value;
+  if (typeof value === 'string') {
+    const pulito = scrubSecrets(value);
+    return pulito.length > 300 ? `${pulito.slice(0, 300)}...` : pulito;
+  }
   return value;
 }
 

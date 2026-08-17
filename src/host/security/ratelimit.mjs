@@ -24,7 +24,13 @@ export const MAX_KEYS = 2048;
 /** Tarature predefinite. */
 export const DEFAULT_LIMITS = Object.freeze({
   press: { windowMs: 10000, max: 60 },
-  auth: { windowMs: 300000, max: 10 }
+  auth: { windowMs: 300000, max: 10 },
+  // Tetto complessivo dei tentativi di accesso, sommati su tutti gli indirizzi.
+  // Il limite per-indirizzo da solo non basta: chi ruota gli indirizzi IPv6 (un
+  // /64 ne offre miliardi) avrebbe un secchiello nuovo per ognuno. Questo tetto,
+  // non legato a nessuna chiave, mette un limite duro al brute force del PIN a
+  // prescindere da quanti indirizzi l'attaccante controlli.
+  authGlobal: { windowMs: 300000, max: 100 }
 });
 
 /**
@@ -65,14 +71,24 @@ export function createRateLimiter({ windowMs = 10000, max = 60, now = Date.now }
       if (recent.length >= max) {
         // Il prossimo posto si libera quando esce il piu' vecchio dei tentativi.
         const retryAfterMs = Math.max(0, recent[0] + windowMs - at);
+        // Anche una chiave bloccata va rinfrescata in coda: e' attiva, e non deve
+        // essere sfrattata al posto di una dimenticata da tempo.
+        if (hits.has(key)) {
+          hits.delete(key);
+          hits.set(key, recent);
+        }
         return { allowed: false, remaining: 0, retryAfterMs };
       }
 
       recent.push(at);
+      // delete + set porta la chiave in coda alla Map: l'ordine diventa quello di
+      // ultimo accesso, non di primo inserimento.
+      hits.delete(key);
       hits.set(key, recent);
 
       // Una tabella che cresce senza limite sarebbe un'altra via per esaurire la
-      // memoria dell'host: oltre il tetto si dimentica la chiave meno recente.
+      // memoria dell'host: oltre il tetto si dimentica la chiave usata meno di
+      // recente (la testa della Map), non una attiva finita per caso in fondo.
       if (hits.size > MAX_KEYS) hits.delete(hits.keys().next().value);
 
       return { allowed: true, remaining: max - recent.length, retryAfterMs: 0 };
@@ -125,6 +141,46 @@ export function normalizeAddress(address) {
 }
 
 /**
+ * Prefisso /64 di un indirizzo IPv6, cioe' i primi quattro gruppi canonizzati.
+ *
+ * A un dispositivo domestico l'operatore assegna un intero /64 (miliardi di
+ * indirizzi): contarli separatamente vorrebbe dire regalare un secchiello a
+ * ognuno. Contro il brute force conta la rete, non il singolo indirizzo.
+ * @param {string} address
+ * @returns {string}
+ */
+export function ipv6Prefix64(address) {
+  const senzaZona = address.split('%')[0];
+  let groups;
+  if (senzaZona.includes('::')) {
+    const [head, tail = ''] = senzaZona.split('::');
+    const h = head === '' ? [] : head.split(':');
+    const t = tail === '' ? [] : tail.split(':');
+    const missing = Math.max(0, 8 - h.length - t.length);
+    groups = [...h, ...Array(missing).fill('0'), ...t];
+  } else {
+    groups = senzaZona.split(':');
+  }
+  // Ogni gruppo canonizzato (via zeri iniziali) cosi' `2001:0db8` e `2001:db8`
+  // finiscono nella stessa chiave.
+  const prefix = groups.slice(0, 4).map((g) => (parseInt(g, 16) || 0).toString(16));
+  while (prefix.length < 4) prefix.push('0');
+  return prefix.join(':');
+}
+
+/**
+ * Chiave del limitatore dei tentativi di accesso a partire dall'indirizzo.
+ * Gli indirizzi IPv6 sono raggruppati per /64, quelli IPv4 restano interi.
+ * @param {string|null|undefined} address
+ * @returns {string}
+ */
+export function authAddressKey(address) {
+  const norm = normalizeAddress(address);
+  if (!norm.includes(':')) return `a:${norm}`;
+  return `a:${ipv6Prefix64(norm)}/64`;
+}
+
+/**
  * Crea i due limitatori usati dall'host.
  * @param {{press?: object, auth?: object, enabled?: boolean, now?: () => number}} [config]
  */
@@ -132,11 +188,15 @@ export function createRateLimits(config = {}) {
   const enabled = config.enabled !== false;
   const press = { ...DEFAULT_LIMITS.press, ...(config.press ?? {}) };
   const auth = { ...DEFAULT_LIMITS.auth, ...(config.auth ?? {}) };
+  // Il tetto globale segue la finestra dell'auth ma tiene il suo tetto di
+  // tentativi; un'eventuale configurazione esplicita ha comunque la precedenza.
+  const authGlobal = { ...DEFAULT_LIMITS.authGlobal, windowMs: auth.windowMs, ...(config.authGlobal ?? {}) };
 
   return {
     enabled,
     press: createRateLimiter({ ...press, now: config.now }),
     auth: createRateLimiter({ ...auth, now: config.now }),
+    authGlobal: createRateLimiter({ ...authGlobal, now: config.now }),
 
     /**
      * Controlla il limite delle pressioni.
@@ -149,16 +209,31 @@ export function createRateLimits(config = {}) {
 
     /**
      * Controlla il limite dei tentativi di autenticazione.
+     *
+     * Devono passare due controlli: quello per-indirizzo (per /64 su IPv6) e il
+     * tetto globale, che vale su tutti gli indirizzi insieme. Basta che uno dei
+     * due sia pieno perche' il tentativo sia respinto.
      * @param {{address?: string|null}} source
      */
     checkAuth(source) {
       if (!enabled) return { allowed: true, remaining: Infinity, retryAfterMs: 0 };
-      return this.auth.check(limiterKey({ address: source?.address }));
+      const perIndirizzo = this.auth.check(authAddressKey(source?.address));
+      const globale = this.authGlobal.check('*');
+      if (perIndirizzo.allowed && globale.allowed) return perIndirizzo;
+      return {
+        allowed: false,
+        remaining: 0,
+        retryAfterMs: Math.max(perIndirizzo.retryAfterMs, globale.retryAfterMs)
+      };
     },
 
-    /** Dimentica i tentativi falliti dopo un accesso riuscito. */
+    /**
+     * Dimentica i tentativi falliti di un indirizzo dopo un accesso riuscito.
+     * Il tetto globale non si azzera: un successo occasionale non deve aprire la
+     * strada al brute force da tutti gli altri indirizzi.
+     */
     clearAuth(source) {
-      this.auth.reset(limiterKey({ address: source?.address }));
+      this.auth.reset(authAddressKey(source?.address));
     }
   };
 }

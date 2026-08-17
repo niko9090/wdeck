@@ -184,6 +184,40 @@ export function parseIPv4(value) {
 }
 
 /**
+ * Riconosce un indirizzo IPv6 e ne restituisce i sedici byte.
+ *
+ * Gestisce la forma compressa (`::`). Senza questo, un IPv6 letterale finirebbe
+ * come dNSName invece che iPAddress, e il certificato non varrebbe per un client
+ * che si collega con l'indirizzo IPv6 fra parentesi quadre.
+ * @param {string} value
+ * @returns {Buffer|null}
+ */
+export function parseIPv6(value) {
+  const str = String(value).split('%')[0];
+  if (!str.includes(':')) return null;
+  const parti = str.split('::');
+  if (parti.length > 2) return null; // un solo "::" e' ammesso
+  let groups;
+  if (parti.length === 2) {
+    const h = parti[0] === '' ? [] : parti[0].split(':');
+    const t = parti[1] === '' ? [] : parti[1].split(':');
+    const mancanti = 8 - h.length - t.length;
+    if (mancanti < 1) return null;
+    groups = [...h, ...Array(mancanti).fill('0'), ...t];
+  } else {
+    groups = str.split(':');
+  }
+  if (groups.length !== 8) return null;
+  const bytes = [];
+  for (const g of groups) {
+    if (!/^[0-9a-fA-F]{1,4}$/.test(g)) return null;
+    const n = parseInt(g, 16);
+    bytes.push((n >> 8) & 0xff, n & 0xff);
+  }
+  return Buffer.from(bytes);
+}
+
+/**
  * subjectAltName: i nomi per cui il certificato vale.
  *
  * Senza questa estensione i browser moderni rifiutano il certificato a
@@ -193,8 +227,9 @@ export function parseIPv4(value) {
 export function encodeAltNames(names) {
   const entries = [];
   for (const name of names) {
-    const ip = parseIPv4(name);
-    // [2] dNSName, [7] iPAddress: sono le due forme che servono in LAN.
+    const ip = parseIPv4(name) ?? parseIPv6(name);
+    // [2] dNSName, [7] iPAddress: sono le due forme che servono in LAN. Un IPv6
+    // occupa sedici byte, un IPv4 quattro.
     entries.push(ip ? contextPrimitive(7, ip) : contextPrimitive(2, Buffer.from(String(name), 'ascii')));
   }
   return sequence(entries);

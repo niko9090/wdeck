@@ -11,7 +11,7 @@
 import { formatErrors, validateDeck } from '../config/schema.mjs';
 import { loadDeckFile } from '../config/loader.mjs';
 import { writeAtomic } from '../config/writer.mjs';
-import { generateToken, hashToken, isExpired, normalizeDevice } from './auth.mjs';
+import { generateDeviceId, generateToken, hashToken, isExpired, normalizeDevice } from './auth.mjs';
 
 /**
  * Legge il file, applica una modifica al blocco sicurezza e riscrive.
@@ -103,6 +103,8 @@ export function revokeDevice(configFile, id) {
       if (match) trovato = true;
       return !match;
     });
+    // Id sconosciuto: niente e' cambiato, non c'e' motivo di riscrivere il file.
+    if (!trovato) return null;
     return { ...security, devices };
   });
   if (!result.ok) return result;
@@ -121,7 +123,8 @@ export function addDevice(configFile, { name = 'dispositivo', days = null } = {}
   const token = generateToken();
   const at = Date.now();
   const device = {
-    id: `d-${hashToken(token).slice(0, 10)}`,
+    // Id casuale come altrove: derivarlo dall'impronta ne trapelerebbe 40 bit.
+    id: generateDeviceId(),
     name: String(name).slice(0, 64),
     hash: hashToken(token),
     createdAt: at,
@@ -153,6 +156,8 @@ export function pruneExpiredDevices(configFile, { now = Date.now() } = {}) {
       }
       return true;
     });
+    // Niente di scaduto: nessuna modifica, nessuna riscrittura.
+    if (removed.length === 0) return null;
     return { ...security, devices };
   });
   if (!result.ok) return result;

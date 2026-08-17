@@ -84,6 +84,25 @@ test('audit: le stringhe lunghe e le strutture profonde vengono troncate', () =>
   assert.equal(redact(Array.from({ length: 50 }, (_, i) => i)).length, 20);
 });
 
+test('audit: un token dentro un valore stringa viene oscurato, non solo per nome del campo', () => {
+  // La redazione per nome-campo non basta: un token puo' viaggiare dentro un URL
+  // o un header, cioe' dentro il valore di una stringa qualunque.
+  const url = redact('https://api.esempio.it/x?token=abcd1234efgh5678ijkl&altro=1');
+  assert.ok(!url.includes('abcd1234efgh5678ijkl'), 'il token nella querystring resta in chiaro');
+  assert.match(url, /token=\[omesso\]/);
+  assert.ok(url.includes('altro=1'), 'il resto dell\'URL non va perso');
+
+  const auth = redact('Authorization: Bearer aGVsbG8xMjM0NTY3ODkwYWJjZGVmZ2hp');
+  assert.ok(!auth.includes('aGVsbG8xMjM0NTY3ODkwYWJjZGVmZ2hp'));
+  assert.match(auth, /Bearer \[omesso\]/i);
+
+  // Una lunga sequenza ad alta entropia (hex) e' un probabile token anche senza
+  // etichetta attorno.
+  assert.match(redact('sha=0123456789abcdef0123456789abcdef'), /\[omesso\]/);
+  // Una parola lunga ma senza cifre non e' un segreto: non va toccata.
+  assert.equal(redact('a'.repeat(40)), 'a'.repeat(40));
+});
+
 test('audit: un segreto passato a una scrittura non arriva su disco', () => {
   const { audit, file, cleanup } = tempLog();
   try {
