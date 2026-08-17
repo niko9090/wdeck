@@ -163,6 +163,55 @@ test('dispatcher: continueOnError prosegue oltre i passi falliti', async () => {
   assert.equal(result.result.steps[1].ok, true);
 });
 
+test('dispatcher: continueOnError riporta i passi falliti senza fingere successo', async () => {
+  const { dispatcher } = makeDispatcher();
+  const result = await dispatcher.execute({
+    type: 'sequence',
+    params: {
+      continueOnError: true,
+      steps: [
+        { type: 'media', params: { key: 'chissa' } }, // fallisce
+        { type: 'noop' },
+        { type: 'media', params: { key: 'ancoraboh' } } // fallisce
+      ]
+    }
+  });
+  assert.equal(result.ok, true, 'con continueOnError la sequenza resta ok');
+  assert.equal(result.result.failed, 2, 'deve contare i passi falliti');
+  assert.match(result.result.detail, /2 errori su 3/, 'il riepilogo deve dichiarare gli errori');
+  assert.deepEqual(result.result.failedSteps, [
+    { index: 0, type: 'media' },
+    { index: 2, type: 'media' }
+  ]);
+});
+
+test('dispatcher: continueOnError senza errori non segnala nulla', async () => {
+  const { dispatcher } = makeDispatcher();
+  const result = await dispatcher.execute({
+    type: 'sequence',
+    params: {
+      continueOnError: true,
+      steps: [{ type: 'noop' }, { type: 'noop' }]
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.result.failed, undefined, 'senza errori non deve esserci il conteggio');
+  assert.match(result.result.detail, /completata: 2 passi/);
+});
+
+test('dispatcher: singolo errore usa il singolare "errore"', async () => {
+  const { dispatcher } = makeDispatcher();
+  const result = await dispatcher.execute({
+    type: 'sequence',
+    params: {
+      continueOnError: true,
+      steps: [{ type: 'media', params: { key: 'chissa' } }, { type: 'noop' }]
+    }
+  });
+  assert.equal(result.result.failed, 1);
+  assert.match(result.result.detail, /1 errore su 2/);
+});
+
 test('dispatcher: la sequence rispetta maxSequenceSteps', async () => {
   const { dispatcher } = makeDispatcher();
   const steps = Array.from({ length: 9 }, () => ({ type: 'noop' })); // limite fixture = 8

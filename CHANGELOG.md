@@ -3,6 +3,20 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.1] - 2026-08-18
+
+Affidabilità: una sequenza con `continueOnError` non finge più il successo.
+
+### Corretto
+
+- **Le sequenze non nascondono più i passi falliti.** Con `continueOnError` una
+  sequenza arriva in fondo anche se dei passi vanno storti, ma prima riferiva
+  comunque "sequenza completata": chi guardava il bottone o il log non si
+  accorgeva dell'errore. Ora il riepilogo dichiara quanti passi sono falliti
+  (es. *"completata con 2 errori su 3 passi"*) e la risposta porta `failed` e
+  `failedSteps`. L'esito resta `ok` — la sequenza ha fatto ciò che le era stato
+  chiesto — ma non mente più su cosa è successo.
+
 ## [0.8.0] - 2026-08-18
 
 Tre cose per rendere l'editor **adatto a tutti**: bottoni pronti da cui partire,

@@ -4,7 +4,7 @@ Documento di consegna del **lavoro semi-finito**: dice con precisione cosa
 funziona, cosa e' dichiaratamente un segnaposto e cosa non esiste ancora,
 cosi' da poter decidere insieme dove investire il prossimo giro.
 
-Ultimo aggiornamento: 2026-08-18 - versione `0.8.0`.
+Ultimo aggiornamento: 2026-08-18 - versione `0.8.1`.
 
 Legenda: **Completo** = implementato e coperto da test - **Stub** = presente ma
 volutamente incompleto - **Mancante** = non esiste.

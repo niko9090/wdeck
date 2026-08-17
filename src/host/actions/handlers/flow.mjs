@@ -50,6 +50,21 @@ export const sequenceAction = {
         };
       }
     }
+
+    // Con continueOnError la sequenza arriva in fondo anche se dei passi
+    // falliscono: dire "completata" e basta nasconderebbe l'errore a chi guarda
+    // il bottone o il log. Se qualcosa e' andato storto lo si conta e lo si dice,
+    // pur restando ok (la sequenza ha fatto cio' che le era stato chiesto: tutto).
+    const falliti = results.filter((r) => !r.ok);
+    if (falliti.length > 0) {
+      return {
+        ok: true,
+        detail: `sequenza completata con ${falliti.length} ${falliti.length === 1 ? 'errore' : 'errori'} su ${results.length} passi`,
+        failed: falliti.length,
+        failedSteps: falliti.map((r) => ({ index: r.index, type: r.type })),
+        steps: results
+      };
+    }
     return {
       ok: true,
       detail: `sequenza completata: ${results.length} passi`,
