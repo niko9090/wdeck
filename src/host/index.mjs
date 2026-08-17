@@ -43,6 +43,23 @@ function readVersion() {
   }
 }
 
+/**
+ * Risolve il percorso del log di audit tenendolo dentro baseDir.
+ * Il percorso e' configurabile, ma un valore assoluto o con ".." scriverebbe il
+ * registro fuori dalla cartella dei dati: in quel caso si ripiega sul default.
+ * @param {string} baseDir
+ * @param {string|undefined} file
+ * @returns {string}
+ */
+export function resolveAuditFile(baseDir, file) {
+  const predefinito = path.join(baseDir, 'wdeck-audit.log');
+  if (!file) return predefinito;
+  const base = path.resolve(baseDir);
+  const risolto = path.resolve(base, file);
+  if (risolto === base || risolto.startsWith(base + path.sep)) return risolto;
+  return predefinito;
+}
+
 /** Indirizzi IPv4 non-loopback della macchina, per stampare gli URL LAN. */
 export function lanAddresses() {
   const out = [];
@@ -184,9 +201,7 @@ export function createHost(options = {}) {
     // persistente non c'e' modo di ricostruire cosa e' successo, perche' i log
     // della console spariscono alla chiusura.
     audit: createAuditLog({
-      file: deck.settings.security.audit?.file
-        ? path.resolve(baseDir, deck.settings.security.audit.file)
-        : path.join(baseDir, 'wdeck-audit.log'),
+      file: resolveAuditFile(baseDir, deck.settings.security.audit?.file),
       enabled: options.audit !== false && deck.settings.security.audit?.enabled !== false,
       maxBytes: deck.settings.security.audit?.maxBytes,
       keep: deck.settings.security.audit?.keep,

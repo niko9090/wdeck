@@ -9,6 +9,7 @@
 
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -30,6 +31,24 @@ function tempDir() {
 }
 
 const sha = (testo) => crypto.createHash('sha256').update(testo).digest('hex');
+
+/**
+ * Finto `spawn` per la verifica Authenticode: restituisce lo stato indicato
+ * senza chiamare PowerShell (la verifica scatta solo su win32, dove i test
+ * girano su binari finti che non sarebbero firmati).
+ */
+function firmaFinta(stato) {
+  return () => {
+    const proc = new EventEmitter();
+    proc.stdout = new EventEmitter();
+    proc.stderr = new EventEmitter();
+    setImmediate(() => {
+      proc.stdout.emit('data', Buffer.from(`${stato}\n`));
+      proc.emit('close', stato === 'Valid' ? 0 : 1);
+    });
+    return proc;
+  };
+}
 
 /** Finto GitHub: risponde con un eseguibile e le sue impronte. */
 function finteRisposte({ contenuto = 'EXE NUOVO', impronta, nome = 'wdeck.exe' } = {}) {
@@ -118,6 +137,40 @@ test('download: l\'avanzamento viene riferito', async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('download: un reindirizzamento verso http viene rifiutato', async () => {
+  // Il primo salto e' https, ma reindirizza in chiaro: seguendo i redirect a
+  // mano il secondo salto va rifiutato prima ancora di leggerne il corpo.
+  const fetchImpl = async (url) => {
+    if (/^https:\/\//i.test(url)) {
+      return {
+        ok: false,
+        status: 302,
+        headers: { get: (k) => (String(k).toLowerCase() === 'location' ? 'http://insicuro.invalid/wdeck.exe' : null) }
+      };
+    }
+    throw new Error('non si sarebbe dovuto scaricare da http');
+  };
+  await assert.rejects(
+    () => downloadTo('https://example.invalid/wdeck.exe', path.join(tempDir(), 'a.exe'), { fetchImpl }),
+    /non cifrato/
+  );
+});
+
+test('download: oltre la dimensione attesa ci si ferma', async () => {
+  const dir = tempDir();
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: () => '50' },
+    body: (async function* () { yield Buffer.from('a'.repeat(500)); })()
+  });
+  await assert.rejects(
+    () => downloadTo('https://example.invalid/x', path.join(dir, 'a.exe'), { fetchImpl, maxBytes: 100 }),
+    /supera la dimensione/
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // ---------------------------------------------------------------- sostituzione
 
 test('aggiornamento: l\'exe viene sostituito e il vecchio resta da parte', async () => {
@@ -128,7 +181,8 @@ test('aggiornamento: l\'exe viene sostituito e il vecchio resta da parte', async
   const esito = await applyUpdate({
     release: release(),
     exePath: exe,
-    fetchImpl: finteRisposte({ contenuto: 'EXE NUOVO' })
+    fetchImpl: finteRisposte({ contenuto: 'EXE NUOVO' }),
+    spawnImpl: firmaFinta('Valid')
   });
 
   assert.equal(esito.ok, true);
@@ -158,6 +212,28 @@ test('aggiornamento: impronta diversa -> non si tocca nulla', async () => {
   assert.equal(fs.readFileSync(exe, 'utf8'), 'EXE VECCHIO', 'l\'eseguibile in uso non va toccato');
   assert.equal(fs.existsSync(`${exe}${SUFFISSO_VECCHIO}`), false, 'nessuna copia a meta\' strada');
   assert.deepEqual(fs.readdirSync(dir), ['wdeck.exe'], 'niente file di scarto');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('aggiornamento: firma non valida -> non si sostituisce nulla', { skip: process.platform !== 'win32' }, async () => {
+  const dir = tempDir();
+  const exe = path.join(dir, 'wdeck.exe');
+  fs.writeFileSync(exe, 'EXE VECCHIO');
+
+  // Impronta corretta ma firma assente: la verifica Authenticode deve bloccare
+  // tutto prima del rename, lasciando l'eseguibile in uso intatto.
+  await assert.rejects(
+    () => applyUpdate({
+      release: release(),
+      exePath: exe,
+      fetchImpl: finteRisposte({ contenuto: 'EXE NUOVO' }),
+      spawnImpl: firmaFinta('NotSigned')
+    }),
+    /firma Authenticode non valida/
+  );
+
+  assert.equal(fs.readFileSync(exe, 'utf8'), 'EXE VECCHIO', 'l\'eseguibile in uso non va toccato');
+  assert.equal(fs.existsSync(`${exe}${SUFFISSO_VECCHIO}`), false, 'nessuna copia a meta\' strada');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

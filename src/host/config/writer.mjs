@@ -31,13 +31,18 @@ export function mergeDeckUpdate(current, incoming) {
   const currentSettings = current.settings ?? {};
   const incomingSettings = incoming.settings ?? {};
 
+  // security non e' modificabile per questa via: ha endpoint dedicati. Il blocco
+  // in arrivo dall'editor va sempre scartato *prima* di fondere, altrimenti su un
+  // deck.json minimale (senza security su disco) i valori del client
+  // sopravvivrebbero. Si conserva solo il blocco su disco, e solo se presente.
+  const { security: _sicurezzaScartata, ...incomingSettingsSenzaSicurezza } = incomingSettings;
+
   const merged = {
     ...current,
     ...incoming,
     settings: {
       ...currentSettings,
-      ...incomingSettings,
-      // security non e' modificabile per questa via: ha endpoint dedicati.
+      ...incomingSettingsSenzaSicurezza,
       ...(currentSettings.security === undefined ? {} : { security: currentSettings.security }),
       ui: { ...currentSettings.ui, ...(incomingSettings.ui ?? {}) },
       integrations: { ...currentSettings.integrations, ...(incomingSettings.integrations ?? {}) }
@@ -55,21 +60,25 @@ export function mergeDeckUpdate(current, incoming) {
  * @returns {object}
  */
 export function compactDeck(deck) {
+  // Gli `?? []` non servono a un deck ben formato, ma evitano che un input
+  // malformato (un profilo senza `pages`, una pagina senza `buttons`) faccia
+  // esplodere `.map` con una TypeError: cosi' l'oggetto arriva intero alla
+  // validazione, che lo respinge con un messaggio pulito.
   return {
     version: deck.version,
     name: deck.name,
     defaultProfile: deck.defaultProfile,
     settings: deck.settings,
-    profiles: deck.profiles.map((profile) => ({
+    profiles: (deck.profiles ?? []).map((profile) => ({
       id: profile.id,
       name: profile.name,
       defaultPage: profile.defaultPage,
-      pages: profile.pages.map((page) => ({
+      pages: (profile.pages ?? []).map((page) => ({
         id: page.id,
         name: page.name,
         rows: page.rows,
         cols: page.cols,
-        buttons: page.buttons.map((button) => {
+        buttons: (page.buttons ?? []).map((button) => {
           const out = {
             id: button.id,
             label: button.label,
@@ -101,6 +110,9 @@ export function compactDeck(deck) {
  * @returns {{ok: true, deck: object, backup: string|null} | {ok: false, errors: Array, message: string}}
  */
 export function saveDeck({ configPath, current, incoming, actionTypes }) {
+  // `compactDeck` tollera profili/pagine/bottoni mancanti (vedi `?? []`), quindi
+  // un input malformato non vi lancia piu' una TypeError: arriva integro alla
+  // validazione, che lo respinge con un errore strutturato invece di un 500.
   const merged = compactDeck(mergeDeckUpdate(current, incoming));
 
   const validation = validateDeck(merged, actionTypes ? { actionTypes } : {});
@@ -136,7 +148,16 @@ export function writeAtomic(filePath, content) {
   }
 
   const tmp = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, content, 'utf8');
+  // Si scrive e si forza il flush su disco (fsync) prima del rename: cosi' un
+  // crash o un blackout subito dopo il salvataggio non lascia un file rinominato
+  // ma con contenuto ancora nella cache del sistema.
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeSync(fd, content, null, 'utf8');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
   fs.renameSync(tmp, filePath);
   return backup;
 }
