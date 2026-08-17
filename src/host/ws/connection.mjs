@@ -15,6 +15,18 @@ import {
 
 export const READY_STATE = Object.freeze({ OPEN: 1, CLOSING: 2, CLOSED: 3 });
 
+/**
+ * Tetto della coda di uscita del socket. Oltre questo valore un client lento
+ * farebbe accumulare frame in memoria senza limite (DoS): meglio chiuderlo.
+ */
+const MAX_OUTBOUND_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Decoder UTF-8 rigoroso per i frame di testo: le sequenze non valide devono
+ * chiudere la connessione con 1007, non essere sostituite da U+FFFD.
+ */
+const UTF8_STRICT = new TextDecoder('utf-8', { fatal: true });
+
 export class WebSocketConnection extends EventEmitter {
   /**
    * @param {import('node:net').Socket} socket
@@ -53,9 +65,18 @@ export class WebSocketConnection extends EventEmitter {
 
     for (const { opcode, payload } of messages) {
       switch (opcode) {
-        case OPCODES.TEXT:
-          this.emit('message', payload.toString('utf8'), false);
+        case OPCODES.TEXT: {
+          // Un frame di testo deve essere UTF-8 valido: sequenze rotte -> 1007.
+          let str;
+          try {
+            str = UTF8_STRICT.decode(payload);
+          } catch {
+            this.close(1007, 'testo non UTF-8 valido');
+            return;
+          }
+          this.emit('message', str, false);
           break;
+        }
         case OPCODES.BINARY:
           this.emit('message', payload, true);
           break;
@@ -67,12 +88,29 @@ export class WebSocketConnection extends EventEmitter {
           this.emit('pong', payload);
           break;
         case OPCODES.CLOSE: {
-          const { code, reason } = decodeCloseBody(payload);
-          if (this.readyState === READY_STATE.OPEN) {
-            this.readyState = READY_STATE.CLOSING;
-            this.#write(encodeFrame(OPCODES.CLOSE, encodeCloseBody(code === 1005 ? 1000 : code), { mask: !this.isServer }));
+          let code = 1005;
+          let reason = '';
+          try {
+            ({ code, reason } = decodeCloseBody(payload));
+          } catch (err) {
+            // Close malformato (1 byte, codice riservato, motivo non UTF-8):
+            // si risponde col codice d'errore adeguato invece di fidarsi.
+            this.close(err instanceof ProtocolError ? err.code : 1002, 'close non valido');
+            return;
           }
-          this.#finish(code, reason);
+          if (this.readyState === READY_STATE.OPEN) {
+            // Chiusura ordinata: si spedisce il frame di eco e si lascia defluire
+            // il socket con end(), perche' destroy() lo troncava spesso prima
+            // che il frame di close raggiungesse il peer.
+            this.readyState = READY_STATE.CLOSED;
+            const echo = encodeFrame(OPCODES.CLOSE, encodeCloseBody(code === 1005 ? 1000 : code), { mask: !this.isServer });
+            try {
+              if (!this.socket.destroyed) this.socket.end(echo);
+            } catch { /* socket gia' rotto: niente da fare */ }
+            this.emit('close', { code, reason });
+          } else {
+            this.#finish(code, reason);
+          }
           break;
         }
         default:
@@ -84,7 +122,17 @@ export class WebSocketConnection extends EventEmitter {
   #write(buffer) {
     if (this.socket.destroyed) return false;
     try {
-      return this.socket.write(buffer);
+      const ok = this.socket.write(buffer);
+      // Backpressure: se un client non legge, la coda di uscita del socket
+      // cresce senza limite. Oltre il tetto si chiude la connessione (che il
+      // gestore rimuove poi dai propri insiemi via evento 'close') invece di
+      // consumare memoria per un peer che non tiene il passo.
+      if (this.socket.writableLength > MAX_OUTBOUND_BYTES) {
+        this.emit('error', new Error('coda di uscita oltre il limite: client troppo lento'));
+        this.#finish(1009, 'client troppo lento');
+        return false;
+      }
+      return ok;
     } catch (err) {
       this.emit('error', err);
       return false;

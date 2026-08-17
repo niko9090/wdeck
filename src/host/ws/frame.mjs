@@ -48,6 +48,13 @@ export function encodeFrame(opcode, data = Buffer.alloc(0), { mask = false, fin 
   const payload = Buffer.isBuffer(data) ? data : Buffer.from(String(data), 'utf8');
   const len = payload.length;
 
+  // I frame di controllo (CLOSE/PING/PONG) devono stare in 125 byte: e' una
+  // regola del protocollo, non una scelta di comodo. Meglio fallire qui che
+  // spedire un frame che il peer rifiutera'.
+  if (opcode >= 0x8 && len > 125) {
+    throw new ProtocolError(`payload di controllo troppo grande: ${len} byte`);
+  }
+
   let headerLen = 2;
   if (len >= 65536) headerLen += 8;
   else if (len > 125) headerLen += 2;
@@ -93,10 +100,43 @@ export function encodeCloseBody(code = 1000, reason = '') {
   return body;
 }
 
-/** Interpreta il payload di un frame di close. */
+/** Decoder UTF-8 rigoroso: fallisce sulle sequenze non valide invece di
+ * sostituirle silenziosamente con U+FFFD (RFC 6455 §8.1). */
+const UTF8_STRICT = new TextDecoder('utf-8', { fatal: true });
+
+/**
+ * Verifica che un codice di close sia usabile "sul filo".
+ * Ammessi: 1000-1003, 1007-1011 e l'intervallo privato 3000-4999.
+ * Esclusi i riservati (1004, 1005, 1006, 1015): non devono comparire nei frame.
+ * @param {number} code
+ * @returns {boolean}
+ */
+export function isValidCloseCode(code) {
+  if (code >= 3000 && code <= 4999) return true;
+  return code === 1000 || code === 1001 || code === 1002 || code === 1003
+    || (code >= 1007 && code <= 1011);
+}
+
+/**
+ * Interpreta il payload di un frame di close.
+ * @param {Buffer} payload
+ * @returns {{code: number, reason: string}}
+ * @throws {ProtocolError} su lunghezza (1 byte), codice o motivo non validi
+ */
 export function decodeCloseBody(payload) {
-  if (!payload || payload.length < 2) return { code: 1005, reason: '' };
-  return { code: payload.readUInt16BE(0), reason: payload.subarray(2).toString('utf8') };
+  // Nessun corpo: chiusura senza codice esplicito (1005 = "nessun codice ricevuto").
+  if (!payload || payload.length === 0) return { code: 1005, reason: '' };
+  // Un solo byte non basta a contenere un codice: e' un frame malformato.
+  if (payload.length < 2) throw new ProtocolError('frame di close malformato (1 byte)');
+  const code = payload.readUInt16BE(0);
+  if (!isValidCloseCode(code)) throw new ProtocolError(`codice di close non valido: ${code}`);
+  let reason;
+  try {
+    reason = UTF8_STRICT.decode(payload.subarray(2));
+  } catch {
+    throw new ProtocolError('motivo di close non UTF-8 valido', 1007);
+  }
+  return { code, reason };
 }
 
 /**

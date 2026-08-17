@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { FrameParser, OPCODES, acceptKey, encodeFrame, encodeCloseBody, decodeCloseBody, ProtocolError } from '../src/host/ws/frame.mjs';
+import { FrameParser, OPCODES, acceptKey, encodeFrame, encodeCloseBody, decodeCloseBody, isValidCloseCode, ProtocolError } from '../src/host/ws/frame.mjs';
 
 const readAll = (parser, buffer) => parser.push(buffer);
 const text = (payload) => payload.toString('utf8');
@@ -119,6 +119,46 @@ test('ws: codifica e decodifica del frame di close', () => {
   assert.deepEqual(decodeCloseBody(body), { code: 1008, reason: 'token non valido' });
   assert.deepEqual(decodeCloseBody(Buffer.alloc(0)), { code: 1005, reason: '' });
   assert.deepEqual(decodeCloseBody(null), { code: 1005, reason: '' });
+});
+
+test('ws: encodeFrame rifiuta un payload di controllo oltre 125 byte', () => {
+  assert.throws(() => encodeFrame(OPCODES.CLOSE, 'x'.repeat(126)), ProtocolError);
+  assert.throws(() => encodeFrame(OPCODES.PING, 'x'.repeat(200)), ProtocolError);
+  // Al limite (125) invece deve passare.
+  assert.ok(encodeFrame(OPCODES.PING, 'x'.repeat(125)));
+});
+
+test('ws: un frame di close di 1 byte e\' un errore di protocollo (1002)', () => {
+  try {
+    decodeCloseBody(Buffer.from([0x03]));
+    assert.fail('atteso errore');
+  } catch (err) {
+    assert.ok(err instanceof ProtocolError);
+    assert.equal(err.code, 1002);
+  }
+});
+
+test('ws: decodeCloseBody rifiuta i codici riservati/invalidi', () => {
+  for (const bad of [1005, 1006, 1015, 999, 0]) {
+    const body = Buffer.alloc(2);
+    body.writeUInt16BE(bad, 0);
+    assert.throws(() => decodeCloseBody(body), ProtocolError, `codice ${bad}`);
+  }
+  assert.equal(isValidCloseCode(1000), true);
+  assert.equal(isValidCloseCode(1005), false);
+  assert.equal(isValidCloseCode(3000), true);
+  assert.equal(isValidCloseCode(4999), true);
+});
+
+test('ws: decodeCloseBody rifiuta un motivo non UTF-8 (1007)', () => {
+  const body = Buffer.concat([Buffer.from([0x03, 0xe8]), Buffer.from([0xff, 0xfe])]); // 1000 + byte invalidi
+  try {
+    decodeCloseBody(body);
+    assert.fail('atteso errore');
+  } catch (err) {
+    assert.ok(err instanceof ProtocolError);
+    assert.equal(err.code, 1007);
+  }
 });
 
 test('ws: i frame binari mantengono i byte esatti', () => {
