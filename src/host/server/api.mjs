@@ -207,6 +207,26 @@ export function createApiRouter(host) {
       });
     },
 
+    // Prova un'azione senza salvarla: la esegue in dry-run e restituisce cosa
+    // FAREBBE (descrizione, comando simulato), senza toccare il sistema. E' il
+    // pulsante "Prova" dell'editor: vale sia per chi non sa cosa fa un'azione,
+    // sia per controllare i parametri prima di salvare. Forza sempre il dry-run,
+    // quindi non c'e' un'azione reale da autorizzare.
+    [`POST ${ENDPOINTS.actionTest}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      if (!allow(res, host.limits.checkPress({ address: addressOf(req) }), 'comandi')) return;
+      const body = await readJsonBody(req);
+      if (!body || typeof body.type !== 'string') {
+        sendError(res, 400, ERROR_CODES.badRequest, 'campo "type" mancante');
+        return;
+      }
+      const result = await dispatcher.execute(
+        { type: body.type, params: body.params ?? {} },
+        { dryRun: true, source: 'rest' }
+      );
+      sendJson(res, result.ok ? 200 : statusForError(result.error), { ok: result.ok, result });
+    },
+
     [`POST ${ENDPOINTS.save}`]: async (req, res) => {
       if (!requireAuth(req, res)) return;
       const body = await readJsonBody(req);

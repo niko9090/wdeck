@@ -352,8 +352,26 @@ per le letture.
 Elenco del registro azioni (utile per costruire editor di configurazione).
 
 ```json
-{ "ok": true, "actions": [ { "type": "media", "title": "Tasti multimediali", "description": "...", "platforms": ["win32"], "paramsHelp": { "key": "playpause | next | ..." }, "stub": false } ] }
+{ "ok": true, "actions": [ { "type": "media", "title": "Tasti multimediali", "description": "...", "platforms": ["win32"], "paramsHelp": { "key": "playpause | next | ..." }, "fields": [ { "key": "key", "label": "Tasto", "type": "select", "options": [ { "value": "playpause", "label": "Play/Pausa" } ] } ], "advanced": false, "stub": false } ] }
 ```
+
+Ogni azione porta con se' `fields` (lo schema dei parametri per il form guidato
+dell'editor: `key`, `label`, `type`, e a seconda del tipo `options`/`min`/`max`/
+`default`) e `advanced` (vero se ha parametri complessi configurabili solo via
+JSON). Vedi [ADDING-ACTIONS.md](ADDING-ACTIONS.md).
+
+### `POST /api/action/test`
+
+Prova un'azione **senza salvarla**: la esegue in dry-run e restituisce cosa
+farebbe, senza toccare il sistema. E' il pulsante "Prova" dell'editor.
+
+```json
+{ "type": "media", "params": { "key": "playpause" } }
+```
+
+Il dry-run e' **sempre forzato**: non c'e' un'azione reale da autorizzare. La
+risposta ha la stessa forma di `POST /api/press` (`{ ok, result }` con
+`description`/`detail`). Vale il limite dei comandi. `400` se manca `type`.
 
 ### `POST /api/press`
 

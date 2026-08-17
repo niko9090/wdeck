@@ -3,6 +3,31 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.0] - 2026-08-18
+
+Tre cose per rendere l'editor **adatto a tutti**: bottoni pronti da cui partire,
+un benvenuto al primo avvio, e un pulsante "Prova" per vedere cosa fa un'azione
+prima di salvarla.
+
+### Aggiunto
+
+- **Libreria di preset.** Aggiungendo un pulsante nuovo compare una galleria di
+  modelli pronti — Muto, Play/Pausa, Successivo/Precedente, Volume su/giù,
+  Screenshot, Blocca PC, Copia, Incolla — con icona e azione già configurate:
+  si sceglie, si personalizza se serve, si salva. Resta l'opzione "bottone
+  vuoto" per chi vuole partire da zero.
+- **Benvenuto al primo avvio.** Con un deck ancora vuoto, un breve messaggio
+  offre di creare il primo pulsante (che apre la libreria dei preset), invece
+  di lasciare l'utente davanti a una griglia muta. Appare una volta sola.
+- **Pulsante "Prova" nell'editor.** Esegue l'azione in **dry-run** e mostra cosa
+  farebbe, senza salvarla né toccare il sistema. Nuovo endpoint
+  `POST /api/action/test` (dry-run sempre forzato).
+
+### Note
+
+I preset sono pensati per Windows; le azioni non disponibili sulla piattaforma
+restano comunque "provabili" in dry-run.
+
 ## [0.7.3] - 2026-08-17
 
 Editor dei pulsanti **guidato**: niente più JSON scritto a mano per i casi

@@ -8,12 +8,15 @@
 import { ENDPOINTS, MSG } from '/shared/protocol.mjs';
 import { CUSTOM_PREFIX, ICONS, iconMarkup, iconSvg } from './icons.js';
 import { language, setLanguage, t } from './i18n.js';
+import { PRESETS } from './presets.js';
 
 const STORAGE = {
   hosts: 'wdeck.hosts',
   active: 'wdeck.active',
   profile: 'wdeck.profile',
   page: 'wdeck.page',
+  // segna che il benvenuto al primo avvio e' gia' stato mostrato
+  welcomed: 'wdeck.welcomed',
   // chiavi della versione precedente, lette una volta sola per non perdere
   // il pairing di chi aggiorna da una versione con un solo host
   legacyToken: 'wdeck.token',
@@ -533,6 +536,64 @@ function renderAll() {
   renderPages();
   renderGrid();
   renderStatus();
+  // Il benvenuto si valuta una volta sola, quando il deck e' pronto.
+  if (!state.welcomeChecked) {
+    state.welcomeChecked = true;
+    maybeWelcome();
+  }
+}
+
+/** Attiva o disattiva la modalita' modifica e ridisegna cio' che cambia. */
+function setEditing(value) {
+  state.editing = Boolean(value);
+  ui.btnEdit.setAttribute('aria-pressed', String(state.editing));
+  renderProfiles();
+  renderPages();
+  renderGrid();
+  toast(t(state.editing ? 'edit.on' : 'edit.off'));
+}
+
+/** Prima cella libera della pagina corrente, in "riga:colonna". */
+function firstEmptyCell(page) {
+  const occupate = new Set((page.buttons ?? []).map((b) => `${b.row}:${b.col}`));
+  for (let r = 0; r < page.rows; r += 1) {
+    for (let c = 0; c < page.cols; c += 1) {
+      if (!occupate.has(`${r}:${c}`)) return `${r}:${c}`;
+    }
+  }
+  return '0:0';
+}
+
+/**
+ * Benvenuto al primo avvio: appare solo a chi non l'ha ancora visto e ha un
+ * deck ancora vuoto. Offre di creare il primo pulsante (che apre la libreria
+ * dei preset) invece di lasciare l'utente davanti a una griglia muta.
+ */
+function maybeWelcome() {
+  try {
+    if (localStorage.getItem(STORAGE.welcomed)) return;
+  } catch { return; }
+  const profile = currentProfile();
+  const vuoto = profile && profile.pages.every((pg) => (pg.buttons ?? []).length === 0);
+  // Chi ha gia' dei pulsanti non e' un nuovo arrivato: si segna e basta.
+  const segna = () => { try { localStorage.setItem(STORAGE.welcomed, '1'); } catch { /* storage non disponibile */ } };
+  if (!vuoto) { segna(); return; }
+
+  openSheet({
+    title: t('welcome.title'),
+    body: `<p class="sheet-text">${t('welcome.body')}</p>`,
+    actions: [
+      { label: t('welcome.later'), kind: 'ghost', onClick: () => { segna(); closeSheet(); } },
+      { label: t('welcome.start'), kind: 'primary', onClick: () => {
+        segna();
+        closeSheet();
+        if (!state.editing) setEditing(true);
+        const page = currentPage();
+        if (page) choosePreset(firstEmptyCell(page));
+      } }
+    ],
+    onClose: segna
+  });
 }
 
 function renderProfiles() {
@@ -1200,7 +1261,35 @@ function wireActionEditor({ typeSelect, fieldsBox, advToggle, advBox, textarea, 
   };
 }
 
-async function editButton(buttonId, cell) {
+/**
+ * Galleria dei preset mostrata quando si aggiunge un bottone nuovo. Si sceglie
+ * un modello pronto (che apre l'editor gia' compilato) oppure "vuoto" per
+ * partire da zero. Pensata per chi non sa da dove cominciare.
+ */
+function choosePreset(cell) {
+  const tile = (p) => `<button type="button" class="preset-tile" data-preset="${escapeHtml(p.id)}">
+      <span class="preset-ico">${iconMarkup(p.icon)}</span>
+      <span class="preset-name">${escapeHtml(t(`preset.${p.id}`))}</span>
+    </button>`;
+  openSheet({
+    title: t('preset.title'),
+    body: `
+      <p class="sheet-hint">${t('preset.hint')}</p>
+      <div class="preset-grid">${PRESETS.map(tile).join('')}</div>
+      <button type="button" class="btn ghost" id="preset-blank">${t('preset.blank')}</button>
+    `,
+    actions: [{ label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() }]
+  });
+  el('preset-blank')?.addEventListener('click', () => editButton(null, cell));
+  for (const btn of ui.sheetBody.querySelectorAll('[data-preset]')) {
+    btn.addEventListener('click', () => {
+      const p = PRESETS.find((x) => x.id === btn.dataset.preset);
+      if (p) editButton(null, cell, { ...p, label: t(`preset.${p.id}`) });
+    });
+  }
+}
+
+async function editButton(buttonId, cell, seed = null) {
   const [groups, customIcons] = await Promise.all([loadActions(), loadCustomIcons()]);
   const page = currentPage();
   if (!page) return;
@@ -1217,13 +1306,16 @@ async function editButton(buttonId, cell) {
     ? JSON.parse(JSON.stringify(existing))
     : {
       id: uniqueSlug(`btn-${Math.random().toString(36).slice(2, 8)}`, allButtonIds(state.deck)),
-      label: 'Nuovo',
+      // Da un preset arrivano etichetta, icona e azione gia' pronte; senza
+      // preset si parte da un bottone vuoto.
+      label: seed?.label ?? 'Nuovo',
       row,
       col,
-      kind: 'button',
-      icon: null,
-      color: '#2d3b55',
-      action: { type: 'noop', params: {} }
+      kind: seed?.kind ?? 'button',
+      icon: seed?.icon ?? null,
+      color: seed?.color ?? '#2d3b55',
+      action: seed?.action ? JSON.parse(JSON.stringify(seed.action)) : { type: 'noop', params: {} },
+      ...(seed?.holdAction ? { holdAction: JSON.parse(JSON.stringify(seed.holdAction)) } : {})
     };
 
   const options = groups
@@ -1252,6 +1344,8 @@ async function editButton(buttonId, cell) {
       <div id="ed-adv" hidden>
         <label class="field"><span>${t('edit.paramsJson')}</span><textarea id="ed-params" rows="5" spellcheck="false">${escapeHtml(JSON.stringify(draft.action.params ?? {}, null, 2))}</textarea></label>
       </div>
+      <button type="button" class="btn ghost small" id="ed-test">${t('edit.test')}</button>
+      <p id="ed-test-result" class="sheet-hint" role="status" aria-live="polite"></p>
 
       <h3 class="sheet-section">${t('edit.icon')}</h3>
       ${iconPickerHtml(draft.icon, customIcons)}
@@ -1317,6 +1411,11 @@ async function editButton(buttonId, cell) {
   };
   holdSelect.addEventListener('change', aggiornaHold);
   aggiornaHold();
+
+  // "Prova": esegue l'azione in dry-run e mostra cosa farebbe, senza salvarla
+  // ne' toccare il sistema. Utile a chi non sa cosa fa un'azione e per
+  // controllare i parametri prima di salvare.
+  el('ed-test')?.addEventListener('click', () => testAction());
 
   // La descrizione dell'azione e le opzioni che dipendono dal tipo (cursore,
   // stato reale) restano gestite a parte dal form dei parametri.
@@ -1395,6 +1494,38 @@ async function saveButtonDraft(draft, existing) {
   if (existing && index !== -1) page.buttons[index] = next;
   else page.buttons.push(next);
   await persistDeck(deck, t('edit.saved', { label: next.label }));
+}
+
+/**
+ * Esegue l'azione in corso di modifica in dry-run e mostra sotto il pulsante
+ * cosa farebbe. Non salva e non tocca il sistema: l'host forza il dry-run.
+ */
+async function testAction() {
+  const box = el('ed-test-result');
+  const type = el('ed-type')?.value;
+  if (!type) return;
+  let params;
+  try {
+    params = edMainCtl.readParams();
+  } catch (err) {
+    if (box) { box.textContent = t('edit.paramsInvalid', { message: err.message }); box.className = 'sheet-hint err'; }
+    return;
+  }
+  if (box) { box.textContent = t('edit.testing'); box.className = 'sheet-hint'; }
+  const res = await api(ENDPOINTS.actionTest, { method: 'POST', body: { type, params } });
+  if (!box) return;
+  if (!res.ok) {
+    const msg = res.data?.result?.error?.message ?? res.data?.error?.message ?? t('edit.testFailed');
+    box.textContent = t('edit.testFailed') + ' ' + msg;
+    box.className = 'sheet-hint err';
+    return;
+  }
+  // In dry-run l'host restituisce la descrizione di cosa farebbe, piu' l'even-
+  // tuale dettaglio (comando simulato).
+  const r = res.data.result ?? {};
+  const testo = r.result?.detail ?? r.detail ?? r.description ?? t('edit.testOk');
+  box.textContent = `✓ ${testo}`;
+  box.className = 'sheet-hint ok';
 }
 
 async function removeButton(buttonId) {
@@ -2012,14 +2143,7 @@ function bindEvents() {
   bindGrid();
   bindSheet();
 
-  ui.btnEdit.addEventListener('click', () => {
-    state.editing = !state.editing;
-    ui.btnEdit.setAttribute('aria-pressed', String(state.editing));
-    renderProfiles();
-    renderPages();
-    renderGrid();
-    toast(t(state.editing ? 'edit.on' : 'edit.off'));
-  });
+  ui.btnEdit.addEventListener('click', () => setEditing(!state.editing));
 
   ui.btnSimulate.addEventListener('click', () => {
     state.simulate = !state.simulate;
@@ -2121,7 +2245,7 @@ function bindGrid() {
         control.setPointerCapture?.(event.pointerId);
         gesture = { kind: 'edit-move', element: control, startX: event.clientX, startY: event.clientY, moved: false };
       } else if (empty) {
-        editButton(null, empty.dataset.empty);
+        choosePreset(empty.dataset.empty);
       }
       return;
     }

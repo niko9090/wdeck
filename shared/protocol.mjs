@@ -32,6 +32,7 @@ export const ENDPOINTS = {
   press: '/api/press',
   pair: '/api/pair',
   actions: '/api/actions',
+  actionTest: '/api/action/test',
   reload: '/api/reload',
   save: '/api/deck/save',
   settings: '/api/settings',
