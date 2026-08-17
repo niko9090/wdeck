@@ -3,6 +3,48 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.7.1] - 2026-08-17
+
+Correzione del riavvio dopo l'aggiornamento e firma delle release con
+verifica "a pin", cosi' l'aggiornamento automatico funziona anche senza un
+certificato comprato.
+
+### Corretto
+
+- **Dopo l'aggiornamento l'app si apriva e si richiudeva da sola**, e bisognava
+  riaprirla a mano. Il riavvio lanciava il nuovo processo senza aspettare che
+  il vecchio avesse chiuso: per un istante la porta restava occupata, il nuovo
+  la trovava presa (`EADDRINUSE`) e usciva subito. Ora il riavvio **attende** la
+  chiusura prima di ripartire, e l'avvio **ritenta** il bind per qualche secondo
+  se la porta e' ancora occupata (vale anche se per sbaglio partono due istanze).
+
+### Sicurezza
+
+- **Firma delle release con verifica "a pin".** Dalla 0.7.0 l'aggiornamento
+  automatico pretendeva una firma Authenticode pienamente fidata dal sistema:
+  giusto in teoria, ma senza un certificato comprato (con verifica d'identita')
+  nessun binario la superava, e l'auto-update restava di fatto bloccato. Ora la
+  verifica confronta l'**impronta del certificato** con quella del progetto
+  (*certificate pinning*): un certificato self-signed, che nessun PC conosce,
+  va bene lo stesso - purche' sia **quello giusto** e la firma sia integra.
+  Un file manomesso (`HashMismatch`) o firmato da chiunque altro resta rifiutato,
+  senza dover installare nulla come radice fidata su ogni macchina.
+- `npm run installer` ora **firma anche l'installer**, non solo l'eseguibile che
+  contiene: e' il file che l'utente scarica ed esegue per primo.
+
+### Note
+
+Il pinning ha un prezzo: se un giorno il certificato cambia, le versioni
+pubblicate con quello nuovo non saranno aggiornabili in automatico da chi sta
+su una versione vecchia, che andra' reinstallata a mano una volta. E' il
+compromesso che rende sicura la fiducia in un certificato che il sistema non
+conosce.
+
+L'exe di questa release **non** e' fidato da SmartScreen: un certificato
+self-signed cifra e identifica l'editore verso l'auto-update, ma non porta la
+reputazione che solo un certificato OV/EV di una CA puo' dare. Al primo avvio
+Windows puo' ancora avvisare; l'aggiornamento automatico, invece, ora funziona.
+
 ## [0.7.0] - 2026-08-17
 
 Revisione di sicurezza e robustezza a tappeto: otto sottosistemi riletti uno
