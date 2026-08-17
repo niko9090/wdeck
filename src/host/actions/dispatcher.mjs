@@ -29,6 +29,14 @@ const errorPayload = (err) => ({
 });
 
 /**
+ * Tetto alla profondita' di re-entry in execute(): una sequence che rientra
+ * in execute, o un handler che chiama ctx.execute a catena, non deve poter
+ * ricorrere all'infinito. Il guard e' centrale nel dispatcher, cosi' vale per
+ * qualunque via di rientro, non solo per il controllo di tipo delle sequence.
+ */
+const MAX_EXECUTE_DEPTH = 20;
+
+/**
  * @param {{
  *   registry: import('./registry.mjs').ActionRegistry,
  *   state: import('../state.mjs').HostState,
@@ -46,7 +54,21 @@ export function createDispatcher({ registry, state, getDeck, baseDir, logger = c
   async function execute(action, overrides = {}) {
     const deck = getDeck();
     const dryRun = overrides.dryRun ?? state.dryRun;
+    const depth = overrides.depth ?? 0;
     const started = Date.now();
+
+    if (depth > MAX_EXECUTE_DEPTH) {
+      return {
+        ok: false,
+        type: typeof action?.type === 'string' ? action.type : null,
+        dryRun,
+        error: {
+          code: ERROR_CODES.badRequest,
+          message: `profondita' massima di esecuzione superata (${MAX_EXECUTE_DEPTH}): possibile ricorsione`
+        },
+        durationMs: 0
+      };
+    }
 
     if (typeof action !== 'object' || action === null || typeof action.type !== 'string') {
       return {
@@ -75,12 +97,12 @@ export function createDispatcher({ registry, state, getDeck, baseDir, logger = c
     const ctx = {
       dryRun,
       baseDir,
-      security: deck.settings.security,
+      security: deck.settings?.security,
       deck,
       state,
       logger,
       source: overrides.source ?? 'internal',
-      execute: (step, inner = {}) => execute(step, { ...overrides, ...inner, dryRun }),
+      execute: (step, inner = {}) => execute(step, { ...overrides, ...inner, dryRun, depth: depth + 1 }),
       ...overrides
     };
     ctx.dryRun = dryRun;

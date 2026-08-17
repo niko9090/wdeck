@@ -126,7 +126,6 @@ const OBS_COMMANDS = {
   },
   'toggle-source': {
     label: 'mostra/nascondi sorgente',
-    needs: 'source',
     build: (params) => ({
       requestType: 'SetSceneItemEnabled',
       requestData: { sceneName: params.scene, sceneItemId: params.itemId, sceneItemEnabled: params.enabled !== false }
@@ -215,7 +214,14 @@ export const obsAction = {
   validate(params) {
     const spec = OBS_COMMANDS[params?.command];
     if (!spec) throw new Error(`parametro "command" non valido: atteso uno fra ${Object.keys(OBS_COMMANDS).join(', ')}`);
-    if (spec.needs && !params?.[spec.needs]) {
+    // "toggle-source" identifica l'elemento con scene + itemId (mai con "source"):
+    // sono gli stessi campi che legge readState, e vanno validati esplicitamente.
+    if (params.command === 'toggle-source') {
+      if (!params?.scene) throw new Error('il comando "toggle-source" richiede il parametro "scene"');
+      if (params?.itemId === undefined || params?.itemId === null) {
+        throw new Error('il comando "toggle-source" richiede il parametro "itemId"');
+      }
+    } else if (spec.needs && !params?.[spec.needs]) {
       throw new Error(`il comando "${params.command}" richiede il parametro "${spec.needs}"`);
     }
   },
@@ -322,6 +328,12 @@ export const hueAction = {
   },
   validate(params) {
     if (params?.id === undefined) throw new Error('parametro "id" mancante');
+    // "id" finisce nel percorso dell'URL del bridge: deve essere un intero
+    // positivo, altrimenti un valore come "1/config" ridirige la richiesta.
+    const id = Number(params.id);
+    if (!Number.isInteger(id) || id <= 0 || String(params.id).trim() !== String(id)) {
+      throw new Error('parametro "id" non valido: atteso intero positivo');
+    }
     if (params?.target !== undefined && !['light', 'group'].includes(params.target)) {
       throw new Error('parametro "target" non valido: atteso "light" o "group"');
     }
@@ -331,6 +343,14 @@ export const hueAction = {
     if (params?.brightness !== undefined) {
       const b = Number(params.brightness);
       if (!Number.isFinite(b) || b < 0 || b > 100) throw new Error('parametro "brightness" non valido: 0..100');
+    }
+    if (params?.hue !== undefined) {
+      const h = Number(params.hue);
+      if (!Number.isInteger(h) || h < 0 || h > 65535) throw new Error('parametro "hue" non valido: 0..65535');
+    }
+    if (params?.saturation !== undefined) {
+      const s = Number(params.saturation);
+      if (!Number.isInteger(s) || s < 0 || s > 254) throw new Error('parametro "saturation" non valido: 0..254');
     }
   },
   describe(params) {

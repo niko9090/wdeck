@@ -73,6 +73,18 @@ export const clipboardAction = {
   }
 };
 
+/**
+ * shell: location note e sicure che il bottone puo' aprire. Tutto il resto
+ * (in particolare le forme "shell:::{CLSID}", che possono puntare a oggetti di
+ * sistema arbitrari) viene rifiutato: una cartella "vera" resta comunque
+ * apribile passando il suo percorso.
+ */
+const ALLOWED_SHELL_LOCATIONS = new Set([
+  'downloads', 'desktop', 'desktopdirectory', 'personal', 'documentslibrary', 'mydocuments',
+  'mypictures', 'pictures', 'mymusic', 'music', 'myvideo', 'videos',
+  'profile', 'recent', 'sendto', 'startup', 'favorites', 'recyclebinfolder', 'usersfilesfolder'
+]);
+
 export const folderAction = {
   type: 'folder',
   title: 'Apri cartella',
@@ -83,13 +95,24 @@ export const folderAction = {
   paramsHelp: { path: 'percorso della cartella, oppure una shell: location', select: 'percorso di un file da selezionare' },
   validate(params) {
     if (typeof params?.path !== 'string' || params.path.trim() === '') throw new Error('parametro "path" mancante');
+    const target = params.path.trim();
+    if (/^shell:/i.test(target)) {
+      const loc = target.slice(target.indexOf(':') + 1).trim().toLowerCase();
+      if (!ALLOWED_SHELL_LOCATIONS.has(loc)) {
+        throw new Error(`shell: location non consentita: "${target}" (ammesse: ${[...ALLOWED_SHELL_LOCATIONS].join(', ')})`);
+      }
+    }
   },
   describe: (params) => `apre la cartella ${params?.path}`,
   async run(params, ctx) {
     const target = params.path;
-    const isShell = target.toLowerCase().startsWith('shell:');
-    if (!isShell && !fs.existsSync(target) && !ctx.dryRun) {
-      throw new Error(`cartella non trovata: ${target}`);
+    const isShell = /^shell:/i.test(target);
+    if (!isShell && !ctx.dryRun) {
+      // Deve essere una cartella reale ed esistente: non un file, non un percorso inventato.
+      let stat = null;
+      try { stat = fs.statSync(target); } catch { stat = null; }
+      if (!stat) throw new Error(`cartella non trovata: ${target}`);
+      if (!stat.isDirectory()) throw new Error(`il percorso non e' una cartella: ${target}`);
     }
     if (ctx.dryRun) return { ok: true, simulated: true, detail: `aprirebbe ${target}` };
 

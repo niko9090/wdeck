@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { findButton } from '../src/host/actions/dispatcher.mjs';
+import { findButton, createDispatcher } from '../src/host/actions/dispatcher.mjs';
 import { createDefaultRegistry } from '../src/host/actions/handlers/index.mjs';
 import { makeDeck, makeDispatcher } from '../tools/fixtures.mjs';
 
@@ -234,6 +234,47 @@ test('dispatcher: hold usa holdAction quando presente', async () => {
 
   const lungo = await dispatcher.press({ buttonId: 'play', hold: true });
   assert.equal(lungo.type, 'noop');
+});
+
+test('dispatcher: la re-entry in execute e\' limitata da un tetto di profondita\'', async () => {
+  // Un handler che rientra all'infinito in ctx.execute deve fermarsi al tetto
+  // centrale del dispatcher invece di esaurire lo stack.
+  const registry = createDefaultRegistry({
+    extra: [{
+      type: 'ricorsivo',
+      title: 'Ricorsivo',
+      description: 'handler di test',
+      platforms: ['*'],
+      async run(_params, ctx) {
+        return ctx.execute({ type: 'ricorsivo' });
+      }
+    }]
+  });
+  const { dispatcher } = makeDispatcher({ registry });
+  const result = await dispatcher.execute({ type: 'ricorsivo' });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'bad_request');
+  assert.match(result.error.message, /profondit/i);
+});
+
+test('dispatcher: un deck senza settings normalizzati non fa esplodere press()', async () => {
+  // deck.settings assente: il contesto va costruito senza dereferenziare
+  // security, e press() deve restituire un esito strutturato invece di
+  // sollevare un TypeError sincrono fuori da press().
+  const deck = makeDeck();
+  delete deck.settings;
+  const registry = createDefaultRegistry();
+  const state = { dryRun: true, recordPress() {} };
+  const dispatcher = createDispatcher({
+    registry,
+    state,
+    getDeck: () => deck,
+    baseDir: process.cwd(),
+    logger: { info() {}, warn() {}, error() {} }
+  });
+  const result = await dispatcher.press({ buttonId: 'play' });
+  assert.equal(result.ok, true);
+  assert.equal(result.dryRun, true);
 });
 
 test('dispatcher: misura la durata e registra la sorgente', async () => {
