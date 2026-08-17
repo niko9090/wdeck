@@ -222,6 +222,35 @@ costruzione**: non e' una dipendenza, non compare in `package.json` e l'host non
 lo importa mai. Il vincolo di zero dipendenze a runtime resta verificato da
 `npm run check:deps`.
 
+#### Firma del codice (Authenticode)
+
+Dalla **0.7.0** l'aggiornamento automatico verifica la firma Authenticode
+dell'exe scaricato e **rifiuta i binari non firmati**: un exe non firmato non
+potra' aggiornarsi da solo. Se distribuisci `wdeck.exe`, firmalo. `npm run exe`
+firma da solo quando trova un certificato, indicato da variabili d'ambiente:
+
+```powershell
+# con un file .pfx
+$env:WDECK_SIGN_PFX      = "C:\percorso\certificato.pfx"
+$env:WDECK_SIGN_PASSWORD = "la-password-del-pfx"
+npm run exe
+
+# oppure con un certificato gia' nel deposito di Windows
+$env:WDECK_SIGN_THUMBPRINT = "IMPRONTA-SHA1-DEL-CERTIFICATO"
+npm run exe
+```
+
+Altre variabili facoltative: `WDECK_SIGN_TIMESTAMP` (server di marca temporale
+RFC 3161, predefinito `http://timestamp.digicert.com`) e `WDECK_SIGNTOOL`
+(percorso di `signtool.exe`, se non e' quello del Windows SDK piu' recente). La
+firma usa SHA-256 con marca temporale, cosi' non scade insieme alla sessione, e
+subito dopo viene **riletta e verificata** con la stessa `signtool verify /pa`
+che userebbe l'host. Senza certificato la build **avverte e prosegue**, ma
+l'exe prodotto non e' aggiornabile da solo.
+
+Serve un certificato di code-signing vero (OV/EV) di una CA riconosciuta:
+Windows non si fida di un certificato autofirmato per Authenticode.
+
 ### Firmware ESP32 gia' compilato
 
 ```powershell

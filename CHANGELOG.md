@@ -10,7 +10,7 @@ per uno (sicurezza, server/WebSocket, azioni, adattatori di piattaforma,
 configurazione e aggiornamento, integrazioni, client web, firmware). Nessuna
 funzione nuova per l'utente; tutto quello che segue chiude un difetto che i
 test del percorso felice non vedevano, e ognuno arriva con la sua verifica. La
-suite passa da 465 a 522 controlli.
+suite passa da 465 a 526 controlli.
 
 ### Sicurezza
 
@@ -116,7 +116,10 @@ dimensione limitata restano da provare su hardware vero.
 La verifica Authenticode presuppone che i binari di release siano firmati. Chi
 distribuisce build non firmate deve saperlo: l'aggiornamento automatico le
 rifiuta di proposito, perche' un exe non firmato e uno manomesso, da fuori, si
-somigliano troppo.
+somigliano troppo. Per questo `npm run exe` ora **firma da solo** quando trova
+un certificato (`WDECK_SIGN_PFX`/`WDECK_SIGN_PASSWORD` o `WDECK_SIGN_THUMBPRINT`)
+e avverte quando non c'e'; i dettagli sono nel README, sezione *Firma del
+codice*.
 
 ## [0.6.0] - 2026-08-14
 
