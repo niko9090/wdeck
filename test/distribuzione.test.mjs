@@ -14,13 +14,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 
 // Importabile fuori da un eseguibile solo perche' l'avvio e' dietro isSea().
 const { normalizeArgs, dataHome } = require(path.join(ROOT, 'scripts', 'sea-entry.cjs'));
+
+// build-exe.mjs esegue main() solo se lanciato come script: importarlo qui
+// espone le funzioni di firma senza costruire nulla.
+const { costruisciArgomentiFirma, firmaEseguibile } = await import(
+  pathToFileURL(path.join(ROOT, 'scripts', 'build-exe.mjs')).href
+);
 
 const EXE = 'C:\\Wdeck\\wdeck.exe';
 const CONFIG = 'C:\\Users\\tizio\\AppData\\Local\\Wdeck\\deck.json';
@@ -65,6 +71,37 @@ test('avvio exe: il ponte resta importabile dove node:sea non esiste', () => {
   assert.match(src, /try \{\s*sea = require\('node:sea'\);\s*\} catch/,
     'require(node:sea) deve stare dentro un try/catch');
   assert.match(src, /if \(sea\.isSea\(\)\)/, 'l\'avvio deve restare dietro isSea()');
+});
+
+test('firma: costruisce gli argomenti di signtool da un PFX', () => {
+  const args = costruisciArgomentiFirma('C:\\x\\wdeck.exe', {
+    pfx: 'C:\\c\\cert.pfx', password: 'segreta', timestamp: 'http://ts.example'
+  });
+  assert.deepEqual(args, [
+    'sign', '/fd', 'SHA256', '/tr', 'http://ts.example', '/td', 'SHA256',
+    '/f', 'C:\\c\\cert.pfx', '/p', 'segreta', 'C:\\x\\wdeck.exe'
+  ]);
+});
+
+test('firma: un\'impronta nel deposito e\' l\'alternativa al PFX', () => {
+  const args = costruisciArgomentiFirma('w.exe', { thumbprint: 'AB12CD34' });
+  assert.ok(args.includes('/sha1'));
+  assert.equal(args[args.indexOf('/sha1') + 1], 'AB12CD34');
+  assert.ok(!args.includes('/f'), 'senza PFX non deve esserci /f');
+  assert.equal(args[args.length - 1], 'w.exe');
+  // La marca temporale c'e' sempre: senza, la firma scadrebbe col certificato.
+  assert.ok(args.includes('/tr'));
+});
+
+test('firma: senza certificato gli argomenti non si costruiscono', () => {
+  assert.throws(() => costruisciArgomentiFirma('w.exe', {}), /certificato/);
+});
+
+test('firma: senza certificato configurato la build avverte ma non firma', () => {
+  // env vuoto: nessun WDECK_SIGN_*, quindi non si tocca signtool.
+  const esito = firmaEseguibile('w.exe', {});
+  assert.equal(esito.firmato, false);
+  assert.match(esito.motivo, /certificato/);
 });
 
 test('distribuzione: gli script di build sono sintatticamente validi', () => {

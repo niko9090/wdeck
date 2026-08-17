@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
 
 import { createHost, PROJECT_ROOT } from '../src/host/index.mjs';
 import { publicDeck } from '../src/host/server/api.mjs';
@@ -223,6 +225,32 @@ test('static: resolveStatic blocca il path traversal', () => {
   assert.equal(resolveStatic(roots, '/..%2Fdeck.json'), null);
   assert.equal(resolveStatic(roots, '/../../package.json'), null);
   assert.equal(resolveStatic(roots, '/non-esiste.html'), null);
+});
+
+test('static: resolveStatic blocca un symlink che esce dalla radice', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wdeck-static-'));
+  const root = path.join(base, 'root');
+  fs.mkdirSync(root);
+  fs.writeFileSync(path.join(root, 'ok.txt'), 'contenuto legittimo');
+  const secret = path.join(base, 'secret.txt');
+  fs.writeFileSync(secret, 'fuori dalla sandbox');
+
+  const link = path.join(root, 'fuga.txt');
+  try {
+    fs.symlinkSync(secret, link);
+  } catch (err) {
+    // Su Windows creare un symlink richiede privilegi: se non ci sono, si salta.
+    t.skip(`symlink non creabile in questo ambiente: ${err.message}`);
+    fs.rmSync(base, { recursive: true, force: true });
+    return;
+  }
+
+  try {
+    assert.ok(resolveStatic([root], '/ok.txt'), 'i file legittimi restano serviti');
+    assert.equal(resolveStatic([root], '/fuga.txt'), null, 'il symlink verso l\'esterno e\' rifiutato');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
 });
 
 test('static: un percorso sconosciuto ripiega su index.html (SPA)', async (t) => {

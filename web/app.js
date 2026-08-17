@@ -77,7 +77,11 @@ const state = {
   statuses: {},
   /** cursore attualmente sotto il dito: non va riallineato dall'host */
   draggingId: null,
-  update: null
+  update: null,
+  /** true finche' ha senso ritentare la connessione (falso dopo un token scaduto) */
+  shouldReconnect: true,
+  /** timer del prossimo tentativo di riconnessione, cancellabile */
+  reconnectTimer: null
 };
 
 const activeHost = () => state.hosts.find((h) => h.id === state.activeHostId) ?? null;
@@ -99,6 +103,11 @@ const controlIcon = (button) => iconMarkup(button.icon, button.action?.type, cus
 function toast(message, kind = '') {
   ui.toast.textContent = message;
   ui.toast.className = `toast ${kind}`.trim();
+  // Gli errori interrompono il lettore di schermo (assertive); il resto attende
+  // una pausa (polite): un toast informativo non deve tagliare la parola.
+  const urgent = kind === 'err';
+  ui.toast.setAttribute('role', urgent ? 'alert' : 'status');
+  ui.toast.setAttribute('aria-live', urgent ? 'assertive' : 'polite');
   ui.toast.hidden = false;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => { ui.toast.hidden = true; }, kind === 'err' ? 5200 : 3200);
@@ -110,23 +119,46 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+/**
+ * Colore CSS accettato in un attributo `style`.
+ *
+ * Il deck arriva dall'host: un valore libero potrebbe chiudere lo `style` e
+ * iniettare altro. Si consentono solo `#rgb`/`#rrggbb(aa)` e i nomi CSS
+ * semplici (sole lettere); tutto il resto diventa stringa vuota.
+ */
+function cssColor(value) {
+  const v = String(value ?? '').trim();
+  return /^#[0-9a-fA-F]{3,8}$/.test(v) || /^[a-zA-Z]+$/.test(v) ? v : '';
+}
+
 function setStatus(stateName, text) {
   ui.dot.dataset.state = stateName;
   ui.statusText.textContent = text;
 }
 
 async function api(path, { method = 'GET', body, base = baseUrl(), authToken = token() } = {}) {
-  const res = await fetch(`${base}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(authToken ? { 'x-wdeck-token': authToken } : {})
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
+  let res;
+  try {
+    res = await fetch(`${base}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { 'x-wdeck-token': authToken } : {})
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch {
+    // Connessione caduta o host irraggiungibile: la fetch rigetta invece di
+    // rispondere. Si restituisce un esito uniforme (status 0) cosi' chi chiama
+    // gestisce l'errore come un normale `!res.ok` senza dover try/catch.
+    return { status: 0, ok: false, data: {} };
+  }
   const data = await res.json().catch(() => ({}));
   return { status: res.status, ok: res.ok, data };
 }
+
+/** Vero quando l'esito indica un problema di rete, non una risposta dell'host. */
+const isOffline = (res) => res.status === 0;
 
 // ---------------------------------------------------------------- computer salvati
 
@@ -301,10 +333,16 @@ function wsUrl() {
 }
 
 function connect() {
+  // Un tentativo in coda (backoff o evento 'online') non deve accavallarsi a
+  // questo: si annulla prima di aprire un socket nuovo.
+  clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = null;
+
   if (!token()) {
     showGate();
     return;
   }
+  state.shouldReconnect = true;
   if (state.socket) {
     try { state.socket.close(); } catch { /* ignora */ }
   }
@@ -332,9 +370,14 @@ function connect() {
     state.connected = false;
     setStatus('offline', t('status.lost'));
     renderHosts();
+    // Dopo un token scaduto (showGate da 'unauthorized') non ha senso ritentare:
+    // si continuerebbe a battere sull'host che ci ha appena respinti.
+    if (!state.shouldReconnect) return;
     const delay = Math.min(1000 * 2 ** state.retry, 15000);
     state.retry += 1;
-    setTimeout(() => { if (token() && socket === state.socket) connect(); }, delay);
+    state.reconnectTimer = setTimeout(() => {
+      if (state.shouldReconnect && token() && socket === state.socket) connect();
+    }, delay);
   });
 
   socket.addEventListener('error', () => setStatus('offline', t('status.error')));
@@ -393,6 +436,7 @@ function handleMessage(msg) {
 
     case MSG.error:
       if (msg.code === 'unauthorized') {
+        state.shouldReconnect = false;
         showGate(t('gate.expired'));
       } else {
         toast(msg.message ?? t('action.error'), 'err');
@@ -417,6 +461,20 @@ function send(message) {
 
 function applyState(hostState) {
   state.hostState = hostState;
+  // Gli id ripristinati da localStorage possono appartenere a un altro host
+  // (piu' computer, stessa app): se non esistono in questo deck vanno scartati,
+  // altrimenti finirebbero in un messaggio di navigate verso un profilo/pagina
+  // sconosciuti a questo host.
+  if (state.deck) {
+    if (state.profileId && !state.deck.profiles.some((p) => p.id === state.profileId)) {
+      state.profileId = null;
+      state.pageId = null;
+    }
+    if (state.pageId) {
+      const profile = state.deck.profiles.find((p) => p.id === state.profileId);
+      if (profile && !profile.pages.some((p) => p.id === state.pageId)) state.pageId = null;
+    }
+  }
   if (!state.profileId) state.profileId = hostState.activeProfile;
   if (!state.pageId) state.pageId = hostState.activePage;
   ui.dryBadge.hidden = !hostState.dryRun;
@@ -540,13 +598,15 @@ function renderGrid() {
 }
 
 function buttonHtml(button) {
+  const bg = cssColor(button.color);
+  const fg = cssColor(button.textColor);
   const style = [
-    button.color ? `background:${button.color}` : '',
-    button.textColor ? `color:${button.textColor}` : '',
-    button.span > 1 ? `grid-column:span ${button.span}` : ''
+    bg ? `background:${bg}` : '',
+    fg ? `color:${fg}` : '',
+    button.span > 1 ? `grid-column:span ${Number(button.span) || 1}` : ''
   ].filter(Boolean).join(';');
-  return `<button class="deck-btn" type="button" data-id="${button.id}" style="${style}" title="${escapeHtml(button.label || button.id)}">`
-    + `<span class="type-tag">${escapeHtml(button.action.type)}</span>`
+  return `<button class="deck-btn" type="button" data-id="${escapeHtml(button.id)}" style="${style}" title="${escapeHtml(button.label || button.id)}">`
+    + `<span class="type-tag">${escapeHtml(button.action?.type)}</span>`
     + controlIcon(button)
     + (state.deck.ui?.showLabels === false ? '' : `<span class="label">${escapeHtml(button.label)}</span>`)
     + (button.confirm ? '<span class="confirm-tag" title="chiede conferma">!</span>' : '')
@@ -558,11 +618,12 @@ function sliderHtml(button) {
   const max = button.max ?? 100;
   const value = state.levels.get(button.id) ?? Math.round((min + max) / 2);
   const percent = Math.round(((value - min) / (max - min)) * 100);
+  const accent = cssColor(button.color);
   const style = [
-    button.color ? `--slider-accent:${button.color}` : '',
-    `grid-column:span ${button.span ?? 2}`
+    accent ? `--slider-accent:${accent}` : '',
+    `grid-column:span ${Number(button.span) || 2}`
   ].filter(Boolean).join(';');
-  return `<div class="deck-slider" data-id="${button.id}" data-min="${min}" data-max="${max}" data-step="${button.step ?? 1}" style="${style}"`
+  return `<div class="deck-slider" data-id="${escapeHtml(button.id)}" data-min="${min}" data-max="${max}" data-step="${button.step ?? 1}" style="${style}"`
     + ` role="slider" tabindex="0" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}" aria-label="${escapeHtml(button.label || button.id)}">`
     + `<div class="slider-fill" style="width:${percent}%"></div>`
     + '<div class="slider-content">'
@@ -730,8 +791,22 @@ function confirmPress(button) {
 // ---------------------------------------------------------------- pannello modale
 
 let sheetCloseHandler = null;
+/** Elemento a cui restituire il focus alla chiusura del pannello. */
+let sheetLastFocus = null;
+
+/** Elementi che possono ricevere il focus dentro il pannello, in ordine. */
+function sheetFocusables() {
+  const card = ui.sheet.querySelector('.sheet-card');
+  if (!card) return [];
+  return Array.from(card.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter((element) => element.offsetParent !== null || element === document.activeElement);
+}
 
 function openSheet({ title, body, actions = [], onClose = null }) {
+  // Il pannello si riusa: solo a una vera apertura si ricorda chi aveva il
+  // focus, cosi' concatenare due pannelli non perde il grilletto originale.
+  if (ui.sheet.hidden) sheetLastFocus = document.activeElement;
   ui.sheetTitle.textContent = title;
   ui.sheetBody.innerHTML = body;
   ui.sheetFoot.innerHTML = '';
@@ -745,12 +820,20 @@ function openSheet({ title, body, actions = [], onClose = null }) {
   }
   sheetCloseHandler = onClose;
   ui.sheet.hidden = false;
+
+  // Un pannello modale deve prendere il focus, altrimenti Tab resta sulla
+  // pagina sotto e la tastiera non lo raggiunge mai.
+  const first = ui.sheetBody.querySelector('input, select, textarea, button') || el('sheet-close');
+  first?.focus();
 }
 
 function closeSheet({ silent = true } = {}) {
   ui.sheet.hidden = true;
   const handler = sheetCloseHandler;
   sheetCloseHandler = null;
+  const restore = sheetLastFocus;
+  sheetLastFocus = null;
+  if (restore && typeof restore.focus === 'function') restore.focus();
   if (!silent && handler) handler();
 }
 
@@ -760,7 +843,7 @@ async function loadActions() {
   if (state.actionGroups) return state.actionGroups;
   const res = await api(ENDPOINTS.actions);
   if (!res.ok) {
-    toast(t('action.noActions'), 'err');
+    toast(isOffline(res) ? t('net.unreachable') : t('action.noActions'), 'err');
     return [];
   }
   state.actionGroups = res.data.groups ?? [];
@@ -900,7 +983,14 @@ function bindIconPicker({ onPick }) {
 async function editButton(buttonId, cell) {
   const [groups, customIcons] = await Promise.all([loadActions(), loadCustomIcons()]);
   const page = currentPage();
+  if (!page) return;
   const existing = page.buttons.find((b) => b.id === buttonId) ?? null;
+  // Il bottone potrebbe essere stato spostato o eliminato tra il disegno della
+  // griglia e il tocco: senza cella di destinazione non c'e' nulla da aprire.
+  if (!existing && !cell) {
+    toast(t('edit.vanished'), 'err');
+    return;
+  }
   const [row, col] = cell ? cell.split(':').map(Number) : [existing.row, existing.col];
 
   const draft = existing
@@ -1035,14 +1125,19 @@ async function saveButtonDraft(draft, existing) {
     if (!draft.span) next.span = Math.max(2, next.span);
   }
 
+  const currentId = currentPage()?.id;
   const deck = cloneDeck();
-  const page = findPage(findProfile(deck, state.profileId), currentPage().id);
-  if (existing) {
-    const index = page.buttons.findIndex((b) => b.id === existing.id);
-    page.buttons[index] = next;
-  } else {
-    page.buttons.push(next);
+  const page = currentId ? findPage(findProfile(deck, state.profileId), currentId) : null;
+  if (!page) {
+    toast(t('edit.vanished'), 'err');
+    return;
   }
+  const index = existing ? page.buttons.findIndex((b) => b.id === existing.id) : -1;
+  // Se il bottone e' sparito tra apertura e salvataggio (index -1) lo si
+  // aggiunge in coda invece di scrivere in buttons[-1], che creerebbe una
+  // proprieta' "-1" ignorata dall'host.
+  if (existing && index !== -1) page.buttons[index] = next;
+  else page.buttons.push(next);
   await persistDeck(deck, t('edit.saved', { label: next.label }));
 }
 
@@ -1262,6 +1357,10 @@ function switchProfile(profileId) {
 async function persistDeck(deck, successMessage, { quiet = false } = {}) {
   const res = await api(ENDPOINTS.save, { method: 'POST', body: { deck } });
   if (!res.ok) {
+    if (isOffline(res)) {
+      toast(t('net.unreachable'), 'err');
+      return false;
+    }
     const detail = (res.data.errors ?? []).slice(0, 3).map((e) => `${e.path}: ${e.message}`).join(' | ');
     toast(detail || res.data?.error?.message || t('edit.rejected'), 'err');
     return false;
@@ -1275,6 +1374,12 @@ async function persistDeck(deck, successMessage, { quiet = false } = {}) {
 
 async function openSettings() {
   const res = await api(ENDPOINTS.settings);
+  // Senza host raggiungibile il pannello si aprirebbe vuoto e ingannevole:
+  // meglio dirlo e non aprirlo.
+  if (isOffline(res)) {
+    toast(t('net.unreachable'), 'err');
+    return;
+  }
   const settings = res.data?.settings ?? {};
   const update = state.update;
 
@@ -1373,6 +1478,9 @@ async function showPairingQr() {
     box.innerHTML = `<p class="sheet-hint">${escapeHtml(res.data?.error?.message ?? t('settings.qrUnavailable'))}</p>`;
     return;
   }
+  // res.data.svg e' l'SVG del QR generato dall'host autenticato: e' output
+  // fidato (non input dell'utente) e va inserito cosi' com'e'. Tutto cio' che
+  // e' testo (url, mdns) resta comunque passato da escapeHtml.
   box.innerHTML = `<div class="qr">${res.data.svg}</div>`
     + `<p class="sheet-hint">${escapeHtml(res.data.url.replace(/token=[^&]+/, 'token=...'))}</p>`
     + (res.data.mdns ? `<p class="sheet-hint">${t('settings.qrOr', { url: `<code>${escapeHtml(res.data.mdns)}</code>` })}</p>` : '');
@@ -1385,7 +1493,7 @@ async function renderDevices() {
   if (!box) return;
   const res = await api(ENDPOINTS.devices);
   if (!res.ok) {
-    box.innerHTML = `<p class="sheet-hint">${t('settings.devicesUnavailable')}</p>`;
+    box.innerHTML = `<p class="sheet-hint">${isOffline(res) ? t('net.unreachable') : t('settings.devicesUnavailable')}</p>`;
     return;
   }
 
@@ -1412,7 +1520,7 @@ async function renderDevices() {
 async function revokeDevice(id) {
   const res = await api(`${ENDPOINTS.devices}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) {
-    toast(res.data?.error?.message ?? t('settings.revokeRejected'), 'err');
+    toast(isOffline(res) ? t('net.unreachable') : (res.data?.error?.message ?? t('settings.revokeRejected')), 'err');
     return;
   }
   toast(t('settings.revoked'), 'ok');
@@ -1423,7 +1531,7 @@ async function revokeDevice(id) {
 async function rotateHostToken() {
   const res = await api(ENDPOINTS.tokenRotate, { method: 'POST', body: {} });
   if (!res.ok) {
-    toast(res.data?.error?.message ?? t('settings.rotateRejected'), 'err');
+    toast(isOffline(res) ? t('net.unreachable') : (res.data?.error?.message ?? t('settings.rotateRejected')), 'err');
     return;
   }
   // Se questo client stava usando proprio il token principale, deve adottare
@@ -1455,7 +1563,7 @@ async function saveSettings() {
 
   const res = await api(ENDPOINTS.settings, { method: 'POST', body: patch });
   if (!res.ok) {
-    toast(res.data?.error?.message ?? t('settings.rejected'), 'err');
+    toast(isOffline(res) ? t('net.unreachable') : (res.data?.error?.message ?? t('settings.rejected')), 'err');
     return;
   }
   closeSheet();
@@ -1478,7 +1586,11 @@ function forgetHost(id) {
 
 async function checkUpdate({ force = false } = {}) {
   const res = await api(`${ENDPOINTS.update}${force ? '?check=1' : ''}`);
-  if (!res.ok) return;
+  if (!res.ok) {
+    // Il controllo automatico resta silenzioso; quello chiesto a mano no.
+    if (force) toast(isOffline(res) ? t('net.unreachable') : t('settings.updateNone', { current: state.update?.current ?? '-' }), isOffline(res) ? 'err' : '');
+    return;
+  }
   state.selfUpdate = res.data.selfUpdate ?? null;
   showUpdate(res.data.update);
   if (force && !res.data.update?.available) toast(t('settings.noUpdate'), 'ok');
@@ -1792,6 +1904,34 @@ function bindGrid() {
   });
   ui.grid.addEventListener('contextmenu', (event) => event.preventDefault());
 
+  // Uno slider con role="slider" e tabindex="0" deve rispondere alle frecce:
+  // senza questo la tastiera non lo puo' regolare (WCAG 2.1.1) e le frecce
+  // finirebbero per cambiare pagina. stopPropagation impedisce alla navigazione
+  // globale di scattare mentre lo slider ha il focus.
+  ui.grid.addEventListener('keydown', (event) => {
+    const slider = event.target.closest('.deck-slider');
+    if (!slider || state.editing) return;
+    const min = Number(slider.dataset.min);
+    const max = Number(slider.dataset.max);
+    const step = Number(slider.dataset.step) || 1;
+    const current = state.levels.get(slider.dataset.id) ?? Math.round((min + max) / 2);
+    let next = current;
+    switch (event.key) {
+      case 'ArrowRight': case 'ArrowUp': next = current + step; break;
+      case 'ArrowLeft': case 'ArrowDown': next = current - step; break;
+      case 'Home': next = min; break;
+      case 'End': next = max; break;
+      default: return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    next = Math.max(min, Math.min(max, next));
+    if (next === current) return;
+    state.levels.set(slider.dataset.id, next);
+    updateSliderVisual(slider, next);
+    sendSliderValue(slider, { final: true });
+  });
+
   // Lo swipe funziona anche partendo dai bordi della pagina, non solo dalla griglia.
   let edge = null;
   ui.pages.addEventListener('pointerdown', (event) => { edge = event.clientX; });
@@ -1850,8 +1990,29 @@ function bindSheet() {
     if (event.target.closest('[data-close]')) closeSheet({ silent: false });
   });
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !ui.sheet.hidden) closeSheet({ silent: false });
-    if (ui.sheet.hidden && !state.editing) {
+    if (event.key === 'Escape' && !ui.sheet.hidden) {
+      closeSheet({ silent: false });
+      return;
+    }
+    // Tab intrappolato nel pannello: senza questo il focus scivola sulla pagina
+    // sotto, che per un dialogo modale non deve accadere.
+    if (event.key === 'Tab' && !ui.sheet.hidden) {
+      const list = sheetFocusables();
+      if (list.length === 0) return;
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+      return;
+    }
+    // Le frecce cambiano pagina solo quando non c'e' un pannello aperto e il
+    // focus non e' su uno slider (che le usa per regolarsi).
+    if (ui.sheet.hidden && !state.editing && !document.activeElement?.classList?.contains('deck-slider')) {
       if (event.key === 'ArrowRight') stepPage(1);
       if (event.key === 'ArrowLeft') stepPage(-1);
     }
@@ -1894,6 +2055,11 @@ function boot() {
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(() => { /* offline non disponibile */ });
+  });
+  // Il service worker avvisa quando una build nuova ha rimpiazzato lo shell:
+  // senza ricaricare si continuerebbe a usare il vecchio app.js gia' in memoria.
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'wdeck-shell-updated') toast(t('update.reloadReady'), '');
   });
 }
 

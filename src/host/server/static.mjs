@@ -49,7 +49,29 @@ export function resolveStatic(roots, urlPath) {
     const candidate = path.resolve(root, relative);
     const normalizedRoot = path.resolve(root);
     if (candidate !== normalizedRoot && !candidate.startsWith(normalizedRoot + path.sep)) continue;
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+
+    let stat;
+    try {
+      stat = fs.statSync(candidate);
+    } catch {
+      continue;
+    }
+    if (!stat.isFile()) continue;
+
+    // Il controllo lessicale non basta: un symlink *dentro* la radice puo'
+    // puntare fuori. Solo il percorso reale (risolti i link) dice dove si finisce
+    // davvero, e deve restare dentro la radice reale.
+    let real;
+    let realRoot;
+    try {
+      real = fs.realpathSync(candidate);
+      realRoot = fs.realpathSync(normalizedRoot);
+    } catch {
+      continue;
+    }
+    if (real !== realRoot && !real.startsWith(realRoot + path.sep)) continue;
+
+    return candidate;
   }
   return null;
 }
@@ -76,13 +98,26 @@ export function createStaticHandler({ roots, mounts = {}, cacheControl = 'no-cac
     if (!file) file = resolveStatic(existingRoots, urlPath);
     if (!file) return false;
 
-    const body = fs.readFileSync(file);
+    let size;
+    try {
+      size = fs.statSync(file).size;
+    } catch {
+      return false;
+    }
     res.writeHead(200, {
       'Content-Type': mimeFor(file),
-      'Content-Length': body.length,
+      'Content-Length': size,
       'Cache-Control': cacheControl
     });
-    res.end(req.method === 'HEAD' ? undefined : body);
+    if (req.method === 'HEAD') {
+      res.end();
+      return true;
+    }
+    // Streaming invece di readFileSync: non si carica l'intero file in memoria
+    // ne' si blocca il loop degli eventi mentre lo si legge.
+    const stream = fs.createReadStream(file);
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
     return true;
   };
 }

@@ -219,6 +219,22 @@ test('cli: --add-device crea un token utilizzabile e ne mostra il valore una vol
   }
 });
 
+test('cli: --add-device usa un id casuale, non derivato dall\'impronta', () => {
+  const { file, cleanup } = tempConfig();
+  try {
+    const creato = addDevice(file, { name: 'ESP32' });
+    const scritto = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const salvato = scritto.settings.security.devices[0];
+    // L'id non deve essere un prefisso dell'impronta: la deriverebbe, rivelandone
+    // 40 bit e divergendo dagli id casuali usati altrove.
+    assert.equal(creato.device.id, salvato.id);
+    assert.ok(!salvato.hash.startsWith(salvato.id.replace(/^d-/, '')), 'l\'id trapela l\'impronta');
+    assert.match(salvato.id, /^d-[0-9a-f]{10}$/, 'stesso formato di generateDeviceId');
+  } finally {
+    cleanup();
+  }
+});
+
 test('cli: --revoke-device toglie il dispositivo e segnala gli id sconosciuti', () => {
   const { file, cleanup } = tempConfig();
   try {
@@ -244,6 +260,37 @@ test('cli: --prune-devices toglie solo i scaduti', () => {
     const result = pruneExpiredDevices(file, { now: domani });
     assert.deepEqual(result.removed, [scaduto.device.id]);
     assert.deepEqual(listDevices(file).devices.map((d) => d.id), [valido.device.id]);
+  } finally {
+    cleanup();
+  }
+});
+
+test('cli: revocare un id sconosciuto non riscrive il file', () => {
+  const { file, cleanup } = tempConfig();
+  try {
+    // Baseline in forma compatta: una riscrittura la trasformerebbe in JSON
+    // indentato, quindi il confronto byte a byte rivela ogni scrittura spuria.
+    const originale = JSON.stringify(rawDeck());
+    fs.writeFileSync(file, originale);
+
+    const res = revokeDevice(file, 'd-mai-esistito');
+    assert.equal(res.ok, false);
+    assert.match(res.message, /sconosciuto/);
+    assert.equal(fs.readFileSync(file, 'utf8'), originale, 'nessuna scrittura per un id sconosciuto');
+  } finally {
+    cleanup();
+  }
+});
+
+test('cli: --prune-devices senza scaduti non riscrive il file', () => {
+  const { file, cleanup } = tempConfig();
+  try {
+    const originale = JSON.stringify(rawDeck());
+    fs.writeFileSync(file, originale);
+
+    const res = pruneExpiredDevices(file);
+    assert.deepEqual(res.removed, []);
+    assert.equal(fs.readFileSync(file, 'utf8'), originale, 'niente da potare, niente da riscrivere');
   } finally {
     cleanup();
   }

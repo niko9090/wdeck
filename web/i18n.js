@@ -46,6 +46,7 @@ const DICTIONARIES = {
     'status.clients': '{n} client',
     'status.presses': '{n} pressioni',
     'status.notConnected': 'Non connesso all\'host',
+    'net.unreachable': 'Host non raggiungibile: controlla la connessione.',
 
     'edit.on': 'Modifica attiva: tocca un controllo per cambiarlo, trascinalo per spostarlo, tocca una cella vuota per aggiungerne uno',
     'edit.off': 'Modifica disattivata',
@@ -80,6 +81,7 @@ const DICTIONARIES = {
     'edit.removed': 'controllo eliminato',
     'edit.moved': 'controllo spostato',
     'edit.rejected': 'salvataggio rifiutato',
+    'edit.vanished': 'Questo controllo non esiste piu\': ricarica il deck.',
 
     'page.title': 'Pagina "{name}"',
     'page.name': 'Nome',
@@ -166,6 +168,7 @@ const DICTIONARIES = {
     'settings.installFailed': 'Aggiornamento non riuscito.',
     'settings.checkNow': 'Controlla ora',
     'settings.noUpdate': 'Nessun aggiornamento disponibile',
+    'update.reloadReady': 'Nuova versione disponibile: ricarica la pagina.',
 
     'sheet.close': 'Chiudi',
     'sheet.cancel': 'Annulla',
@@ -216,6 +219,7 @@ const DICTIONARIES = {
     'status.clients': '{n} clients',
     'status.presses': '{n} presses',
     'status.notConnected': 'Not connected to the host',
+    'net.unreachable': 'Host unreachable: check the connection.',
 
     'edit.on': 'Editing on: tap a control to change it, drag it to move it, tap an empty cell to add one',
     'edit.off': 'Editing off',
@@ -250,6 +254,7 @@ const DICTIONARIES = {
     'edit.removed': 'control deleted',
     'edit.moved': 'control moved',
     'edit.rejected': 'save refused',
+    'edit.vanished': 'This control no longer exists: reload the deck.',
 
     'page.title': 'Page "{name}"',
     'page.name': 'Name',
@@ -336,6 +341,7 @@ const DICTIONARIES = {
     'settings.installFailed': 'Update failed.',
     'settings.checkNow': 'Check now',
     'settings.noUpdate': 'No update available',
+    'update.reloadReady': 'New version available: reload the page.',
 
     'sheet.close': 'Close',
     'sheet.cancel': 'Cancel',

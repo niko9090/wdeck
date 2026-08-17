@@ -51,49 +51,68 @@ export function createUpgradeHandler({ routes, verify, maxPayload = 256 * 1024, 
    * @param {Buffer} head
    */
   function handleUpgrade(req, socket, head) {
-    const pathname = (req.url ?? '/').split('?')[0];
-    const handler = routes[pathname];
-    if (!handler) return rejectUpgrade(socket, 404, 'Not Found');
-
-    if ((req.headers.upgrade ?? '').toLowerCase() !== 'websocket') {
-      return rejectUpgrade(socket, 400, 'Upgrade richiesto');
-    }
-    const key = req.headers['sec-websocket-key'];
-    if (!key) return rejectUpgrade(socket, 400, 'Sec-WebSocket-Key mancante');
-    if (req.headers['sec-websocket-version'] !== '13') {
-      return rejectUpgrade(socket, 426, 'Versione WebSocket non supportata');
-    }
-
-    if (verify) {
-      const result = verify(req, pathname);
-      if (!result.ok) return rejectUpgrade(socket, result.status ?? 401, result.message ?? 'Unauthorized');
-    }
-
-    socket.write(
-      'HTTP/1.1 101 Switching Protocols\r\n'
-      + 'Upgrade: websocket\r\n'
-      + 'Connection: Upgrade\r\n'
-      + `Sec-WebSocket-Accept: ${acceptKey(key)}\r\n`
-      + '\r\n'
-    );
-
-    const conn = new WebSocketConnection(socket, { isServer: true, maxPayload, head });
-    conn.data.alive = true;
-    conn.data.path = pathname;
-    conn.data.remote = socket.remoteAddress ?? 'sconosciuto';
-    conn.on('pong', () => { conn.data.alive = true; });
-    conn.on('message', () => { conn.data.alive = true; });
-    conn.on('error', (err) => logger.warn?.(`[wdeck] errore WebSocket (${pathname}): ${err.message}`));
-    connections.add(conn);
-    conn.on('close', () => connections.delete(conn));
-
+    // Anche il lavoro pre-handshake (verifica, parsing header, calcolo della
+    // chiave, scrittura del 101) puo' sollevare: se sfugge all'evento 'upgrade'
+    // il processo puo' cadere. Si racchiude tutto e si chiude il socket in ordine.
+    let handshakeDone = false;
     try {
-      handler(conn, req);
+      const pathname = (req.url ?? '/').split('?')[0];
+      const handler = routes[pathname];
+      if (!handler) return rejectUpgrade(socket, 404, 'Not Found');
+
+      if ((req.headers.upgrade ?? '').toLowerCase() !== 'websocket') {
+        return rejectUpgrade(socket, 400, 'Upgrade richiesto');
+      }
+      const key = req.headers['sec-websocket-key'];
+      if (!key) return rejectUpgrade(socket, 400, 'Sec-WebSocket-Key mancante');
+      if (req.headers['sec-websocket-version'] !== '13') {
+        return rejectUpgrade(socket, 426, 'Versione WebSocket non supportata');
+      }
+
+      if (verify) {
+        const result = verify(req, pathname);
+        if (!result.ok) return rejectUpgrade(socket, result.status ?? 401, result.message ?? 'Unauthorized');
+      }
+
+      socket.write(
+        'HTTP/1.1 101 Switching Protocols\r\n'
+        + 'Upgrade: websocket\r\n'
+        + 'Connection: Upgrade\r\n'
+        + `Sec-WebSocket-Accept: ${acceptKey(key)}\r\n`
+        + '\r\n'
+      );
+      handshakeDone = true;
+
+      const conn = new WebSocketConnection(socket, { isServer: true, maxPayload, head });
+      conn.data.alive = true;
+      conn.data.path = pathname;
+      conn.data.remote = socket.remoteAddress ?? 'sconosciuto';
+      conn.on('pong', () => { conn.data.alive = true; });
+      conn.on('message', () => { conn.data.alive = true; });
+      conn.on('error', (err) => logger.warn?.(`[wdeck] errore WebSocket (${pathname}): ${err.message}`));
+      connections.add(conn);
+      conn.on('close', () => connections.delete(conn));
+
+      try {
+        handler(conn, req);
+      } catch (err) {
+        logger.error?.(`[wdeck] handler WebSocket fallito: ${err.message}`);
+        conn.close(1011, 'errore interno');
+      }
+      return undefined;
     } catch (err) {
-      logger.error?.(`[wdeck] handler WebSocket fallito: ${err.message}`);
-      conn.close(1011, 'errore interno');
+      logger.error?.(`[wdeck] upgrade WebSocket fallito: ${err.message}`);
+      // Prima del 101 si puo' ancora rispondere in HTTP; dopo, il socket e' gia'
+      // "commutato" e l'unica via pulita e' distruggerlo.
+      if (!handshakeDone) {
+        try {
+          rejectUpgrade(socket, 500, 'Errore interno');
+        } catch { try { socket.destroy(); } catch { /* gia' chiuso */ } }
+      } else {
+        try { socket.destroy(); } catch { /* gia' chiuso */ }
+      }
+      return undefined;
     }
-    return undefined;
   }
 
   return {

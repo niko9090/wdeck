@@ -79,6 +79,17 @@
 #define WDECK_PING_INTERVAL_MS 20000
 #endif
 
+/* Intervallo fra i tentativi di riconnessione Wi-Fi non bloccante (ms). */
+#ifndef WDECK_WIFI_RETRY_MS
+#define WDECK_WIFI_RETRY_MS 5000
+#endif
+
+/* Timeout di connessione e lettura per le richieste HTTP verso l'host (ms):
+ * tenuto basso perche' le GET/POST girano nel loop e non devono bloccarlo. */
+#ifndef WDECK_HTTP_TIMEOUT_MS
+#define WDECK_HTTP_TIMEOUT_MS 2000
+#endif
+
 /* Numero massimo di bottoni gestibili per pagina. */
 #ifndef WDECK_MAX_BUTTONS
 #define WDECK_MAX_BUTTONS 24

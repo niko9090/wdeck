@@ -24,9 +24,14 @@ export function which(name, { env = process.env, platform = process.platform } =
   if (name.includes('/') || name.includes('\\')) return fs.existsSync(name) ? name : null;
 
   const dirs = (env.PATH ?? '').split(path.delimiter).filter(Boolean);
-  const suffixes = platform === 'win32'
-    ? (env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean)
-    : [''];
+  let suffixes = [''];
+  if (platform === 'win32') {
+    const pathext = (env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean);
+    // Se il nome porta gia' un'estensione (es. "node.exe") va provato cosi'
+    // com'e', altrimenti diventerebbe "node.exe.EXE" e non verrebbe trovato.
+    // '' come primo candidato copre anche un file esatto senza estensione.
+    suffixes = path.extname(name) ? ['', ...pathext] : [...pathext, ''];
+  }
 
   for (const dir of dirs) {
     for (const suffix of suffixes) {
@@ -55,6 +60,26 @@ export function firstAvailable(names, options = {}) {
   return null;
 }
 
+/** Schemi di URL considerati sicuri da aprire con il gestore predefinito. */
+const SAFE_URL_SCHEMES = new Set(['http', 'https', 'mailto', 'tel', 'ftp', 'ftps', 'sms', 'file']);
+
+/**
+ * Verifica che un URL abbia uno schema noto prima di passarlo a open/xdg-open.
+ * Impedisce che un valore che inizia con "-" o con uno schema inatteso venga
+ * scambiato per un flag o apra un gestore non voluto.
+ * @param {string} url
+ * @throws {Error} se lo schema manca o non e' fra quelli ammessi
+ */
+export function assertSafeUrl(url) {
+  const value = String(url ?? '').trim();
+  const match = value.match(/^([a-z][a-z0-9+.-]*):/i);
+  if (!match || !SAFE_URL_SCHEMES.has(match[1].toLowerCase())) {
+    throw new Error(`URL non ammesso: "${url}" `
+      + `(schema mancante o non supportato; ammessi: ${[...SAFE_URL_SCHEMES].join(', ')})`);
+  }
+  return value;
+}
+
 /**
  * Esegue un comando raccogliendone l'output.
  * @param {string} command
@@ -75,16 +100,22 @@ export function runCommand(command, args = [], { timeoutMs = 10000, input, env }
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let killTimer = null;
 
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
+      // Se il figlio ignora SIGTERM la promise resterebbe pendente per sempre:
+      // dopo una breve tregua si forza la chiusura con SIGKILL.
+      killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gia' uscito */ } }, 2000);
     }, timeoutMs);
+
+    const clearTimers = () => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); };
 
     child.stdout?.on('data', (d) => { stdout += d.toString(); });
     child.stderr?.on('data', (d) => { stderr += d.toString(); });
     child.on('error', (err) => {
-      clearTimeout(timer);
+      clearTimers();
       if (err.code === 'ENOENT') {
         reject(new Error(`comando non trovato: "${command}" (installalo o aggiungilo al PATH)`));
         return;
@@ -92,12 +123,16 @@ export function runCommand(command, args = [], { timeoutMs = 10000, input, env }
       reject(err);
     });
     child.on('close', (code) => {
-      clearTimeout(timer);
+      clearTimers();
       resolve({ code, stdout: stdout.trim(), stderr: stderr.trim(), timedOut });
     });
 
-    if (input !== undefined) {
-      child.stdin?.end(input);
+    if (input !== undefined && child.stdin) {
+      // Se il figlio e' gia' uscito, scrivere sullo stdin genera un EPIPE: senza
+      // un listener 'error' diventerebbe un'eccezione non gestita capace di far
+      // cadere l'host. Lo si assorbe: il comando e' comunque terminato.
+      child.stdin.on('error', () => {});
+      child.stdin.end(input);
     }
   });
 }

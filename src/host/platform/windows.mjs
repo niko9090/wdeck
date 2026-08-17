@@ -62,20 +62,25 @@ export function runPowerShell(script, { timeoutMs = 15000 } = {}) {
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let killTimer = null;
 
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
+      // Escalation a SIGKILL se PowerShell non risponde a SIGTERM.
+      killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gia' uscito */ } }, 2000);
     }, timeoutMs);
+
+    const clearTimers = () => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); };
 
     child.stdout.on('data', (d) => { stdout += d.toString(); });
     child.stderr.on('data', (d) => { stderr += d.toString(); });
     child.on('error', (err) => {
-      clearTimeout(timer);
+      clearTimers();
       reject(err);
     });
     child.on('close', (code) => {
-      clearTimeout(timer);
+      clearTimers();
       resolve({ code, stdout: stdout.trim(), stderr: stderr.trim(), timedOut });
     });
   });
@@ -364,8 +369,19 @@ export function resolveScriptRunner(scriptPath, args = []) {
         argv: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args]
       };
     case '.bat':
-    case '.cmd':
+    case '.cmd': {
+      // cmd.exe /c ri-analizza la riga di comando: un argomento con
+      // metacaratteri (& | ^ < > " %) verrebbe interpretato come comando a se'
+      // (es. "& calc" avvia calc). Non esiste un quoting affidabile per tutti
+      // questi casi, quindi li si rifiuta con un errore chiaro.
+      for (const arg of args) {
+        if (/[&|^<>"%]/.test(String(arg))) {
+          throw new Error(`argomento non ammesso per uno script .bat/.cmd: "${arg}" `
+            + '(contiene un metacarattere di cmd.exe fra & | ^ < > " %)');
+        }
+      }
       return { command: process.env.COMSPEC || 'cmd.exe', argv: ['/c', scriptPath, ...args] };
+    }
     case '.py':
       return { command: process.env.WDECK_PYTHON || 'python', argv: [scriptPath, ...args] };
     // Gli script di shell servono a macOS e Linux: l'azione `script` dichiara
@@ -395,19 +411,24 @@ export function runScript({ path: scriptPath, args = [], cwd, timeoutMs = 30000 
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let killTimer = null;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
+      // Escalation a SIGKILL se lo script non risponde a SIGTERM.
+      killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gia' uscito */ } }, 2000);
     }, timeoutMs);
+
+    const clearTimers = () => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); };
 
     child.stdout.on('data', (d) => { stdout += d.toString(); });
     child.stderr.on('data', (d) => { stderr += d.toString(); });
     child.on('error', (err) => {
-      clearTimeout(timer);
+      clearTimers();
       reject(err);
     });
     child.on('close', (code) => {
-      clearTimeout(timer);
+      clearTimers();
       resolve({ code, stdout: stdout.trim().slice(0, 4000), stderr: stderr.trim().slice(0, 4000), timedOut });
     });
   });

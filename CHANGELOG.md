@@ -3,6 +3,124 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.7.0] - 2026-08-17
+
+Revisione di sicurezza e robustezza a tappeto: otto sottosistemi riletti uno
+per uno (sicurezza, server/WebSocket, azioni, adattatori di piattaforma,
+configurazione e aggiornamento, integrazioni, client web, firmware). Nessuna
+funzione nuova per l'utente; tutto quello che segue chiude un difetto che i
+test del percorso felice non vedevano, e ognuno arriva con la sua verifica. La
+suite passa da 465 a 526 controlli.
+
+### Sicurezza
+
+- **L'editor non puo' piu' toccare la sicurezza, mai.** La fusione delle
+  modifiche in arrivo dall'editor riportava il blocco `settings.security` dal
+  disco **solo se gia' presente**: un `deck.json` minimale, senza quel blocco,
+  lasciava passare un `security` inviato dal client (per esempio
+  `requireToken:false`, un token, o una `allowExec` piu' larga). Ora il blocco
+  in arrivo viene **scartato incondizionatamente** prima della fusione, che ci
+  sia o no un blocco su disco.
+- **L'aggiornamento automatico verifica la firma Authenticode.** Fino alla 0.6.0
+  l'exe scaricato era controllato solo contro `SHA256SUMS.txt`, preso dalla
+  stessa origine del binario: integrita' nel trasporto, ma nessuna prova di chi
+  l'ha prodotto. Su Windows ora si verifica la **firma del codice** dell'exe
+  (`Get-AuthenticodeSignature`, esito `Valid`) **prima** di sostituire il
+  binario in uso, e ci si ferma se manca. Il controllo SHA-256 resta come
+  seconda barriera. *Conseguenza da conoscere: un binario di release **non
+  firmato** viene rifiutato dall'aggiornamento automatico (scelta prudente, a
+  prova di errore).* Il download segue i redirect solo se restano `https:` e si
+  interrompe se il corpo supera la dimensione dichiarata dalla release.
+- **Il PIN di pairing non si forza piu' ruotando gli indirizzi.** Il limite sui
+  tentativi di accesso era solo per indirizzo: con IPv6 si cambia indirizzo a
+  costo zero e si percorreva l'intero spazio del PIN. Ora gli indirizzi IPv6
+  contano **per prefisso /64** e c'e' un **tetto complessivo** ai tentativi di
+  accesso, indipendente dall'indirizzo.
+- **I segreti non filtrano piu' nel registro di audit.** La redazione agiva solo
+  sui campi con nomi noti; un token dentro un valore - `?token=...`,
+  `Authorization: Bearer ...` - finiva in chiaro. Ora si ripuliscono anche i
+  **valori** delle stringhe.
+- **La whitelist degli eseguibili risolve i collegamenti.** `checkExecutable`
+  confrontava il percorso normalizzato ma non seguiva i symlink: un collegamento
+  dentro una cartella ammessa, puntato a un binario vietato, passava. Ora si
+  risolve il percorso reale (`realpath`) prima del confronto.
+- **L'azione `http` non raggiunge piu' la rete interna.** Mancava qualunque
+  limite sulla destinazione: un bottone poteva puntare a `169.254.169.254` o a
+  `127.0.0.1:<porta>` e parlare con servizi interni (SSRF). Ora loopback,
+  link-local e reti private sono **bloccati per definizione**, e la
+  destinazione e' ricontrollata a ogni redirect.
+- **Gli argomenti dei `.bat`/`.cmd` non passano piu' inosservati a `cmd.exe`.**
+  Erano riparsati dalla shell dei comandi, quindi un `&`, un `|` o un `%`
+  diventavano un secondo comando. Ora un argomento con metacaratteri viene
+  rifiutato con un errore chiaro.
+- Certificato autofirmato: gli indirizzi **IPv6** finiscono come `iPAddress`
+  nel SAN (prima erano scritti come nomi DNS, e il certificato non valeva per
+  chi si collegava a un indirizzo IPv6); la chiave privata riottiene i permessi
+  `0600` anche quando viene rigenerata sopra una precedente.
+
+### Corretto
+
+- **Un'azione che falliva sul WebSocket poteva spegnere l'host.** Il ramo
+  `press` eseguiva l'azione senza rete di protezione (a differenza di
+  `navigate`): un rifiuto diventava una promessa non gestita, e in Node questo
+  puo' terminare il processo. Ora l'errore torna al client come messaggio.
+- **Un client lento poteva esaurire la memoria dell'host.** Le scritture sul
+  socket ignoravano la contropressione: un lettore fermo faceva crescere il
+  buffer di uscita senza limite. Ora oltre un tetto la connessione viene chiusa.
+- **Il canale MQTT poteva restare appeso per sempre.** Se il broker accettava la
+  connessione TCP e poi la chiudeva prima della conferma, l'attesa non si
+  risolveva mai. Ora quella chiusura fa fallire la connessione con un errore.
+- **La stretta di mano di chiusura WebSocket veniva troncata**, e i frame di
+  testo con byte UTF-8 non validi erano accettati con caratteri sostitutivi
+  invece di chiudere con il codice 1007, come vuole la norma.
+- **Un `deck.json` malformato dall'editor restituiva un 500** invece di un
+  errore di validazione ordinato: la compattazione girava prima della
+  validazione e dava per scontate strutture che potevano mancare.
+- **Il refresh del token Spotify partiva piu' volte in parallelo** sotto una
+  raffica di pressioni; il socket di Discord restava aperto se
+  l'autenticazione veniva rifiutata; un cursore senza `span` esplicito passava
+  la validazione come largo una cella e ne occupava due a video.
+- Confusione fra opzioni e argomenti in `open`/`xdg-open` e in `ydotool` per
+  testi che iniziano con `-`; testo su piu' righe non digitabile su macOS;
+  processi che ignoravano il segnale di chiusura al timeout ora ricevono un
+  `SIGKILL` dopo una breve tregua.
+
+### Client web
+
+- L'app segnala quando l'host non e' raggiungibile invece di fallire in
+  silenzio: "Salva" avvisa, l'editor non apre un pannello vuoto.
+- I cursori si regolano da **tastiera** (frecce, Home/Fine) e non rubano piu'
+  le frecce alla navigazione fra pagine; le finestre modali trattengono il
+  fuoco e lo restituiscono alla chiusura; i toast di errore sono annunciati.
+- Il service worker non attiva piu' una shell incompleta e avvisa quando una
+  nuova versione e' pronta al ricaricamento.
+
+### Firmware ESP32
+
+- **La riconnessione al Wi-Fi non blocca piu' il resto.** L'attesa poteva
+  fermare per venti secondi il ciclo principale, e con esso il WebSocket, i
+  ping e il tocco. Ora si riprova senza bloccare, e nel frattempo tutto il
+  resto continua a girare.
+- Le richieste HTTP hanno un **timeout** e non partono piu' da dentro la
+  callback del WebSocket; il documento JSON in arrivo e' limitato
+  (`WDECK_JSON_CAPACITY` ora e' davvero applicato); riga e colonna di un
+  bottone vengono validate contro la griglia.
+
+### Note
+
+Come sempre, compilare non e' collaudare: le correzioni al firmware sono
+verificate dal test di conformita' che rilegge il sorgente, non da una scheda
+accesa. Timeout, riconnessione non bloccante e lettura del corpo HTTP a
+dimensione limitata restano da provare su hardware vero.
+
+La verifica Authenticode presuppone che i binari di release siano firmati. Chi
+distribuisce build non firmate deve saperlo: l'aggiornamento automatico le
+rifiuta di proposito, perche' un exe non firmato e uno manomesso, da fuori, si
+somigliano troppo. Per questo `npm run exe` ora **firma da solo** quando trova
+un certificato (`WDECK_SIGN_PFX`/`WDECK_SIGN_PASSWORD` o `WDECK_SIGN_THUMBPRINT`)
+e avverte quando non c'e'; i dettagli sono nel README, sezione *Firma del
+codice*.
+
 ## [0.6.0] - 2026-08-14
 
 ### Aggiunto

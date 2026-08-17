@@ -33,31 +33,46 @@ export async function accessToken(config, { now = Date.now, fetchImpl = fetch } 
   }
 
   const cached = cache.get(config.clientId);
+  // Una richiesta di rinnovo gia' in volo viene condivisa: chiamanti concorrenti
+  // aspettano la stessa, invece di far partire piu' refresh che si corrono
+  // dietro (chiamate ridondanti, e un possibile 429 dal server).
+  if (cached?.pending) return cached.pending;
   // Un minuto di margine: un token che scade mentre la richiesta e' in volo
   // produrrebbe un 401 inspiegabile.
   if (cached && cached.expiresAt - 60_000 > now()) return cached.token;
 
   const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
-  const response = await fetchImpl(TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${basic}`,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: config.refreshToken }).toString(),
-    signal: AbortSignal.timeout(8000)
-  });
+  const pending = (async () => {
+    const response = await fetchImpl(TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${basic}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: config.refreshToken }).toString(),
+      signal: AbortSignal.timeout(8000)
+    });
 
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(`Spotify ha rifiutato il rinnovo del token: ${body.error_description ?? body.error ?? response.status}`);
-  }
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(`Spotify ha rifiutato il rinnovo del token: ${body.error_description ?? body.error ?? response.status}`);
+    }
 
-  cache.set(config.clientId, {
-    token: body.access_token,
-    expiresAt: now() + (Number(body.expires_in) || 3600) * 1000
+    // La promessa in volo lascia il posto al token vero, valido per un'ora.
+    cache.set(config.clientId, {
+      token: body.access_token,
+      expiresAt: now() + (Number(body.expires_in) || 3600) * 1000
+    });
+    return body.access_token;
+  })();
+
+  cache.set(config.clientId, { pending });
+  // In caso di errore la promessa fallita va tolta dalla cache, cosi' il
+  // tentativo successivo riparte da capo invece di riproporre lo stesso errore.
+  pending.catch(() => {
+    if (cache.get(config.clientId)?.pending === pending) cache.delete(config.clientId);
   });
-  return body.access_token;
+  return pending;
 }
 
 /** Svuota la cache dei token: usato dai test. */
@@ -131,11 +146,17 @@ export const SPOTIFY_COMMANDS = {
   volume: {
     label: 'volume',
     needs: 'value',
-    build: (params) => ({
-      method: 'PUT',
-      path: '/me/player/volume',
-      query: { volume_percent: Math.max(0, Math.min(100, Math.round(Number(params.value)))) }
-    })
+    build: (params) => {
+      // Senza controllo un valore mancante o non numerico diventerebbe "NaN"
+      // nella query, e Spotify risponderebbe con un opaco 400.
+      const value = Number(params.value);
+      if (!Number.isFinite(value)) throw new Error('Spotify: il volume deve essere un numero fra 0 e 100');
+      return {
+        method: 'PUT',
+        path: '/me/player/volume',
+        query: { volume_percent: Math.max(0, Math.min(100, Math.round(value))) }
+      };
+    }
   },
   shuffle: { label: 'riproduzione casuale', needsState: true },
   repeat: {

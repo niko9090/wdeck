@@ -47,7 +47,10 @@ export function certificateUsable(pem, { hosts = [], now = Date.now() } = {}) {
   // Un indirizzo IP nuovo (rete diversa, docking station, VPN) rende il
   // certificato inutile proprio dove serve: meglio rigenerarlo.
   for (const host of hosts) {
-    const covered = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? cert.checkIP(host) : cert.checkHost(host);
+    // Un IPv6 letterale contiene i due punti: va confrontato come indirizzo, non
+    // come nome, altrimenti checkHost non lo troverebbe mai.
+    const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':');
+    const covered = isIp ? cert.checkIP(host) : cert.checkHost(host);
     if (!covered) return { ok: false, reason: `non copre "${host}"` };
   }
   return { ok: true };
@@ -89,6 +92,10 @@ export function ensureCertificate({ dir, hosts = ['localhost', '127.0.0.1'], day
   // La chiave privata non deve essere leggibile dagli altri utenti della
   // macchina. Su Windows la modalita' POSIX viene ignorata, ma il file resta
   // dentro il profilo dell'utente.
+  // La `mode` di writeFileSync vale solo alla creazione: riscrivendo sopra una
+  // chiave gia' esistente resterebbero i permessi vecchi, magari piu' larghi.
+  // La si rimuove prima, cosi' il file nasce di nuovo con 0600.
+  fs.rmSync(keyPath, { force: true });
   fs.writeFileSync(keyPath, generated.key, { mode: 0o600 });
   fs.writeFileSync(certPath, generated.cert, { mode: 0o644 });
   logger.info?.(`[wdeck] certificato autofirmato generato in ${root} (valido fino al ${generated.notAfter.toISOString().slice(0, 10)})`);

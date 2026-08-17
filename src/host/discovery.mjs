@@ -301,7 +301,22 @@ export function createMdnsResponder({
 
         socket.bind(MDNS_PORT, () => {
           try {
-            socket.addMembership(MDNS_ADDRESS);
+            // Su un host con piu' schede di rete `addMembership` senza interfaccia
+            // si iscrive solo a quella di default: gli annunci non uscirebbero
+            // sulle altre LAN. Ci si iscrive quindi per ogni IPv4 locale, e i
+            // fallimenti per singola interfaccia non fermano gli altri.
+            const locals = lanIPv4();
+            if (locals.length === 0) {
+              socket.addMembership(MDNS_ADDRESS);
+            } else {
+              for (const ip of locals) {
+                try {
+                  socket.addMembership(MDNS_ADDRESS, ip);
+                } catch (err) {
+                  logger.debug?.(`[wdeck] mDNS: iscrizione su ${ip} fallita: ${err.message}`);
+                }
+              }
+            }
             socket.setMulticastTTL(255);
             socket.setMulticastLoopback(true);
           } catch (err) {

@@ -24,6 +24,7 @@ import {
   encodeUnsignedInteger,
   generateSelfSigned,
   parseIPv4,
+  parseIPv6,
   toPem
 } from '../src/host/security/selfsigned.mjs';
 import { CERT_FILE, KEY_FILE, certificateUsable, ensureCertificate, loadTlsOptions } from '../src/host/security/tls.mjs';
@@ -112,6 +113,22 @@ test('der: i nomi alternativi distinguono DNS da indirizzo IP', () => {
   assert.ok(encoded.includes(Buffer.from([0x87, 0x04, 127, 0, 0, 1])), 'manca l\'iPAddress');
 });
 
+test('der: parseIPv6 riconosce le forme compresse', () => {
+  const uno = parseIPv6('::1');
+  assert.equal(uno.length, 16, 'un IPv6 sono sedici byte');
+  assert.deepEqual([...uno.subarray(14)], [0, 1]);
+  assert.deepEqual([...parseIPv6('2001:db8::').subarray(0, 4)], [0x20, 0x01, 0x0d, 0xb8]);
+  assert.equal(parseIPv6('192.168.1.1'), null, 'un IPv4 non e\' un IPv6');
+  assert.equal(parseIPv6('non-un-ip'), null);
+  assert.equal(parseIPv6('1::2::3'), null, 'due "::" non sono ammessi');
+});
+
+test('der: un IPv6 letterale diventa un SAN iPAddress da sedici byte, non un dNSName', () => {
+  const encoded = encodeAltNames(['::1']);
+  // [7] iPAddress lungo 0x10 (16 byte), non [2] dNSName.
+  assert.ok(encoded.includes(Buffer.from([0x87, 0x10])), 'manca l\'iPAddress IPv6');
+});
+
 test('der: toPem incapsula e va a capo ogni 64 caratteri', () => {
   const pem = toPem('CERTIFICATE', Buffer.alloc(100, 1));
   assert.match(pem, /^-----BEGIN CERTIFICATE-----\n/);
@@ -143,6 +160,19 @@ test('certificato: vale per i nomi e gli indirizzi richiesti, e solo per quelli'
   assert.ok(x509.checkIP('192.168.1.79'));
   assert.equal(x509.checkHost('altro.example'), undefined);
   assert.equal(x509.checkIP('8.8.8.8'), undefined);
+});
+
+test('certificato: vale per un indirizzo IPv6 letterale', () => {
+  // Prima della correzione un IPv6 finiva come dNSName: il certificato non
+  // valeva per un client che si collega con l'indirizzo IPv6.
+  const { cert } = generateSelfSigned({ ...RAPIDO, altNames: ['localhost', '::1', 'fe80::1'] });
+  const x509 = new crypto.X509Certificate(cert);
+  assert.ok(x509.checkIP('::1'), 'il certificato deve coprire ::1');
+  assert.ok(x509.checkIP('fe80::1'));
+  assert.equal(x509.checkIP('2001:db8::99'), undefined, 'e solo quelli richiesti');
+  // E certificateUsable usa checkIP anche per gli host IPv6.
+  assert.equal(certificateUsable(cert, { hosts: ['::1'] }).ok, true);
+  assert.match(certificateUsable(cert, { hosts: ['2001:db8::99'] }).reason, /non copre/);
 });
 
 test('certificato: non e\' una CA', () => {
@@ -196,6 +226,20 @@ test('tls: un indirizzo nuovo fa rigenerare il certificato', () => {
     const dopo = ensureCertificate({ dir, hosts: ['localhost', '10.0.0.5'], logger: silent });
     assert.equal(dopo.generated, true);
     assert.ok(new crypto.X509Certificate(dopo.cert).checkIP('10.0.0.5'));
+  } finally {
+    cleanup();
+  }
+});
+
+test('tls: la chiave rigenerata mantiene i permessi 0600', () => {
+  if (process.platform === 'win32') return; // la modalita' POSIX e' ignorata su Windows
+  const { dir, cleanup } = tempDir();
+  try {
+    ensureCertificate({ dir, hosts: ['localhost'], logger: silent });
+    // Un host nuovo forza la rigenerazione: la chiave viene riscritta sopra.
+    ensureCertificate({ dir, hosts: ['localhost', '10.0.0.9'], logger: silent });
+    const mode = fs.statSync(path.join(dir, KEY_FILE)).mode & 0o777;
+    assert.equal(mode, 0o600, 'la chiave rigenerata non deve ereditare permessi piu\' larghi');
   } finally {
     cleanup();
   }

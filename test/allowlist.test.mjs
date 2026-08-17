@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { checkExecutable, checkUrl, globToRegExp, normalizeForCompare } from '../src/host/security/allowlist.mjs';
@@ -67,6 +69,40 @@ test('allowlist: il path traversal non aggira la whitelist', () => {
     baseDir: BASE
   });
   assert.equal(result.allowed, false);
+});
+
+test('allowlist: un symlink dentro una cartella consentita non fa evadere la whitelist', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wdeck-allow-')));
+  const consentita = path.join(base, 'consentita');
+  fs.mkdirSync(consentita);
+  const vietato = path.join(base, 'vietato.exe');
+  fs.writeFileSync(vietato, 'x');
+  const link = path.join(consentita, 'innocuo.exe');
+
+  try {
+    fs.symlinkSync(vietato, link);
+  } catch {
+    // Su Windows la creazione di symlink richiede un privilegio che il runner
+    // dei test potrebbe non avere: in quel caso il test non si applica.
+    fs.rmSync(base, { recursive: true, force: true });
+    return;
+  }
+
+  try {
+    // Un file reale dentro la cartella consentita passa.
+    const reale = path.join(consentita, 'reale.exe');
+    fs.writeFileSync(reale, 'x');
+    assert.equal(
+      checkExecutable(reale, { allowExec: [path.join(consentita, '**')], baseDir: base }).allowed,
+      true
+    );
+
+    // Il symlink no: la sua destinazione reale sta fuori dalla cartella.
+    const result = checkExecutable(link, { allowExec: [path.join(consentita, '**')], baseDir: base });
+    assert.equal(result.allowed, false, 'il symlink punta a un binario fuori dalla whitelist');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
 });
 
 test('allowlist: estensioni non ammesse bloccate prima della whitelist', () => {

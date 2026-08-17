@@ -69,10 +69,16 @@ export function planHotkey(spec, { repeat = 1, platform = process.platform } = {
       command: buildMacKeyScript({ modifiers: hotkey.modifiers, key: hotkey.key, repeat })
     };
   }
+  // Il dry-run mostra lo strumento che verrebbe davvero usato: su Wayland
+  // sendHotkey passa da ydotool, altrove da xdotool.
+  const wayland = linux.isWayland();
+  const command = wayland
+    ? `ydotool ${linux.buildYdotoolKeyArgs({ modifiers: hotkey.modifiers, key: hotkey.key, repeat }).join(' ')}`
+    : `xdotool ${buildXdotoolKeyArgs({ modifiers: hotkey.modifiers, key: hotkey.key, repeat }).join(' ')}`;
   return {
     backend,
-    description: `invierebbe ${combo} via xdotool/ydotool`,
-    command: `xdotool ${buildXdotoolKeyArgs({ modifiers: hotkey.modifiers, key: hotkey.key, repeat }).join(' ')}`
+    description: `invierebbe ${combo} via ${wayland ? 'ydotool' : 'xdotool'}`,
+    command
   };
 }
 

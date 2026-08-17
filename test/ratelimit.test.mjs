@@ -15,8 +15,10 @@ import path from 'node:path';
 import {
   DEFAULT_LIMITS,
   MAX_KEYS,
+  authAddressKey,
   createRateLimiter,
   createRateLimits,
+  ipv6Prefix64,
   limiterKey,
   normalizeAddress
 } from '../src/host/security/ratelimit.mjs';
@@ -91,6 +93,22 @@ test('limiti: la tabella delle chiavi non cresce senza fine', () => {
   assert.ok(limiter.size <= MAX_KEYS, `${limiter.size} chiavi in memoria`);
 });
 
+test('limiti: l\'inondazione di chiavi nuove non sfratta una attiva', () => {
+  // Una chiave usata di continuo deve restare: sfrattarla azzererebbe il suo
+  // conteggio e aprirebbe una via per aggirare il limite inondando la tabella.
+  const limiter = createRateLimiter({ windowMs: 60000, max: 100, now: fakeClock().now });
+  limiter.check('attiva');
+  limiter.check('attiva');
+  for (let i = 0; i < MAX_KEYS * 2; i += 1) {
+    limiter.check(`rumore-${i}`);
+    // La chiave attiva viene toccata di continuo: e' la piu' recente, non la piu'
+    // vecchia, e non deve finire sfrattata.
+    limiter.check('attiva');
+  }
+  assert.ok(limiter.size <= MAX_KEYS, `${limiter.size} chiavi in memoria`);
+  assert.ok(limiter.count('attiva') > 2, 'il conteggio della chiave attiva e\' stato azzerato');
+});
+
 test('limiti: count riporta solo i tentativi ancora dentro la finestra', () => {
   const clock = fakeClock();
   const limiter = createRateLimiter({ windowMs: 1000, max: 10, now: clock.now });
@@ -118,6 +136,26 @@ test('limiti: gli indirizzi IPv4 mappati in IPv6 sono normalizzati', () => {
   assert.equal(normalizeAddress(''), 'sconosciuto');
 });
 
+test('limiti: gli indirizzi IPv6 dello stesso /64 condividono la chiave di accesso', () => {
+  // Un /64 domestico contiene miliardi di indirizzi: contarli separatamente
+  // regalerebbe un secchiello a ognuno. La chiave e' il prefisso di rete.
+  const uno = authAddressKey('2001:db8:abcd:1234::1');
+  const due = authAddressKey('2001:db8:abcd:1234:aaaa:bbbb:cccc:dddd');
+  assert.equal(uno, due);
+  // Gli zeri iniziali non contano: stesso /64, stessa chiave.
+  assert.equal(authAddressKey('2001:0db8:abcd:1234::9'), uno);
+  // Un /64 diverso, chiave diversa.
+  assert.notEqual(authAddressKey('2001:db8:abcd:9999::1'), uno);
+  // Gli IPv4 restano interi.
+  assert.equal(authAddressKey('192.168.1.5'), 'a:192.168.1.5');
+});
+
+test('limiti: ipv6Prefix64 espande la forma compressa e canonizza i gruppi', () => {
+  assert.equal(ipv6Prefix64('2001:db8::1'), '2001:db8:0:0');
+  assert.equal(ipv6Prefix64('::1'), '0:0:0:0');
+  assert.equal(ipv6Prefix64('2001:0db8:0000:0001:2:3:4:5'), '2001:db8:0:1');
+});
+
 // ------------------------------------------------------------------ configurazione
 
 test('limiti: createRateLimits usa le tarature predefinite', () => {
@@ -133,6 +171,32 @@ test('limiti: enabled false lascia passare tutto', () => {
     assert.equal(limits.checkPress({ address: '1.2.3.4' }).allowed, true);
   }
   assert.equal(limits.checkAuth({ address: '1.2.3.4' }).allowed, true);
+});
+
+test('limiti: molti indirizzi IPv6 dello stesso /64 finiscono nello stesso secchiello', () => {
+  // Prima della correzione bastava cambiare indirizzo IPv6 (un /64 ne ha
+  // miliardi) per avere un contatore nuovo e forzare il PIN indisturbati.
+  const limits = createRateLimits({ auth: { windowMs: 60000, max: 3 }, authGlobal: { max: 10000 } });
+  for (let i = 0; i < 3; i += 1) {
+    const address = `2001:db8:1:1::${(i + 1).toString(16)}`;
+    assert.equal(limits.checkAuth({ address }).allowed, true, `tentativo ${i + 1}`);
+  }
+  // Un quarto indirizzo, sempre nello stesso /64: il secchiello e' gia' pieno.
+  assert.equal(limits.checkAuth({ address: '2001:db8:1:1:ffff::9' }).allowed, false);
+});
+
+test('limiti: il tetto globale ferma il brute force distribuito su piu\' /64', () => {
+  // Anche cambiando rete a ogni tentativo (un /64 diverso ognuno) il tetto
+  // globale, che non e' legato ad alcuna chiave, mette un limite duro.
+  const limits = createRateLimits({ auth: { windowMs: 60000, max: 100 }, authGlobal: { max: 5 } });
+  for (let i = 0; i < 5; i += 1) {
+    const address = `2001:db8:${i}::1`;
+    assert.equal(limits.checkAuth({ address }).allowed, true, `tentativo ${i + 1}`);
+  }
+  // Sesto tentativo da un /64 mai visto: per-indirizzo passerebbe, il globale no.
+  const bloccato = limits.checkAuth({ address: '2001:db8:99::1' });
+  assert.equal(bloccato.allowed, false);
+  assert.ok(bloccato.retryAfterMs > 0);
 });
 
 test('limiti: un accesso riuscito azzera i tentativi falliti', () => {

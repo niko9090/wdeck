@@ -6,6 +6,7 @@
  * relativi sono risolti rispetto alla root del progetto.
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 
 const CASE_INSENSITIVE = process.platform === 'win32';
@@ -82,7 +83,19 @@ export function checkExecutable(target, policy = {}) {
     };
   }
 
-  const candidate = normalizeForCompare(resolved);
+  // Il confronto va fatto sulla destinazione reale: un symlink (o una giunzione
+  // su Windows) dentro una cartella consentita potrebbe puntare a un binario
+  // vietato, e la sola normalizzazione della stringa non lo scoprirebbe. Se il
+  // file non esiste ancora, `realpathSync` fallisce: si ripiega sul percorso
+  // normalizzato.
+  let realTarget = resolved;
+  try {
+    realTarget = fs.realpathSync(resolved);
+  } catch {
+    realTarget = resolved;
+  }
+
+  const candidate = normalizeForCompare(realTarget);
   for (const pattern of allowExec) {
     const absPattern = path.isAbsolute(pattern) ? pattern : path.resolve(baseDir, pattern);
     if (globToRegExp(absPattern).test(candidate)) {

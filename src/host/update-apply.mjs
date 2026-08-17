@@ -107,17 +107,29 @@ export async function sha256File(file) {
  *
  * @param {string} url
  * @param {string} dest
- * @param {{onProgress?: (fatti: number, totale: number) => void, fetchImpl?: Function, timeoutMs?: number}} [options]
+ * @param {{onProgress?: (fatti: number, totale: number) => void, fetchImpl?: Function, timeoutMs?: number, maxBytes?: number}} [options]
  */
-export async function downloadTo(url, dest, { onProgress, fetchImpl = fetch, timeoutMs = 300000 } = {}) {
-  if (!/^https:\/\//i.test(url)) {
-    throw new Error(`rifiuto di scaricare da un indirizzo non cifrato: ${url}`);
+export async function downloadTo(url, dest, { onProgress, fetchImpl = fetch, timeoutMs = 300000, maxBytes = 0 } = {}) {
+  // I reindirizzamenti si seguono a mano (redirect: 'manual') per poter rifiutare
+  // ogni salto che non resti su https: con redirect: 'follow' i salti intermedi
+  // sfuggirebbero al controllo e si potrebbe finire a scaricare in chiaro.
+  let corrente = url;
+  let risposta;
+  for (let salti = 0; salti < 10; salti += 1) {
+    if (!/^https:\/\//i.test(corrente)) {
+      throw new Error(`rifiuto di scaricare da un indirizzo non cifrato: ${corrente}`);
+    }
+    risposta = await fetchImpl(corrente, {
+      headers: { 'User-Agent': 'wdeck-update' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    const location = risposta.status >= 300 && risposta.status < 400
+      ? risposta.headers?.get?.('location')
+      : null;
+    if (!location) break;
+    corrente = new URL(location, corrente).toString();
   }
-  const risposta = await fetchImpl(url, {
-    headers: { 'User-Agent': 'wdeck-update' },
-    redirect: 'follow',
-    signal: AbortSignal.timeout(timeoutMs)
-  });
   if (!risposta.ok) throw new Error(`il download ha risposto ${risposta.status}`);
 
   const totale = Number(risposta.headers?.get?.('content-length') ?? 0);
@@ -131,12 +143,54 @@ export async function downloadTo(url, dest, { onProgress, fetchImpl = fetch, tim
     : Readable.from(corpo);
   sorgente.on('data', (chunk) => {
     fatti += chunk.length;
+    // Un tetto ai byte scaricati impedisce che un server malevolo (o un asset
+    // sbagliato) riempia il disco: superata la soglia si interrompe subito.
+    if (maxBytes && fatti > maxBytes) {
+      sorgente.destroy(new Error(`il download supera la dimensione attesa (${maxBytes} byte): interrotto`));
+      return;
+    }
     onProgress?.(fatti, totale);
   });
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   await pipeline(sorgente, fs.createWriteStream(dest));
   return { bytes: fatti };
+}
+
+/**
+ * Verifica la firma Authenticode di un eseguibile su Windows.
+ *
+ * Chiede a PowerShell lo stato della firma e pretende `Valid`: qualunque altro
+ * esito (non firmato, firma manomessa, certificato non attendibile) fa fallire
+ * l'aggiornamento. **Un binario di release non firmato viene percio' rifiutato
+ * dall'auto-update.** Il percorso non si concatena mai in una stringa di comando:
+ * passa in una variabile d'ambiente e si legge con `-LiteralPath`, cosi' non c'e'
+ * modo di iniettare altro.
+ *
+ * @param {string} exePath
+ * @param {{spawnImpl?: Function}} [options]
+ * @returns {Promise<string>} risolve con "Valid" solo a firma valida
+ */
+export function verificaFirmaWindows(exePath, { spawnImpl = spawn } = {}) {
+  return new Promise((resolve, reject) => {
+    const figlio = spawnImpl('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      '(Get-AuthenticodeSignature -LiteralPath $Env:WDECK_EXE_DA_VERIFICARE).Status'
+    ], {
+      env: { ...process.env, WDECK_EXE_DA_VERIFICARE: exePath },
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let out = '';
+    let err = '';
+    figlio.stdout?.on('data', (d) => { out += d; });
+    figlio.stderr?.on('data', (d) => { err += d; });
+    figlio.on('error', reject);
+    figlio.on('close', (code) => {
+      const stato = out.trim();
+      if (stato === 'Valid') resolve(stato);
+      else reject(new Error(`firma Authenticode non valida (${stato || err.trim() || `uscita ${code}`}): aggiornamento annullato`));
+    });
+  });
 }
 
 /**
@@ -170,9 +224,10 @@ export function cleanupOldExe(exePath) {
  * @param {string} spec.exePath
  * @param {(fase: string, dettaglio?: object) => void} [spec.onProgress]
  * @param {Function} [spec.fetchImpl]
+ * @param {Function} [spec.spawnImpl] iniettabile per la verifica della firma nei test
  * @returns {Promise<{ok: true, version: string, exePath: string, backup: string, sha256: string}>}
  */
-export async function applyUpdate({ release, exePath, onProgress, fetchImpl = fetch }) {
+export async function applyUpdate({ release, exePath, onProgress, fetchImpl = fetch, spawnImpl = spawn }) {
   if (!release?.asset?.url) throw new Error('la release non contiene un eseguibile da scaricare');
   if (!/\.exe$/i.test(release.asset.name ?? '')) {
     throw new Error(`l'allegato "${release.asset.name}" non e' un eseguibile`);
@@ -183,8 +238,12 @@ export async function applyUpdate({ release, exePath, onProgress, fetchImpl = fe
 
   try {
     onProgress?.('download', { name: release.asset.name, size: release.asset.size ?? 0 });
+    // Se la release dichiara una dimensione, si concede un piccolo margine e non
+    // un byte di piu': oltre quel tetto il download si interrompe.
+    const maxBytes = release.asset.size ? release.asset.size + 65536 : 0;
     await downloadTo(release.asset.url, scaricato, {
       fetchImpl,
+      maxBytes,
       onProgress: (fatti, totale) => onProgress?.('progresso', { fatti, totale })
     });
 
@@ -208,6 +267,15 @@ export async function applyUpdate({ release, exePath, onProgress, fetchImpl = fe
     const trovata = await sha256File(scaricato);
     if (trovata !== attesa) {
       throw new Error(`impronta diversa da quella pubblicata: atteso ${attesa.slice(0, 16)}..., ottenuto ${trovata.slice(0, 16)}...`);
+    }
+
+    // --- verifica della firma Authenticode (solo Windows) -----------------
+    // Difesa in profondita' oltre allo SHA-256: prima di rimpiazzare il binario
+    // in uso si pretende una firma valida. Un eseguibile non firmato viene
+    // rifiutato qui, senza toccare nulla.
+    if (process.platform === 'win32') {
+      onProgress?.('firma');
+      await verificaFirmaWindows(scaricato, { spawnImpl });
     }
 
     // --- sostituzione ------------------------------------------------------

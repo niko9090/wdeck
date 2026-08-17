@@ -27,8 +27,8 @@ import {
   x11Key
 } from '../src/host/platform/keymaps.mjs';
 import { buildMacPlayerScript, MAC_PLAYERS } from '../src/host/platform/macos.mjs';
-import { buildYdotoolKeyArgs, isWayland, parsePactlVolume, pickInputTool, ydotoolKey } from '../src/host/platform/linux.mjs';
-import { firstAvailable, runCommand, which } from '../src/host/platform/exec.mjs';
+import { buildYdotoolKeyArgs, buildYdotoolTypeArgs, isWayland, parsePactlVolume, pickInputTool, ydotoolKey } from '../src/host/platform/linux.mjs';
+import { assertSafeUrl, firstAvailable, runCommand, which } from '../src/host/platform/exec.mjs';
 import { SUPPORTED_PLATFORMS, backendFor, planHotkey, planMediaKey, planText, planUrl } from '../src/host/platform/input.mjs';
 import { AUDIO_PLATFORMS } from '../src/host/platform/audio.mjs';
 import { createDefaultRegistry } from '../src/host/actions/handlers/index.mjs';
@@ -79,6 +79,18 @@ test('macos: virgolette e barre nel testo non rompono lo script', () => {
   assert.match(script, /keystroke "un \\"test\\" con \\\\ dentro"/);
 });
 
+test('macos: un testo su piu\' righe resta un letterale AppleScript valido', () => {
+  // Un a capo grezzo dentro le virgolette spezzerebbe la riga e osascript
+  // darebbe errore di sintassi: va sostituito con la costante `return`/`linefeed`.
+  assert.equal(escapeAppleScript('riga1\nriga2'), 'riga1" & linefeed & "riga2');
+  assert.equal(escapeAppleScript('a\tb'), 'a" & tab & "b');
+  const script = buildMacTypeScript('prima\nseconda');
+  // Nessun a capo grezzo all'interno del letterale fra virgolette della keystroke.
+  const keystrokeLine = script.split('\n').find((l) => l.includes('keystroke'));
+  assert.ok(keystrokeLine, 'manca la riga keystroke');
+  assert.match(keystrokeLine, /keystroke "prima" & linefeed & "seconda"/);
+});
+
 test('macos: il comando di riproduzione interroga i lettori in ordine', () => {
   const script = buildMacPlayerScript('playpause');
   for (const app of MAC_PLAYERS) assert.ok(script.includes(`"${app}"`), `manca ${app}`);
@@ -123,6 +135,11 @@ test('linux: buildXdotoolTypeArgs chiude le opzioni con "--"', () => {
   const args = buildXdotoolTypeArgs('--non-e-un-flag');
   assert.equal(args.at(-2), '--');
   assert.equal(args.at(-1), '--non-e-un-flag');
+});
+
+test('linux: buildYdotoolTypeArgs chiude le opzioni con "--"', () => {
+  const args = buildYdotoolTypeArgs('--non-e-un-flag');
+  assert.deepEqual(args, ['type', '--', '--non-e-un-flag']);
 });
 
 test('linux: ydotool usa i nomi dei tasti del kernel', () => {
@@ -188,6 +205,33 @@ test('exec: firstAvailable rispetta l\'ordine di preferenza', () => {
   assert.equal(firstAvailable(['primo', 'secondo'], { env, platform: 'linux' })?.name, 'secondo');
   assert.equal(firstAvailable(['assente'], { env, platform: 'linux' }), null);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('exec: which prova il nome verbatim se porta gia\' un\'estensione', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wdeck-ext-'));
+  fs.writeFileSync(path.join(dir, 'tool.exe'), '');
+  const env = { PATH: dir, PATHEXT: '.EXE;.CMD;.BAT;.COM' };
+  // Senza il tentativo verbatim diventerebbe "tool.exe.EXE" e non si troverebbe.
+  assert.equal(which('tool.exe', { env, platform: 'win32' }), path.join(dir, 'tool.exe'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('exec: which su Windows trova anche un file esatto senza estensione', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wdeck-noext-'));
+  fs.writeFileSync(path.join(dir, 'senzaext'), '');
+  const env = { PATH: dir, PATHEXT: '.EXE;.CMD;.BAT;.COM' };
+  assert.equal(which('senzaext', { env, platform: 'win32' }), path.join(dir, 'senzaext'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('exec: assertSafeUrl ammette gli schemi noti e rifiuta il resto', () => {
+  assert.equal(assertSafeUrl('https://example.it/x'), 'https://example.it/x');
+  assert.equal(assertSafeUrl('mailto:a@b.it'), 'mailto:a@b.it');
+  // Un valore che inizia con "-" (verrebbe scambiato per un flag) o con uno
+  // schema inatteso viene respinto con un errore chiaro.
+  assert.throws(() => assertSafeUrl('-flag'), /URL non ammesso/);
+  assert.throws(() => assertSafeUrl('javascript:alert(1)'), /URL non ammesso/);
+  assert.throws(() => assertSafeUrl('senza-schema'), /URL non ammesso/);
 });
 
 test('exec: un comando inesistente produce un errore leggibile', async () => {
@@ -269,4 +313,13 @@ test('script: gli script di shell sono eseguibili fuori da Windows', () => {
   const runner = resolveScriptRunner('/home/utente/backup.sh', ['ora']);
   assert.match(runner.command, /sh$/);
   assert.deepEqual(runner.argv, ['/home/utente/backup.sh', 'ora']);
+});
+
+test('script: un argomento .bat con "&" viene rifiutato', () => {
+  // cmd.exe /c ri-analizza la riga: "& calc" avvierebbe calc come comando a se'.
+  assert.throws(() => resolveScriptRunner('C:\\tmp\\job.bat', ['& calc']), /metacarattere di cmd\.exe/);
+  assert.throws(() => resolveScriptRunner('C:\\tmp\\job.cmd', ['a|b']), /metacarattere di cmd\.exe/);
+  // Un argomento innocuo passa senza modifiche.
+  const ok = resolveScriptRunner('C:\\tmp\\job.bat', ['normale']);
+  assert.deepEqual(ok.argv, ['/c', 'C:\\tmp\\job.bat', 'normale']);
 });

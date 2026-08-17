@@ -78,6 +78,20 @@ test('schema: i bottoni devono stare dentro la griglia', () => {
   assert.ok(result.errors.some((e) => /fuori dalla griglia/.test(e.message)));
 });
 
+test('schema: uno slider senza span nell\'ultima colonna sfora la griglia', () => {
+  // Senza span esplicito uno slider ne occupa 2 (come a runtime): nell'ultima
+  // colonna (col=2, cols=3) esce dalla griglia e va rifiutato in validazione,
+  // non lasciato passare come largo 1 per poi sfondare a runtime.
+  const deck = rawDeck();
+  deck.profiles[0].pages[0].buttons = [
+    { id: 'vol', label: 'Volume', row: 0, col: 2, kind: 'slider', action: { type: 'media', params: { key: 'playpause' } } }
+  ];
+  const result = validate(deck);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.path === 'profiles[0].pages[0].buttons[0].span'),
+    JSON.stringify(result.errors));
+});
+
 test('schema: rows/cols entro i limiti', () => {
   const tooMany = rawDeck();
   tooMany.profiles[0].pages[0].rows = 99;

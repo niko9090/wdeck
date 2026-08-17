@@ -74,6 +74,94 @@ export function impostaSottosistemaGrafico(file) {
   return { cambiato: true, da: attuale };
 }
 
+/**
+ * Costruisce gli argomenti di `signtool sign`. Funzione pura: niente I/O, cosi'
+ * la si puo' collaudare senza un certificato e senza Windows.
+ *
+ * La firma usa SHA-256 e una marca temporale RFC 3161: senza la marca, la
+ * firma scadrebbe con il certificato, e un exe legittimo diventerebbe invalido
+ * il giorno dopo. Il certificato arriva o da un file `.pfx` (con la sua
+ * password) o dall'impronta di uno gia' nel deposito di Windows.
+ *
+ * @param {string} exe percorso dell'eseguibile da firmare
+ * @param {{pfx?: string, password?: string, thumbprint?: string, timestamp?: string}} opts
+ * @returns {string[]}
+ */
+export function costruisciArgomentiFirma(exe, opts = {}) {
+  const { pfx, password, thumbprint, timestamp = 'http://timestamp.digicert.com' } = opts;
+  const args = ['sign', '/fd', 'SHA256', '/tr', timestamp, '/td', 'SHA256'];
+  if (pfx) {
+    args.push('/f', pfx);
+    if (password) args.push('/p', password);
+  } else if (thumbprint) {
+    args.push('/sha1', thumbprint);
+  } else {
+    throw new Error('nessun certificato: imposta WDECK_SIGN_PFX o WDECK_SIGN_THUMBPRINT');
+  }
+  args.push(exe);
+  return args;
+}
+
+/**
+ * Trova `signtool.exe`. Non sta nel PATH per conto suo: lo installa il Windows
+ * SDK sotto `Windows Kits\10\bin\<versione>\x64`. Si prende la versione piu'
+ * recente, oppure il percorso indicato a mano da `WDECK_SIGNTOOL`.
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string|null}
+ */
+function trovaSigntool(env = process.env) {
+  if (env.WDECK_SIGNTOOL) return env.WDECK_SIGNTOOL;
+  const basi = [
+    path.join(env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Windows Kits', '10', 'bin'),
+    path.join(env.ProgramFiles || 'C:\\Program Files', 'Windows Kits', '10', 'bin')
+  ];
+  for (const base of basi) {
+    if (!fs.existsSync(base)) continue;
+    const versioni = fs.readdirSync(base).filter((n) => /^\d/.test(n)).sort().reverse();
+    for (const v of versioni) {
+      const p = path.join(base, v, 'x64', 'signtool.exe');
+      if (fs.existsSync(p)) return p;
+    }
+    const diretto = path.join(base, 'x64', 'signtool.exe');
+    if (fs.existsSync(diretto)) return diretto;
+  }
+  return null;
+}
+
+/**
+ * Firma l'eseguibile con Authenticode, se e' configurato un certificato.
+ *
+ * La firma va applicata **dopo** ogni modifica al PE (il blob di postject, il
+ * cambio di sottosistema): ritoccare il binario dopo averlo firmato ne
+ * invaliderebbe la firma. Se non c'e' un certificato non e' un errore di build,
+ * ma va detto forte: dalla 0.7.0 l'aggiornamento automatico **rifiuta** i
+ * binari non firmati, quindi un exe non firmato non potra' aggiornarsi da solo.
+ *
+ * @param {string} exe
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {{firmato: boolean, motivo?: string, signtool?: string}}
+ */
+export function firmaEseguibile(exe, env = process.env) {
+  const opts = {
+    pfx: env.WDECK_SIGN_PFX,
+    password: env.WDECK_SIGN_PASSWORD,
+    thumbprint: env.WDECK_SIGN_THUMBPRINT,
+    timestamp: env.WDECK_SIGN_TIMESTAMP
+  };
+  if (!opts.pfx && !opts.thumbprint) {
+    return { firmato: false, motivo: 'nessun certificato configurato' };
+  }
+  const signtool = trovaSigntool(env);
+  if (!signtool) {
+    throw new Error('signtool.exe non trovato: installa il Windows SDK o imposta WDECK_SIGNTOOL');
+  }
+  execFileSync(signtool, costruisciArgomentiFirma(exe, opts), { stdio: 'pipe' });
+  // La stessa verifica che l'host fara' prima di sostituirsi: se non passa qui,
+  // non passerebbe nemmeno la' e l'aggiornamento si fermerebbe.
+  execFileSync(signtool, ['verify', '/pa', exe], { stdio: 'pipe' });
+  return { firmato: true, signtool };
+}
+
 function walk(dir, base = dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
@@ -160,6 +248,16 @@ function main() {
   const sottosistema = impostaSottosistemaGrafico(exe);
   if (!sottosistema.cambiato) throw new Error(`sottosistema non modificato: ${sottosistema.motivo}`);
 
+  // La firma va per ultima, dopo ogni ritocco al PE: firmare e poi modificare
+  // invaliderebbe la firma.
+  console.log('  firmo l\'eseguibile...');
+  const firma = firmaEseguibile(exe);
+  if (!firma.firmato) {
+    console.warn(`  ATTENZIONE: eseguibile NON firmato (${firma.motivo}).`);
+    console.warn('  Dalla 0.7.0 l\'aggiornamento automatico rifiuta i binari non firmati.');
+    console.warn('  Imposta WDECK_SIGN_PFX (+ WDECK_SIGN_PASSWORD) o WDECK_SIGN_THUMBPRINT per firmare.');
+  }
+
   // Un exe che non parte e' peggio di un errore di build: lo provo qui.
   // Senza console non si puo' leggere cosa stampa, quindi si guarda l'unica
   // cosa che resta osservabile dall'esterno: che esca da solo e senza errori.
@@ -170,6 +268,7 @@ function main() {
   console.log(`\n  versione : ${pkg.version}`);
   console.log(`  file     : ${files.length} incorporati`);
   console.log(`  impronta : ${stamp}`);
+  console.log(`  firma    : ${firma.firmato ? 'applicata e verificata' : 'assente (non aggiornabile da solo)'}`);
   console.log(`  exe      : ${path.relative(ROOT, exe)} (${mb} MB)`);
   console.log('\nEXE OK');
 }

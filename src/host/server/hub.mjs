@@ -90,7 +90,9 @@ export function createHub(host) {
 
   function parseMessage(raw) {
     const text = typeof raw === 'string' ? raw : raw.toString('utf8');
-    if (text.length > MAX_MESSAGE_BYTES) throw new Error('messaggio troppo grande');
+    // Il limite e' in byte: `text.length` conta unita' UTF-16, quindi un
+    // messaggio con caratteri multibyte poteva superare il tetto reale.
+    if (Buffer.byteLength(text) > MAX_MESSAGE_BYTES) throw new Error('messaggio troppo grande');
     return JSON.parse(text);
   }
 
@@ -190,18 +192,24 @@ export function createHub(host) {
             });
             break;
           }
-          const result = await dispatcher.press({
-            buttonId: msg.buttonId,
-            profileId: msg.profileId,
-            pageId: msg.pageId,
-            hold: msg.hold === true,
-            value: msg.value,
-            dryRun: state.dryRun || msg.dryRun === true,
-            source: 'ws',
-            deviceId: conn.data.deviceId ?? null,
-            address: conn.data.address
-          });
-          conn.send({ type: MSG.ack, requestId: msg.requestId ?? null, ok: result.ok, result });
+          // Come per il caso navigate: un rifiuto della dispatch non deve
+          // diventare una unhandledRejection capace di far cadere il processo.
+          try {
+            const result = await dispatcher.press({
+              buttonId: msg.buttonId,
+              profileId: msg.profileId,
+              pageId: msg.pageId,
+              hold: msg.hold === true,
+              value: msg.value,
+              dryRun: state.dryRun || msg.dryRun === true,
+              source: 'ws',
+              deviceId: conn.data.deviceId ?? null,
+              address: conn.data.address
+            });
+            conn.send({ type: MSG.ack, requestId: msg.requestId ?? null, ok: result.ok, result });
+          } catch (err) {
+            conn.send({ type: MSG.error, code: ERROR_CODES.internal, message: err.message, requestId: msg.requestId ?? null });
+          }
           break;
         }
 
@@ -283,19 +291,25 @@ export function createHub(host) {
             conn.send({ [F.type]: LITE_MSG.error, [F.error]: ERROR_CODES.rateLimited, [F.message]: 'troppi comandi' });
             break;
           }
-          const result = await dispatcher.press({
-            buttonId: msg[F.id],
-            dryRun: state.dryRun,
-            source: 'lite-ws',
-            deviceId: conn.data.deviceId ?? null,
-            address: conn.data.address
-          });
-          conn.send({
-            [F.type]: LITE_MSG.ack,
-            [F.id]: msg[F.id] ?? null,
-            [F.ok]: result.ok ? 1 : 0,
-            [F.message]: (result.ok ? (result.detail ?? '') : (result.error?.message ?? '')).slice(0, 120)
-          });
+          // Anche qui: un throw della dispatch va intercettato, altrimenti
+          // diventa una unhandledRejection che puo' abbattere il processo.
+          try {
+            const result = await dispatcher.press({
+              buttonId: msg[F.id],
+              dryRun: state.dryRun,
+              source: 'lite-ws',
+              deviceId: conn.data.deviceId ?? null,
+              address: conn.data.address
+            });
+            conn.send({
+              [F.type]: LITE_MSG.ack,
+              [F.id]: msg[F.id] ?? null,
+              [F.ok]: result.ok ? 1 : 0,
+              [F.message]: (result.ok ? (result.detail ?? '') : (result.error?.message ?? '')).slice(0, 120)
+            });
+          } catch (err) {
+            conn.send({ [F.type]: LITE_MSG.error, [F.message]: (err.message ?? 'errore').slice(0, 120) });
+          }
           break;
         }
 

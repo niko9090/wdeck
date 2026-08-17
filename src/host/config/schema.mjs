@@ -374,7 +374,12 @@ function validateButton(ctx, path, button, page, seen, actionTypes) {
 
   // Un controllo con span > 1 occupa piu' celle consecutive sulla stessa riga:
   // vanno marcate tutte, altrimenti un bottone potrebbe finirci sotto.
-  const span = Number.isInteger(button.span) && button.span > 0 ? button.span : 1;
+  // Lo span assente vale 2 per uno slider e 1 per un bottone: e' lo stesso
+  // default che `normalizeDeck` applica a runtime. Usarne uno diverso qui farebbe
+  // passare la validazione a uno slider da 1 cella che poi a runtime ne occupa 2,
+  // sfondando la griglia e sfuggendo al controllo di sovrapposizione.
+  const spanPredefinito = button.kind === 'slider' ? 2 : 1;
+  const span = Number.isInteger(button.span) && button.span > 0 ? button.span : spanPredefinito;
   if (typeof button.col === 'number' && typeof page.cols === 'number' && button.col + span > page.cols) {
     ctx.err(`${path}.span`, `il controllo largo ${span} celle da colonna ${button.col} esce dalla griglia (cols=${page.cols})`);
   }
