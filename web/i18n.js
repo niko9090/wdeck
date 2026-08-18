@@ -200,6 +200,8 @@ const DICTIONARIES = {
     'settings.updRestarting': 'Riavvio di Wdeck...',
     'settings.checkNow': 'Controlla ora',
     'settings.noUpdate': 'Nessun aggiornamento disponibile',
+    'settings.upToDate': 'Sei già alla versione più recente ({current}).',
+    'settings.checkFailed': 'Controllo aggiornamenti non riuscito.',
     'update.reloadReady': 'Nuova versione disponibile: ricarica la pagina.',
 
     'sheet.close': 'Chiudi',
@@ -405,6 +407,8 @@ const DICTIONARIES = {
     'settings.updRestarting': 'Restarting Wdeck...',
     'settings.checkNow': 'Check now',
     'settings.noUpdate': 'No update available',
+    'settings.upToDate': 'You are on the latest version ({current}).',
+    'settings.checkFailed': 'Update check failed.',
     'update.reloadReady': 'New version available: reload the page.',
 
     'sheet.close': 'Close',

@@ -3,6 +3,22 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.2] - 2026-08-18
+
+Il controllo aggiornamenti diceva "sei aggiornato" anche quando falliva, e non
+diceva mai a che versione fossi.
+
+### Corretto
+
+- **"Controlla ora" non spaccia più un errore per "sei aggiornato".** Se il
+  controllo falliva (GitHub irraggiungibile o a corto di richieste), l'host
+  segnalava l'errore ma il client mostrava comunque "Nessun aggiornamento
+  disponibile". Ora i tre casi sono distinti: controllo **non riuscito** (con il
+  motivo), aggiornamento **disponibile**, oppure **già all'ultima versione**.
+- **Il messaggio ora mostra la versione.** "Controlla ora" dice a chiare lettere
+  a quale versione sei (*"Sei già alla versione più recente (0.8.2)"*) e, quando
+  c'è un aggiornamento, quale versione è disponibile.
+
 ## [0.8.1] - 2026-08-18
 
 Affidabilità: una sequenza con `continueOnError` non finge più il successo.

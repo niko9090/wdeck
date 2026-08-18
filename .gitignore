@@ -20,3 +20,5 @@ release/
 # PlatformIO
 firmware/esp32/.pio/
 firmware/esp32/.vscode/
+# quaderno di lavoro dell'autopilota (Sierradeck): artefatto di runtime, non codice
+.sierradeck/

@@ -1975,12 +1975,27 @@ async function checkUpdate({ force = false } = {}) {
   const res = await api(`${ENDPOINTS.update}${force ? '?check=1' : ''}`);
   if (!res.ok) {
     // Il controllo automatico resta silenzioso; quello chiesto a mano no.
-    if (force) toast(isOffline(res) ? t('net.unreachable') : t('settings.updateNone', { current: state.update?.current ?? '-' }), isOffline(res) ? 'err' : '');
+    if (force) toast(isOffline(res) ? t('net.unreachable') : t('settings.checkFailed'), 'err');
     return;
   }
   state.selfUpdate = res.data.selfUpdate ?? null;
-  showUpdate(res.data.update);
-  if (force && !res.data.update?.available) toast(t('settings.noUpdate'), 'ok');
+  const update = res.data.update;
+  showUpdate(update);
+  if (!force) return;
+
+  // Tre esiti distinti: il controllo puo' FALLIRE (GitHub irraggiungibile o a
+  // corto di richieste), trovare un aggiornamento, oppure confermare che si e'
+  // gia' all'ultima versione. Prima un controllo fallito veniva mostrato come
+  // "sei aggiornato": una bugia. E il messaggio non diceva mai a che versione si
+  // era. Ora ognuno dei tre casi ha il suo messaggio, con la versione in chiaro.
+  const corrente = update?.current ?? '-';
+  if (update?.error) {
+    toast(`${t('settings.checkFailed')} ${update.error}`.trim(), 'err');
+  } else if (update?.available) {
+    toast(t('settings.updateAvailable', { version: update.latest?.version ?? '?', current: corrente }), 'ok');
+  } else {
+    toast(t('settings.upToDate', { current: corrente }), 'ok');
+  }
 }
 
 /** Dimensione in byte resa leggibile: 84 MB invece di 88080384. */
