@@ -3,6 +3,29 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.3] - 2026-08-19
+
+Il client si aggiorna da solo quando è rimasto indietro: niente più pagina
+vecchia servita all'infinito dalla cache.
+
+### Corretto
+
+- **Il client stantìo non resta più bloccato su una versione vecchia.** Il
+  service worker della PWA serve l'app anche dopo un aggiornamento dell'host, e
+  un normale ricaricamento non basta a sostituirlo: la pagina poteva mostrare
+  all'infinito una versione vecchia (versione "vuota", "nessun aggiornamento",
+  *"esattamente come prima"*). Ora all'avvio il client confronta la propria
+  impronta di build con quella dell'host (`/api/health` → `buildId`, che il
+  service worker non intercetta): se è più vecchio, **pulisce la cache e si
+  ricarica da solo, una volta sola**.
+- Il messaggio del controllo aggiornamenti non lascia più la versione in bianco
+  quando manca (ricade sul trattino).
+
+### Aggiunto
+
+- `GET /api/health` riporta ora `buildId`, l'impronta della build del client web
+  (la stessa del `<meta name="wdeck-build">`).
+
 ## [0.8.2] - 2026-08-18
 
 Il controllo aggiornamenti diceva "sei aggiornato" anche quando falliva, e non

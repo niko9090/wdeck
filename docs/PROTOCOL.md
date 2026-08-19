@@ -234,6 +234,7 @@ Pubblico (nessun token). Serve alla scoperta dell'host e alla diagnostica.
   "name": "Wdeck Host",
   "deckName": "Wdeck",
   "version": "0.1.0",
+  "buildId": "b8e0e27ae386",
   "protocol": 1,
   "liteProtocol": 1,
   "platform": "win32",
@@ -243,6 +244,12 @@ Pubblico (nessun token). Serve alla scoperta dell'host e alla diagnostica.
   "uptimeMs": 51234
 }
 ```
+
+`buildId` e' l'impronta della build del client web (la stessa iniettata come
+`<meta name="wdeck-build">` in `index.html`). Il client la confronta con la
+propria all'avvio: se non coincidono sta girando da una copia vecchia rimasta in
+cache dal service worker, e si aggiorna da solo (pulizia cache + ricarica). E'
+`null` se il client non e' stato ancora compilato.
 
 ### `POST /api/pair`
 

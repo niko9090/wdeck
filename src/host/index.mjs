@@ -44,6 +44,21 @@ function readVersion() {
 }
 
 /**
+ * Impronta della build del client web, quella che l'editor confronta con la
+ * propria per accorgersi di girare da una copia vecchia in cache. Sta in
+ * `dist/web/build.json`, generata da `scripts/build-web.mjs`. Senza (client non
+ * ancora compilato) resta null: il confronto lato client si limita a saltare.
+ * @returns {string|null}
+ */
+function readBuildId() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'dist', 'web', 'build.json'), 'utf8')).buildId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Risolve il percorso del log di audit tenendolo dentro baseDir.
  * Il percorso e' configurabile, ma un valore assoluto o con ".." scriverebbe il
  * registro fuori dalla cartella dei dati: in quel caso si ripiega sul default.
@@ -180,6 +195,7 @@ export function createHost(options = {}) {
   /** @type {any} */
   const host = {
     version: readVersion(),
+    buildId: readBuildId(),
     configFile,
     baseDir,
     logger,

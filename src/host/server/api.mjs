@@ -97,7 +97,7 @@ export function publicDeck(deck) {
  * @param {object} host istanza creata da createHost()
  */
 export function createApiRouter(host) {
-  const { auth, state, dispatcher, registry, configStore, version } = host;
+  const { auth, state, dispatcher, registry, configStore, version, buildId } = host;
 
   /** Indirizzo del richiedente, usato come identita' per i limiti. */
   const addressOf = (req) => normalizeAddress(req.socket?.remoteAddress);
@@ -134,6 +134,7 @@ export function createApiRouter(host) {
         name: configStore.get().settings.server.publicName,
         deckName: configStore.get().name,
         version,
+        buildId,
         protocol: PROTOCOL_VERSION,
         liteProtocol: LITE_PROTOCOL_VERSION,
         platform: process.platform,

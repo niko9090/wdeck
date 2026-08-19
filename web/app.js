@@ -398,6 +398,7 @@ function handleMessage(msg) {
       setStatus('online', t('status.online'));
       renderHosts();
       checkUpdate();
+      checkClientFreshness();
       break;
 
     case MSG.deck:
@@ -1820,8 +1821,8 @@ async function openSettings() {
 
       <h3 class="sheet-section">${t('settings.updates')}</h3>
       <p class="sheet-hint" id="set-update">${update?.available
-    ? t('settings.updateAvailable', { version: escapeHtml(update.latest?.version ?? ''), current: escapeHtml(update.current ?? '') })
-    : t('settings.updateNone', { current: escapeHtml(update?.current ?? '-') })}</p>
+    ? t('settings.updateAvailable', { version: escapeHtml(update.latest?.version || '?'), current: escapeHtml(update.current || '-') })
+    : t('settings.updateNone', { current: escapeHtml(update?.current || '-') })}</p>
       <button class="btn" type="button" id="set-check-update">${t('settings.checkNow')}</button>
       ${update?.available && state.selfUpdate?.supported
     ? `<button class="btn primary" type="button" id="set-apply-update">${t('settings.installUpdate')}</button>
@@ -1971,6 +1972,66 @@ function forgetHost(id) {
 
 // ---------------------------------------------------------------- aggiornamenti
 
+// Una volta sola per caricamento: evita che una riconnessione mentre si sta
+// modificando il deck faccia scattare una ricarica a sorpresa.
+let freshnessChecked = false;
+
+/**
+ * Si accorge se questa pagina e' una copia vecchia rimasta in cache. Il service
+ * worker della PWA serve l'app anche quando l'host e' stato aggiornato, quindi
+ * un client puo' restare indietro all'infinito senza dirlo (era esattamente il
+ * sintomo "versione vuota, nessun aggiornamento, esattamente come prima").
+ *
+ * Confronta l'impronta di build del client caricato (dal <meta wdeck-build>,
+ * che riflette la copia in cache) con quella dell'host, letta da /api/health -
+ * che il service worker non intercetta mai, quindi arriva sempre fresca. Se non
+ * coincidono, pulisce la cache e ricarica **una volta sola**: il client stantio
+ * si aggiorna da se' invece di mostrare una versione vecchia.
+ */
+async function checkClientFreshness() {
+  if (freshnessChecked) return;
+  freshnessChecked = true;
+
+  const mine = document.querySelector('meta[name="wdeck-build"]')?.content ?? '';
+  if (!mine) return; // build non marcata (sviluppo): niente da confrontare
+
+  let hostBuild;
+  try {
+    const res = await api(ENDPOINTS.health);
+    if (!res.ok || !res.data?.buildId) return;
+    hostBuild = res.data.buildId;
+  } catch {
+    return; // host non raggiungibile: si riprovera' al prossimo collegamento
+  }
+
+  if (hostBuild === mine) {
+    try { sessionStorage.removeItem('wdeck.stale'); } catch { /* storage assente */ }
+    return;
+  }
+
+  // Disallineati: la pagina e' vecchia. Ci si guarisce una sola volta per ogni
+  // build dell'host; se dopo la ricarica e' ancora diversa (caso raro) ci si
+  // limita ad avvisare, per non entrare in un ciclo di ricariche.
+  let gia = false;
+  try { gia = sessionStorage.getItem('wdeck.stale') === hostBuild; } catch { /* storage assente */ }
+  if (gia) {
+    toast(t('update.reloadReady'), '');
+    return;
+  }
+  try { sessionStorage.setItem('wdeck.stale', hostBuild); } catch { /* storage assente */ }
+
+  toast(t('update.refreshing'), '');
+  try {
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k.startsWith('wdeck-shell-')).map((k) => caches.delete(k)));
+    }
+    const reg = await navigator.serviceWorker?.getRegistration?.();
+    await reg?.unregister?.();
+  } catch { /* se la pulizia fallisce si ricarica lo stesso: meglio che restare vecchi */ }
+  location.reload();
+}
+
 async function checkUpdate({ force = false } = {}) {
   const res = await api(`${ENDPOINTS.update}${force ? '?check=1' : ''}`);
   if (!res.ok) {
@@ -1988,7 +2049,9 @@ async function checkUpdate({ force = false } = {}) {
   // gia' all'ultima versione. Prima un controllo fallito veniva mostrato come
   // "sei aggiornato": una bugia. E il messaggio non diceva mai a che versione si
   // era. Ora ognuno dei tre casi ha il suo messaggio, con la versione in chiaro.
-  const corrente = update?.current ?? '-';
+  // `|| '-'` e non `?? '-'`: anche una versione vuota (host che non l'ha
+  // riportata) deve ricadere sul trattino, non lasciare il messaggio monco.
+  const corrente = update?.current || '-';
   if (update?.error) {
     toast(`${t('settings.checkFailed')} ${update.error}`.trim(), 'err');
   } else if (update?.available) {

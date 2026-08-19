@@ -203,6 +203,7 @@ const DICTIONARIES = {
     'settings.upToDate': 'Sei già alla versione più recente ({current}).',
     'settings.checkFailed': 'Controllo aggiornamenti non riuscito.',
     'update.reloadReady': 'Nuova versione disponibile: ricarica la pagina.',
+    'update.refreshing': 'Aggiorno all\'ultima versione…',
 
     'sheet.close': 'Chiudi',
     'sheet.cancel': 'Annulla',
@@ -410,6 +411,7 @@ const DICTIONARIES = {
     'settings.upToDate': 'You are on the latest version ({current}).',
     'settings.checkFailed': 'Update check failed.',
     'update.reloadReady': 'New version available: reload the page.',
+    'update.refreshing': 'Updating to the latest version…',
 
     'sheet.close': 'Close',
     'sheet.cancel': 'Cancel',

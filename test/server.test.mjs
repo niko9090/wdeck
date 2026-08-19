@@ -60,6 +60,11 @@ test('api: /api/health e\' pubblico e descrive l\'host', async (t) => {
   assert.equal(body.dryRun, true);
   assert.equal(typeof body.version, 'string');
   assert.equal(body.platform, process.platform);
+  // buildId serve al client per accorgersi di girare da una copia in cache
+  // vecchia: presente sempre (stringa quando il client web e' compilato, null
+  // altrimenti), mai assente dalla risposta.
+  assert.ok('buildId' in body, 'la salute deve riportare buildId');
+  assert.ok(body.buildId === null || typeof body.buildId === 'string');
 });
 
 test('api: tutte le rotte protette rifiutano le richieste senza token', async (t) => {
