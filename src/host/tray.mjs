@@ -80,6 +80,7 @@ $titolo.Enabled = $false
 [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 
 Add-Item 'Apri il deck nel browser' { Start-Process "$url" } | Out-Null
+Add-Item 'Apri le impostazioni' { Start-Process "$url#settings" } | Out-Null
 Add-Item 'Copia indirizzo per il telefono' {
   Set-Clipboard -Value $urlList
   $icon.BalloonTipTitle = 'Indirizzi copiati'
@@ -102,23 +103,33 @@ Add-Item 'Ricarica deck.json' {
 } | Out-Null
 
 Add-Item 'Controlla aggiornamenti' {
+  # Esito mostrato con una finestra (MessageBox) e non con un fumetto: i fumetti
+  # non compaiono se le notifiche di Windows o l'Assistente notifiche sono spenti,
+  # e sembrerebbe che "non funzioni nulla". Qui l'utente ha chiesto una risposta:
+  # la deve vedere sempre.
   try {
     $res = Invoke-RestMethod -Uri "$url/api/update?check=1" -Headers @{ 'x-wdeck-token' = $token }
-    $icon.BalloonTipTitle = 'Wdeck'
     if ($res.update.available) {
       if ($res.selfUpdate.supported) {
-        $icon.BalloonTipText = "Disponibile la versione $($res.update.latest.version). Usa 'Scarica e installa' per aggiornare."
+        $msg = "Disponibile la versione $($res.update.latest.version) (in uso la $($res.update.current)).\`n\`nVuoi scaricarla e installarla adesso?"
+        $scelta = [System.Windows.Forms.MessageBox]::Show($msg, 'Aggiornamento disponibile', 'YesNo', 'Question')
+        if ($scelta -eq 'Yes') {
+          try {
+            $r2 = Invoke-RestMethod -Method Post -Uri "$url/api/update/apply" -Headers @{ 'x-wdeck-token' = $token }
+            [System.Windows.Forms.MessageBox]::Show("Versione $($r2.version) installata. Wdeck si sta riavviando.", 'Aggiornato', 'OK', 'Information') | Out-Null
+          } catch {
+            [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Aggiornamento non riuscito', 'OK', 'Error') | Out-Null
+          }
+        }
       } else {
-        $icon.BalloonTipText = "Disponibile la versione $($res.update.latest.version). Apri la pagina del rilascio dal menu."
+        [System.Windows.Forms.MessageBox]::Show("Disponibile la versione $($res.update.latest.version). Apri il deck nel browser per aggiornare.", 'Aggiornamento disponibile', 'OK', 'Information') | Out-Null
       }
     } else {
-      $icon.BalloonTipText = "Nessun aggiornamento: sei alla versione $($res.update.current)."
+      [System.Windows.Forms.MessageBox]::Show("Sei gia' alla versione piu' recente ($($res.update.current)).", 'Nessun aggiornamento', 'OK', 'Information') | Out-Null
     }
   } catch {
-    $icon.BalloonTipTitle = 'Controllo non riuscito'
-    $icon.BalloonTipText = $_.Exception.Message
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Controllo non riuscito', 'OK', 'Error') | Out-Null
   }
-  $icon.ShowBalloonTip(5000)
 } | Out-Null
 
 Add-Item 'Scarica e installa aggiornamento' {

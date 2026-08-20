@@ -3,6 +3,25 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.10] - 2026-08-21
+
+Editor più stabile su touch e menu della tray più utile.
+
+### Corretto
+
+- **Su touch, aprendo l'editor di un pulsante la tastiera non compare (né
+  lampeggia) più da sola.** Il pannello prendeva il focus su un campo di testo,
+  facendo spuntare la tastiera a schermo prima ancora di volerci scrivere. Ora
+  il focus va sul pannello e la tastiera appare solo quando tocchi un campo.
+- **Menu della tray: "Controlla aggiornamenti" mostra l'esito in una finestra
+  visibile.** Prima usava un fumetto di notifica che, con le notifiche o
+  l'Assistente notifiche spenti, non compariva: sembrava che non funzionasse.
+
+### Aggiunto
+
+- **Menu della tray: "Apri le impostazioni"** apre il deck nel browser
+  direttamente sul pannello delle impostazioni.
+
 ## [0.8.9] - 2026-08-21
 
 ### Corretto

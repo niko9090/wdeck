@@ -8,6 +8,10 @@
  */
 
 export const WHATSNEW = {
+  '0.8.10': [
+    'Modifica dei pulsanti più stabile su touch: la tastiera non compare più da sola aprendo l\'editor.',
+    'Dall\'icona vicino all\'orologio apri direttamente le impostazioni, e "Controlla aggiornamenti" ti dà una risposta visibile.'
+  ],
   '0.8.9': [
     'Dopo "Controlla ora" il pulsante "Scarica e installa" compare subito, senza dover riaprire le impostazioni.'
   ],

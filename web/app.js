@@ -402,6 +402,13 @@ function handleMessage(msg) {
       renderHosts();
       autoCheckUpdate();
       checkClientFreshness();
+      // Deep-link dalle impostazioni della tray: aprendo l'indirizzo con
+      // "#settings" il pannello si apre da solo. Si azzera l'ancora subito, cosi'
+      // una riconnessione non lo riapre.
+      if (location.hash === '#settings') {
+        try { history.replaceState(null, '', location.pathname + location.search); } catch { /* history non disponibile */ }
+        openSettings();
+      }
       break;
 
     case MSG.deck:
@@ -888,9 +895,18 @@ function openSheet({ title, body, actions = [], onClose = null }) {
   ui.sheet.hidden = false;
 
   // Un pannello modale deve prendere il focus, altrimenti Tab resta sulla
-  // pagina sotto e la tastiera non lo raggiunge mai.
-  const first = ui.sheetBody.querySelector('input, select, textarea, button') || el('sheet-close');
-  first?.focus();
+  // pagina sotto e la tastiera fisica non lo raggiunge mai. MA il focus va sul
+  // CONTENITORE, non sul primo campo di testo: su touch, mettere il focus su un
+  // input fa comparire (e a volte subito sparire) la tastiera a schermo prima
+  // ancora che l'utente decida di scrivere. Cosi' la tastiera appare solo quando
+  // si tocca davvero un campo.
+  const card = ui.sheet.querySelector('.sheet-card');
+  if (card) {
+    card.tabIndex = -1;
+    card.focus();
+  } else {
+    el('sheet-close')?.focus();
+  }
 }
 
 function closeSheet({ silent = true } = {}) {
