@@ -3,6 +3,28 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.4] - 2026-08-20
+
+Aggiornamenti più chiari e un fastidio in meno tenendo premuto un pulsante.
+
+### Aggiunto
+
+- **Banner di nuova versione** in cima all'app: avvisa quando c'è un
+  aggiornamento, mostra le **novità** con un clic, aggiorna, o si chiude con la
+  X. Chiuso, resta chiuso finché non riapri l'app (o finché non arriva una
+  versione ancora più nuova).
+- **Schermata "Novità" dopo l'aggiornamento**: alla prima apertura sulla nuova
+  versione, un riepilogo di cosa è cambiato, pensato per chi usa Wdeck.
+
+### Corretto
+
+- **Tenendo premuto un pulsante non compare più il menu del sistema.** Su
+  touch (telefono o schermo tattile) il menu contestuale del sistema appariva e
+  spariva al rilascio, facendo sembrare rotta la pressione. Ora è disattivato
+  sui controlli del deck.
+- Il controllo aggiornamenti apre le note della versione invece di una pagina
+  esterna.
+
 ## [0.8.3] - 2026-08-19
 
 Il client si aggiorna da solo quando è rimasto indietro: niente più pagina

@@ -48,6 +48,17 @@
 
   <!-- applicazione -->
   <main id="app" class="app" hidden>
+    <!-- banner di nuova versione: compare quando c'e' un aggiornamento, si
+         chiude con la X e ricompare al riavvio dell'app (o con una versione
+         ancora piu' nuova). -->
+    <div id="update-banner" class="update-banner" role="status" hidden>
+      <span class="ub-icon" aria-hidden="true">&#8593;</span>
+      <span id="ub-text" class="ub-text"></span>
+      <button id="ub-notes" class="btn ghost small" type="button" data-i18n="banner.notes">Novità</button>
+      <button id="ub-apply" class="btn primary small" type="button" data-i18n="banner.update">Aggiorna</button>
+      <button id="ub-close" class="ub-close" type="button" title="Chiudi" data-i18n-title="sheet.close">&#10005;</button>
+    </div>
+
     <header class="topbar">
       <div class="topbar-left">
         <span id="status-dot" class="dot" data-state="offline" title="stato connessione"></span>

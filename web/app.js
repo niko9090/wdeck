@@ -9,6 +9,7 @@ import { ENDPOINTS, MSG } from '/shared/protocol.mjs';
 import { CUSTOM_PREFIX, ICONS, iconMarkup, iconSvg } from './icons.js';
 import { language, setLanguage, t } from './i18n.js';
 import { PRESETS } from './presets.js';
+import { WHATSNEW } from './whatsnew.js';
 
 const STORAGE = {
   hosts: 'wdeck.hosts',
@@ -38,6 +39,8 @@ const ui = {
   dot: el('status-dot'),
   dryBadge: el('dry-badge'),
   update: el('btn-update'),
+  banner: el('update-banner'),
+  bannerText: el('ub-text'),
   profileSelect: el('profile-select'),
   hosts: el('hosts'),
   pages: el('pages'),
@@ -1996,16 +1999,21 @@ async function checkClientFreshness() {
   if (!mine) return; // build non marcata (sviluppo): niente da confrontare
 
   let hostBuild;
+  let hostVersion;
   try {
     const res = await api(ENDPOINTS.health);
     if (!res.ok || !res.data?.buildId) return;
     hostBuild = res.data.buildId;
+    hostVersion = res.data.version;
   } catch {
     return; // host non raggiungibile: si riprovera' al prossimo collegamento
   }
 
   if (hostBuild === mine) {
     try { sessionStorage.removeItem('wdeck.stale'); } catch { /* storage assente */ }
+    // Client allineato all'host: e' il momento buono per raccontare le novita'
+    // se veniamo da un aggiornamento (versione cambiata da quella vista prima).
+    maybeWhatsNew(hostVersion);
     return;
   }
 
@@ -2175,6 +2183,91 @@ function showUpdate(status) {
     ui.update.textContent = `v${status.latest.version}`;
     ui.update.title = t('settings.updateAvailable', { version: status.latest.version, current: status.current });
   }
+  renderUpdateBanner(status);
+}
+
+/**
+ * Banner di nuova versione in cima all'app. Compare quando c'e' un
+ * aggiornamento, si chiude con la X e resta chiuso finche' l'app non viene
+ * riaperta (dismiss in sessionStorage) o finche' non arriva una versione ancora
+ * piu' nuova. Non e' invadente: una riga che si puo' ignorare.
+ */
+function renderUpdateBanner(status) {
+  if (!ui.banner) return;
+  const versione = status?.available ? status.latest?.version : null;
+  let chiuso = null;
+  try { chiuso = sessionStorage.getItem('wdeck.updbanner'); } catch { /* storage assente */ }
+  if (!versione || chiuso === versione) {
+    ui.banner.hidden = true;
+    return;
+  }
+  ui.bannerText.textContent = t('banner.available', { version: versione });
+  // "Aggiorna" ha senso solo se questa installazione sa sostituirsi da sola.
+  el('ub-apply').hidden = !state.selfUpdate?.supported;
+  ui.banner.hidden = false;
+}
+
+/**
+ * Rende leggibili le note di rilascio (dal corpo della release GitHub, testo di
+ * fonte esterna: si scappa sempre l'HTML e si applica solo una formattazione
+ * minima sul testo gia' neutralizzato). Titoli, elenchi puntati e grassetto.
+ */
+function renderNotes(testo) {
+  const righe = escapeHtml(String(testo ?? '').trim()).split(/\r?\n/);
+  const out = [];
+  let inLista = false;
+  const chiudiLista = () => { if (inLista) { out.push('</ul>'); inLista = false; } };
+  for (const riga of righe) {
+    const t2 = riga.trim();
+    if (!t2) { chiudiLista(); continue; }
+    const h = /^#{1,6}\s+(.*)$/.exec(t2);
+    const li = /^[-*]\s+(.*)$/.exec(t2);
+    if (h) { chiudiLista(); out.push(`<h4>${bold(h[1])}</h4>`); }
+    else if (li) { if (!inLista) { out.push('<ul>'); inLista = true; } out.push(`<li>${bold(li[1])}</li>`); }
+    else { chiudiLista(); out.push(`<p>${bold(t2)}</p>`); }
+  }
+  chiudiLista();
+  return out.join('');
+  function bold(s) { return s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>'); }
+}
+
+/** Mostra le note della versione disponibile, con l'opzione di aggiornare. */
+function showReleaseNotes() {
+  const latest = state.update?.latest;
+  if (!latest) return;
+  openSheet({
+    title: t('banner.notesTitle', { version: latest.version }),
+    body: `<div class="release-notes">${latest.notes ? renderNotes(latest.notes) : `<p class="sheet-hint">${t('banner.noNotes')}</p>`}</div>`,
+    actions: [
+      { label: t('sheet.close'), kind: 'ghost', onClick: () => closeSheet() },
+      ...(state.selfUpdate?.supported
+        ? [{ label: t('banner.update'), kind: 'primary', onClick: () => { closeSheet(); applyUpdate(); } }]
+        : [])
+    ]
+  });
+}
+
+/**
+ * Dopo un aggiornamento, mostra una volta le novita' della nuova versione.
+ * Confronta la versione dell'host con l'ultima vista su questo dispositivo:
+ * alla prima installazione tace (c'e' gia' il benvenuto), poi appare solo quando
+ * la versione e' cambiata e abbiamo qualcosa da raccontare per quella versione.
+ */
+function maybeWhatsNew(hostVersion) {
+  if (!hostVersion) return;
+  let last = null;
+  try {
+    last = localStorage.getItem('wdeck.lastVersion');
+    localStorage.setItem('wdeck.lastVersion', hostVersion);
+  } catch { return; }
+  if (!last || last === hostVersion) return;
+  const punti = WHATSNEW[hostVersion];
+  if (!punti?.length) return;
+  openSheet({
+    title: t('whatsnew.title', { version: hostVersion }),
+    body: `<ul class="whatsnew-list">${punti.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`,
+    actions: [{ label: t('whatsnew.ok'), kind: 'primary', onClick: () => closeSheet() }]
+  });
 }
 
 // ---------------------------------------------------------------- interazione
@@ -2235,8 +2328,15 @@ function bindEvents() {
   });
 
   ui.btnSettings.addEventListener('click', openSettings);
-  ui.update.addEventListener('click', () => {
-    if (state.update?.latest?.url) window.open(state.update.latest.url, '_blank', 'noopener');
+  ui.update.addEventListener('click', () => showReleaseNotes());
+
+  // Banner di nuova versione: aggiorna, mostra le novita', oppure chiudi.
+  el('ub-apply')?.addEventListener('click', () => applyUpdate());
+  el('ub-notes')?.addEventListener('click', () => showReleaseNotes());
+  el('ub-close')?.addEventListener('click', () => {
+    const versione = state.update?.latest?.version;
+    if (versione) { try { sessionStorage.setItem('wdeck.updbanner', versione); } catch { /* storage assente */ } }
+    if (ui.banner) ui.banner.hidden = true;
   });
 
   window.addEventListener('online', () => { if (token()) connect(); });
