@@ -8,6 +8,10 @@
  */
 
 export const WHATSNEW = {
+  '0.8.7': [
+    'Nuova azione Mouse: clic sinistro/destro/centrale, doppio clic e rotellina su/giù.',
+    'Puoi scegliere il colore del testo dei pulsanti, non solo lo sfondo.'
+  ],
   '0.8.6': [
     'Molta più scelta: usa un\'emoji come icona (tavolozza pronta o scrivi la tua).',
     'Tanti più pulsanti pronti, divisi per categoria: audio, sistema, finestre, modifica e web.'

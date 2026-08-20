@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseHotkey, resolveKey, resolveMediaKey, VK } from '../src/host/platform/keys.mjs';
-import { buildKeyOps, buildKeyScript, buildTypeTextScript, encodeKeyOps, escapeSendKeys, encodePowerShell, resolveScriptRunner } from '../src/host/platform/windows.mjs';
+import { buildKeyOps, buildKeyScript, buildMouseOps, buildMouseScript, buildTypeTextScript, encodeKeyOps, escapeSendKeys, encodePowerShell, MOUSE_COMMANDS, resolveScriptRunner } from '../src/host/platform/windows.mjs';
 
 test('keys: resolveKey riconosce lettere, cifre, funzione e alias', () => {
   assert.equal(resolveKey('a'), 0x41);
@@ -102,6 +102,28 @@ test('windows: encodeKeyOps produce solo numeri esadecimali (K:/S:)', () => {
   assert.match(encodeKeyOps([{ sleep: 40 }]), /^S:28$/);
   // nessun carattere fuori da [A-Fa-f0-9:;]: nessuno script arbitrario passa
   assert.ok(/^[0-9a-fK S:;]*$/i.test(enc));
+});
+
+test('windows: buildMouseOps genera giu/su per un clic, delta per lo scroll', () => {
+  assert.deepEqual(buildMouseOps('left'), [{ mouse: 0x0002 }, { mouse: 0x0004 }]);
+  assert.deepEqual(buildMouseOps('right'), [{ mouse: 0x0008 }, { mouse: 0x0010 }]);
+  assert.equal(buildMouseOps('double').length, 4);
+  const up = buildMouseOps('scroll-up');
+  assert.equal(up[0].mouse, 0x0800);
+  assert.equal(up[0].data, 120);
+  const down = buildMouseOps('scroll-down');
+  assert.equal(down[0].data >>> 0, (-120) >>> 0); // delta negativo come uint32
+});
+
+test('windows: encodeKeyOps codifica il mouse come M:<flags>:<data>', () => {
+  assert.equal(encodeKeyOps(buildMouseOps('left')), 'M:2:0;M:4:0');
+  assert.equal(encodeKeyOps(buildMouseOps('scroll-up')), 'M:800:78'); // 0x78 = 120
+  assert.match(encodeKeyOps(buildMouseOps('scroll-down')), /^M:800:ffffff88$/);
+});
+
+test('windows: buildMouseScript rifiuta un comando ignoto e accetta quelli noti', () => {
+  for (const c of MOUSE_COMMANDS) assert.ok(buildMouseScript(c).includes('mouse_event'), c);
+  assert.throws(() => buildMouseOps('boh'));
 });
 
 test('windows: buildKeyScript rilascia i modificatori in ordine inverso', () => {

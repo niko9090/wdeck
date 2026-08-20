@@ -335,6 +335,7 @@ di far finta di aver funzionato.
 | `media` | win32, darwin, linux | comandi multimediali (play/pausa, next, prev, volume, muto) |
 | `hotkey` | win32, darwin, linux | combinazione di tasti, es. `ctrl+shift+m`, `win+l` |
 | `text` | win32, darwin, linux | digita testo nella finestra attiva |
+| `mouse` | win32 | clic (sinistro/destro/centrale), doppio clic, rotellina, alla posizione del cursore |
 | `launch` | tutte | avvia un programma (whitelist) |
 | `script` | tutte | esegue `.ps1`/`.bat`/`.cmd`/`.py`/`.mjs`/`.sh` (whitelist) |
 | `url` | win32, darwin, linux | apre un URL con l'app predefinita |

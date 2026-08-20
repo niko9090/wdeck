@@ -150,15 +150,66 @@ export function buildKeyOps(modifierCodes, keyCode, { repeat = 1 } = {}) {
 
 /**
  * Codifica le operazioni per il protocollo (una riga) del key server:
- * `K:<vk>:<flags>` per un evento di tasto, `S:<ms>` per una pausa, in esadecimale
- * e separate da `;`. Solo numeri: nessuno script arbitrario passa di qui.
- * @param {Array<{vk?: number, flags?: number, sleep?: number}>} ops
+ * `K:<vk>:<flags>` per un tasto, `M:<flags>:<data>` per il mouse, `S:<ms>` per una
+ * pausa, in esadecimale e separate da `;`. Solo numeri: nessuno script arbitrario.
+ * @param {Array<{vk?: number, flags?: number, sleep?: number, mouse?: number, data?: number}>} ops
  * @returns {string}
  */
 export function encodeKeyOps(ops) {
-  return ops.map((op) => (op.sleep != null
-    ? `S:${(op.sleep & 0xffff).toString(16)}`
-    : `K:${(op.vk & 0xff).toString(16)}:${(op.flags & 0xffff).toString(16)}`)).join(';');
+  return ops.map((op) => {
+    if (op.sleep != null) return `S:${(op.sleep & 0xffff).toString(16)}`;
+    if (op.mouse != null) return `M:${(op.mouse & 0xffff).toString(16)}:${((op.data ?? 0) >>> 0).toString(16)}`;
+    return `K:${(op.vk & 0xff).toString(16)}:${(op.flags & 0xffff).toString(16)}`;
+  }).join(';');
+}
+
+/** Flag di mouse_event usati dai comandi del mouse. */
+const MOUSE = {
+  leftDown: 0x0002, leftUp: 0x0004,
+  rightDown: 0x0008, rightUp: 0x0010,
+  middleDown: 0x0020, middleUp: 0x0040,
+  wheel: 0x0800
+};
+const WHEEL_DELTA = 120;
+
+/** I comandi del mouse esposti dall'azione `mouse`. */
+export const MOUSE_COMMANDS = ['left', 'right', 'middle', 'double', 'scroll-up', 'scroll-down'];
+
+/**
+ * Operazioni del mouse per il key server. Un click e' giu'+su; il doppio e' due
+ * click; lo scroll usa la rotellina con delta positivo (su) o negativo (giu').
+ * @param {string} command
+ * @returns {Array<{mouse: number, data?: number}>}
+ */
+export function buildMouseOps(command) {
+  switch (command) {
+    case 'left': return [{ mouse: MOUSE.leftDown }, { mouse: MOUSE.leftUp }];
+    case 'right': return [{ mouse: MOUSE.rightDown }, { mouse: MOUSE.rightUp }];
+    case 'middle': return [{ mouse: MOUSE.middleDown }, { mouse: MOUSE.middleUp }];
+    case 'double': return [{ mouse: MOUSE.leftDown }, { mouse: MOUSE.leftUp }, { mouse: MOUSE.leftDown }, { mouse: MOUSE.leftUp }];
+    case 'scroll-up': return [{ mouse: MOUSE.wheel, data: WHEEL_DELTA }];
+    case 'scroll-down': return [{ mouse: MOUSE.wheel, data: (-WHEEL_DELTA) >>> 0 }];
+    default: throw new Error(`comando mouse non valido: "${command}"`);
+  }
+}
+
+/**
+ * Script PowerShell a colpo singolo per il mouse (ripiego quando il key server
+ * non c'e'). Funzione pura, mostrata anche in dry-run.
+ * @param {string} command
+ * @returns {string}
+ */
+export function buildMouseScript(command) {
+  const ops = buildMouseOps(command);
+  const lines = [
+    '$sig = @\'',
+    '[DllImport("user32.dll", SetLastError=true)]',
+    'public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, System.UIntPtr dwExtraInfo);',
+    '\'@',
+    "$m = Add-Type -MemberDefinition $sig -Name 'WdeckMouse' -Namespace 'Wdeck' -PassThru"
+  ];
+  for (const op of ops) lines.push(`$m::mouse_event(${hex(op.mouse)},0,0,${((op.data ?? 0) >>> 0)},[UIntPtr]::Zero)`);
+  return lines.join('\n');
 }
 
 /**

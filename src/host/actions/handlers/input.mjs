@@ -9,12 +9,15 @@
 import { MEDIA_KEYS, parseHotkey, resolveMediaKey } from '../../platform/keys.mjs';
 import { readAudioLevel } from '../../platform/readers.mjs';
 import {
+  MOUSE_COMMANDS,
   SUPPORTED_PLATFORMS,
   planHotkey,
   planMediaKey,
+  planMouse,
   planText,
   sendHotkey,
   sendMediaKey,
+  sendMouse,
   typeText
 } from '../../platform/input.mjs';
 
@@ -144,4 +147,45 @@ export const textAction = {
   }
 };
 
-export default [mediaAction, hotkeyAction, textAction];
+export const mouseAction = {
+  type: 'mouse',
+  title: 'Mouse',
+  description: 'Esegue un clic (sinistro, destro, centrale), un doppio clic o uno scorrimento della '
+    + 'rotellina alla posizione attuale del cursore. Per ora solo Windows.',
+  platforms: ['win32'],
+  category: 'input',
+  paramsHelp: { command: MOUSE_COMMANDS.join(' | ') },
+  fields: [
+    {
+      key: 'command',
+      label: 'Comando',
+      type: 'select',
+      required: true,
+      default: 'left',
+      options: [
+        { value: 'left', label: 'Clic sinistro' },
+        { value: 'right', label: 'Clic destro' },
+        { value: 'middle', label: 'Clic centrale' },
+        { value: 'double', label: 'Doppio clic' },
+        { value: 'scroll-up', label: 'Scorri su' },
+        { value: 'scroll-down', label: 'Scorri giu\'' }
+      ]
+    }
+  ],
+  validate(params) {
+    if (!MOUSE_COMMANDS.includes(params?.command)) {
+      throw new Error(`parametro "command" non valido: atteso uno fra ${MOUSE_COMMANDS.join(', ')}`);
+    }
+  },
+  describe: (params) => `mouse: ${params?.command}`,
+  async run(params, ctx) {
+    if (ctx.dryRun) {
+      const plan = planMouse(params.command);
+      return { ok: true, simulated: true, detail: plan.description, script: plan.command, backend: plan.backend };
+    }
+    const out = await sendMouse(params.command);
+    return { ok: true, ...out };
+  }
+};
+
+export default [mediaAction, hotkeyAction, textAction, mouseAction];

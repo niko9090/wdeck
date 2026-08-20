@@ -3,6 +3,19 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.7] - 2026-08-21
+
+Una nuova azione e più controllo sull'aspetto dei pulsanti.
+
+### Aggiunto
+
+- **Azione "Mouse".** Un pulsante può ora fare un clic (sinistro, destro,
+  centrale), un doppio clic o scorrere la rotellina (su/giù) alla posizione del
+  cursore. Passa dallo stesso canale veloce dei tasti, quindi è immediata.
+  (Solo Windows.)
+- **Colore del testo del pulsante.** Nell'editor, accanto al colore di sfondo,
+  ora si sceglie anche il colore dell'etichetta.
+
 ## [0.8.6] - 2026-08-20
 
 Molta più scelta per personalizzare i pulsanti.

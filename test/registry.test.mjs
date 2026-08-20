@@ -88,7 +88,7 @@ test('registry predefinito: contiene tutte le azioni documentate', () => {
   const registry = createDefaultRegistry();
   const expected = [
     'brightness', 'browser', 'clipboard', 'delay', 'desktop', 'discord', 'focus', 'folder',
-    'game', 'homeassistant', 'hotkey', 'http', 'hue', 'launch', 'media', 'mic', 'mqtt',
+    'game', 'homeassistant', 'hotkey', 'http', 'hue', 'launch', 'media', 'mic', 'mouse', 'mqtt',
     'navigate', 'noop', 'notify', 'obs', 'power', 'rdp', 'screenshot', 'script', 'sequence',
     'spotify', 'stub', 'text', 'url', 'volume', 'window'
   ];

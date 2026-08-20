@@ -13,7 +13,7 @@
 
 import * as linux from './linux.mjs';
 import * as macos from './macos.mjs';
-import { buildKeyOps, buildKeyScript, buildOpenUrlScript, buildTypeTextScript, encodeKeyOps, runPowerShell } from './windows.mjs';
+import { buildKeyOps, buildKeyScript, buildMouseOps, buildMouseScript, buildOpenUrlScript, buildTypeTextScript, encodeKeyOps, MOUSE_COMMANDS, runPowerShell } from './windows.mjs';
 import { keyServerEnabled, sendKeyOps } from './keyserver.mjs';
 import { parseHotkey, resolveMediaKey, VK } from './keys.mjs';
 import { buildMacKeyScript } from './keymaps.mjs';
@@ -168,6 +168,52 @@ export async function sendMediaKey(key, { repeat = 1 } = {}) {
   }
   return { detail: last?.detail ?? `inviato comando media "${key}"`, ...last };
 }
+
+// ------------------------------------------------------------------ mouse
+
+/** Descrizioni leggibili dei comandi del mouse. */
+const MOUSE_LABELS = {
+  left: 'clic sinistro', right: 'clic destro', middle: 'clic centrale',
+  double: 'doppio clic', 'scroll-up': 'scorri su', 'scroll-down': 'scorri giu\''
+};
+
+/**
+ * Descrive un comando del mouse senza eseguirlo.
+ * @param {string} command
+ * @param {{platform?: string}} [options]
+ */
+export function planMouse(command, { platform = process.platform } = {}) {
+  const backend = requireBackend(platform);
+  if (backend === 'windows') {
+    return { backend, description: `mouse: ${MOUSE_LABELS[command] ?? command}`, command: buildMouseScript(command) };
+  }
+  return { backend, description: `mouse: ${MOUSE_LABELS[command] ?? command}`, command: null };
+}
+
+/**
+ * Esegue un comando del mouse (clic, doppio clic, rotellina) alla posizione
+ * corrente del cursore. Per ora solo Windows.
+ * @param {string} command
+ */
+export async function sendMouse(command) {
+  const backend = requireBackend();
+  if (backend !== 'windows') {
+    throw new Error('l\'azione mouse e\' disponibile solo su Windows');
+  }
+  if (keyServerEnabled()) {
+    try {
+      await sendKeyOps(encodeKeyOps(buildMouseOps(command)));
+      return { detail: `mouse: ${MOUSE_LABELS[command] ?? command}` };
+    } catch {
+      // il processo persistente non e' disponibile: si prosegue col colpo singolo
+    }
+  }
+  const res = await runPowerShell(buildMouseScript(command), { timeoutMs: 8000 });
+  if (res.code !== 0) throw new Error(`PowerShell ha restituito ${res.code}: ${res.stderr || 'errore sconosciuto'}`);
+  return { detail: `mouse: ${MOUSE_LABELS[command] ?? command}` };
+}
+
+export { MOUSE_COMMANDS };
 
 // ------------------------------------------------------------------ testo
 

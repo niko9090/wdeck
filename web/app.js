@@ -1410,6 +1410,7 @@ async function editButton(buttonId, cell, seed = null) {
           <option value="slider"${draft.kind === 'slider' ? ' selected' : ''}>${t('edit.kindSlider')}</option>
         </select></label>
         <label class="field"><span>${t('edit.color')}</span><input id="ed-color" type="color" value="${draft.color ?? '#2d3b55'}" /></label>
+        <label class="field"><span>${t('edit.textColor')}</span><input id="ed-text-color" type="color" value="${draft.textColor ?? '#ffffff'}" /></label>
         <label class="field"><span>${t('edit.width')}</span><input id="ed-span" type="number" min="1" max="12" value="${draft.span ?? 1}" /></label>
       </div>
       <label class="field checkbox"><input id="ed-confirm" type="checkbox"${draft.confirm ? ' checked' : ''} /><span>${t('edit.confirm')}</span></label>
@@ -1510,6 +1511,7 @@ async function saveButtonDraft(draft, existing) {
     kind,
     icon: draft.icon || null,
     color: el('ed-color').value,
+    textColor: el('ed-text-color').value,
     span: Math.max(1, Number(el('ed-span').value) || 1),
     confirm: el('ed-confirm').checked,
     status: el('ed-status').checked,
