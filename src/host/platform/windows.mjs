@@ -123,6 +123,45 @@ export function buildKeyScript(modifierCodes, keyCode, { repeat = 1 } = {}) {
 const hex = (n) => `0x${n.toString(16).toUpperCase().padStart(2, '0')}`;
 
 /**
+ * Stessa sequenza di `buildKeyScript`, ma come lista di operazioni invece che
+ * come script: e' cio' che si manda al "key server" persistente, che le esegue
+ * senza ricompilare ogni volta il P/Invoke. Ogni voce e' `{vk, flags}` (un
+ * evento di tasto) oppure `{sleep}` (una pausa in ms). Funzione pura, testabile.
+ * @param {number[]} modifierCodes
+ * @param {number} keyCode
+ * @param {{repeat?: number}} [options]
+ * @returns {Array<{vk?: number, flags?: number, sleep?: number}>}
+ */
+export function buildKeyOps(modifierCodes, keyCode, { repeat = 1 } = {}) {
+  const times = Math.max(1, Math.min(20, Number(repeat) || 1));
+  const flagsFor = (code) => (EXTENDED_KEYS.has(code) ? KEYEVENTF_EXTENDEDKEY : 0);
+  const ops = [];
+  const down = (code) => ops.push({ vk: code, flags: flagsFor(code) });
+  const up = (code) => ops.push({ vk: code, flags: flagsFor(code) | KEYEVENTF_KEYUP });
+  for (const code of modifierCodes) down(code);
+  for (let i = 0; i < times; i += 1) {
+    down(keyCode);
+    up(keyCode);
+    if (i < times - 1) ops.push({ sleep: 40 });
+  }
+  for (const code of [...modifierCodes].reverse()) up(code);
+  return ops;
+}
+
+/**
+ * Codifica le operazioni per il protocollo (una riga) del key server:
+ * `K:<vk>:<flags>` per un evento di tasto, `S:<ms>` per una pausa, in esadecimale
+ * e separate da `;`. Solo numeri: nessuno script arbitrario passa di qui.
+ * @param {Array<{vk?: number, flags?: number, sleep?: number}>} ops
+ * @returns {string}
+ */
+export function encodeKeyOps(ops) {
+  return ops.map((op) => (op.sleep != null
+    ? `S:${(op.sleep & 0xffff).toString(16)}`
+    : `K:${(op.vk & 0xff).toString(16)}:${(op.flags & 0xffff).toString(16)}`)).join(';');
+}
+
+/**
  * Applica l'escaping richiesto da WScript.Shell.SendKeys.
  * @param {string} text
  * @returns {string}

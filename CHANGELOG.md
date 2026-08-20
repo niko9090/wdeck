@@ -3,6 +3,20 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.5] - 2026-08-20
+
+Wdeck è molto più reattivo: i tasti rispondono all'istante.
+
+### Corretto
+
+- **Latenza dei tasti media e delle hotkey praticamente azzerata.** Ogni
+  pressione avviava un nuovo processo PowerShell che ricompilava a ogni colpo il
+  ponte verso il sistema: su alcune macchine erano quasi **900 ms di ritardo per
+  pressione**. Ora un processo resta pronto in sottofondo e prepara quel ponte
+  **una volta sola**: dalla seconda pressione in poi la risposta è nell'ordine
+  del **millesimo di secondo**. Se quel processo non è disponibile si torna,
+  senza errori, al metodo di prima. (Disattivabile con `WDECK_KEYSERVER=0`.)
+
 ## [0.8.4] - 2026-08-20
 
 Aggiornamenti più chiari e un fastidio in meno tenendo premuto un pulsante.

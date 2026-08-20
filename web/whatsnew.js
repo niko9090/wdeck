@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.8.5': [
+    'Molto più reattivo: i tasti media e le scorciatoie ora rispondono all\'istante, senza il ritardo di prima.'
+  ],
   '0.8.4': [
     'Un banner in alto ti avvisa quando c\'è una nuova versione, con le novità a portata di clic e la X per chiuderlo.',
     'Dopo ogni aggiornamento vedi cosa è cambiato in questa schermata.',

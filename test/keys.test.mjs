@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseHotkey, resolveKey, resolveMediaKey, VK } from '../src/host/platform/keys.mjs';
-import { buildKeyScript, buildTypeTextScript, escapeSendKeys, encodePowerShell, resolveScriptRunner } from '../src/host/platform/windows.mjs';
+import { buildKeyOps, buildKeyScript, buildTypeTextScript, encodeKeyOps, escapeSendKeys, encodePowerShell, resolveScriptRunner } from '../src/host/platform/windows.mjs';
 
 test('keys: resolveKey riconosce lettere, cifre, funzione e alias', () => {
   assert.equal(resolveKey('a'), 0x41);
@@ -72,6 +72,36 @@ test('windows: buildKeyScript genera pressione e rilascio in ordine', () => {
   assert.match(lines[1], /0x41,0,0x00/);  // A giu'
   assert.match(lines[2], /0x41,0,0x02/);  // A su
   assert.match(lines[3], /0x11,0,0x02/);  // ctrl su
+});
+
+test('windows: buildKeyOps rispecchia buildKeyScript (giu/su in ordine)', () => {
+  const ops = buildKeyOps([VK.ctrl], 0x41);
+  // ctrl giu, A giu, A su, ctrl su
+  assert.deepEqual(ops, [
+    { vk: 0x11, flags: 0x00 },
+    { vk: 0x41, flags: 0x00 },
+    { vk: 0x41, flags: 0x02 },
+    { vk: 0x11, flags: 0x02 }
+  ]);
+});
+
+test('windows: buildKeyOps marca i tasti media come extended, con ripetizione e pause', () => {
+  const ops = buildKeyOps([], VK.volumeup, { repeat: 2 });
+  assert.deepEqual(ops, [
+    { vk: 0xaf, flags: 0x01 },
+    { vk: 0xaf, flags: 0x03 },
+    { sleep: 40 },
+    { vk: 0xaf, flags: 0x01 },
+    { vk: 0xaf, flags: 0x03 }
+  ]);
+});
+
+test('windows: encodeKeyOps produce solo numeri esadecimali (K:/S:)', () => {
+  const enc = encodeKeyOps(buildKeyOps([VK.ctrl], 0x41));
+  assert.equal(enc, 'K:11:0;K:41:0;K:41:2;K:11:2');
+  assert.match(encodeKeyOps([{ sleep: 40 }]), /^S:28$/);
+  // nessun carattere fuori da [A-Fa-f0-9:;]: nessuno script arbitrario passa
+  assert.ok(/^[0-9a-fK S:;]*$/i.test(enc));
 });
 
 test('windows: buildKeyScript rilascia i modificatori in ordine inverso', () => {

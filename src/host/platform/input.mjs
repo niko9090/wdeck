@@ -13,13 +13,35 @@
 
 import * as linux from './linux.mjs';
 import * as macos from './macos.mjs';
-import { buildKeyScript, buildOpenUrlScript, buildTypeTextScript, runPowerShell } from './windows.mjs';
+import { buildKeyOps, buildKeyScript, buildOpenUrlScript, buildTypeTextScript, encodeKeyOps, runPowerShell } from './windows.mjs';
+import { keyServerEnabled, sendKeyOps } from './keyserver.mjs';
 import { parseHotkey, resolveMediaKey, VK } from './keys.mjs';
 import { buildMacKeyScript } from './keymaps.mjs';
 import { buildXdotoolKeyArgs } from './keymaps.mjs';
 
 /** Piattaforme su cui l'input sintetico e' implementato. */
 export const SUPPORTED_PLATFORMS = Object.freeze(['win32', 'darwin', 'linux']);
+
+/**
+ * Invia una sequenza di tasti su Windows. Prova prima il key server persistente
+ * (veloce: nessuna ricompilazione); se non c'e' o fallisce, ricade sul PowerShell
+ * a colpo singolo, cosi' la pressione va a buon fine comunque.
+ * @param {number[]} modifierCodes
+ * @param {number} keyCode
+ * @param {number} repeat
+ */
+async function inviaTastiWindows(modifierCodes, keyCode, repeat) {
+  if (keyServerEnabled()) {
+    try {
+      await sendKeyOps(encodeKeyOps(buildKeyOps(modifierCodes, keyCode, { repeat })));
+      return;
+    } catch {
+      // il processo persistente non e' disponibile: si prosegue col metodo classico
+    }
+  }
+  const res = await runPowerShell(buildKeyScript(modifierCodes, keyCode, { repeat }), { timeoutMs: 8000 });
+  if (res.code !== 0) throw new Error(`PowerShell ha restituito ${res.code}: ${res.stderr || 'errore sconosciuto'}`);
+}
 
 /**
  * Nome dell'adattatore per una piattaforma.
@@ -92,8 +114,7 @@ export async function sendHotkey(spec, { repeat = 1 } = {}) {
   const hotkey = parseHotkey(spec);
 
   if (backend === 'windows') {
-    const res = await runPowerShell(buildKeyScript(hotkey.modifierCodes, hotkey.keyCode, { repeat }), { timeoutMs: 8000 });
-    if (res.code !== 0) throw new Error(`PowerShell ha restituito ${res.code}: ${res.stderr || 'errore sconosciuto'}`);
+    await inviaTastiWindows(hotkey.modifierCodes, hotkey.keyCode, repeat);
     return { detail: `inviata hotkey "${spec}"` };
   }
   const adapter = backend === 'macos' ? macos : linux;
@@ -133,8 +154,7 @@ export async function sendMediaKey(key, { repeat = 1 } = {}) {
   const keyCode = resolveMediaKey(key);
 
   if (backend === 'windows') {
-    const res = await runPowerShell(buildKeyScript([], keyCode, { repeat }), { timeoutMs: 8000 });
-    if (res.code !== 0) throw new Error(`PowerShell ha restituito ${res.code}: ${res.stderr || 'errore sconosciuto'}`);
+    await inviaTastiWindows([], keyCode, repeat);
     return { detail: `inviato tasto media "${key}"` };
   }
 

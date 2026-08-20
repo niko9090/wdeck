@@ -19,6 +19,7 @@ import { applyUpdate, cleanupOldExe, restart as restartExe, selfUpdateSupport } 
 import { startTray } from './tray.mjs';
 import { createDefaultRegistry } from './actions/handlers/index.mjs';
 import { createDispatcher } from './actions/dispatcher.mjs';
+import { stopKeyServer } from './platform/keyserver.mjs';
 import { createState } from './state.mjs';
 import { createStatusTracker } from './status.mjs';
 import { createAuth } from './security/auth.mjs';
@@ -567,6 +568,7 @@ export function createHost(options = {}) {
     status.stop();
     host.mdns?.stop();
     host.tray?.stop();
+    stopKeyServer();
     hub.close();
     upgrades.closeAll();
     if (!server.listening) return resolve();
