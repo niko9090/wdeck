@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.8.9': [
+    'Dopo "Controlla ora" il pulsante "Scarica e installa" compare subito, senza dover riaprire le impostazioni.'
+  ],
   '0.8.8': [
     'Aprendo l\'app controlla da sola se c\'è una versione nuova e te lo dice col banner: non serve più premere "Controlla ora".'
   ],

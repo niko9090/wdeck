@@ -3,6 +3,17 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.9] - 2026-08-21
+
+### Corretto
+
+- **Il pulsante "Scarica e installa" compare subito dopo "Controlla ora".**
+  Prima la sezione Aggiornamenti veniva disegnata una volta sola all'apertura
+  delle impostazioni: se il controllo trovava una versione nuova mentre il
+  pannello era già aperto, il pulsante per installarla non appariva finché non
+  si richiudeva e riapriva le impostazioni. Ora la sezione si ridisegna da sola
+  appena il controllo finisce.
+
 ## [0.8.8] - 2026-08-21
 
 Gli aggiornamenti si fanno notare da soli.

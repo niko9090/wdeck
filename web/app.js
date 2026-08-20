@@ -1804,6 +1804,51 @@ async function persistDeck(deck, successMessage, { quiet = false } = {}) {
 
 // ---------------------------------------------------------------- impostazioni
 
+/**
+ * Contenuto della sezione "Aggiornamenti" del pannello impostazioni. Estratto in
+ * una funzione perche' va **ridisegnato dopo un controllo**: prima il pulsante
+ * "Scarica e installa" era scritto una volta all'apertura del pannello, quindi
+ * premendo "Controlla ora" l'aggiornamento veniva trovato ma il pulsante non
+ * compariva finche' non si richiudeva e riapriva le impostazioni.
+ */
+function updateSectionInner() {
+  const update = state.update;
+  const disponibile = update?.available;
+  const puoInstallare = disponibile && state.selfUpdate?.supported;
+  return `
+    <h3 class="sheet-section">${t('settings.updates')}</h3>
+    <p class="sheet-hint" id="set-update">${disponibile
+    ? t('settings.updateAvailable', { version: escapeHtml(update.latest?.version || '?'), current: escapeHtml(update.current || '-') })
+    : t('settings.updateNone', { current: escapeHtml(update?.current || '-') })}</p>
+    <button class="btn" type="button" id="set-check-update">${t('settings.checkNow')}</button>
+    ${puoInstallare
+    ? `<button class="btn primary" type="button" id="set-apply-update">${t('settings.installUpdate')}</button>
+       <p class="sheet-hint">${t('settings.installHint')}</p>`
+    : disponibile && state.selfUpdate?.reason
+      ? `<p class="sheet-hint">${escapeHtml(state.selfUpdate.reason)}</p>`
+      : ''}
+  `;
+}
+
+/** Ridisegna la sezione aggiornamenti e ricollega i suoi pulsanti. */
+function refreshUpdateSection() {
+  const box = el('set-update-box');
+  if (!box) return;
+  box.innerHTML = updateSectionInner();
+  bindUpdateSection();
+}
+
+/** Collega "Controlla ora" (che poi ridisegna) e "Scarica e installa". */
+function bindUpdateSection() {
+  el('set-check-update')?.addEventListener('click', async () => {
+    const btn = el('set-check-update');
+    if (btn) btn.disabled = true;
+    await checkUpdate({ force: true });
+    refreshUpdateSection();
+  });
+  el('set-apply-update')?.addEventListener('click', applyUpdate);
+}
+
 async function openSettings() {
   const res = await api(ENDPOINTS.settings);
   // Senza host raggiungibile il pannello si aprirebbe vuoto e ingannevole:
@@ -1813,7 +1858,6 @@ async function openSettings() {
     return;
   }
   const settings = res.data?.settings ?? {};
-  const update = state.update;
 
   const temaAttuale = state.deck?.ui?.theme ?? 'dark';
   const linguaAttuale = state.deck?.ui?.language ?? 'auto';
@@ -1863,17 +1907,7 @@ async function openSettings() {
       <p class="sheet-hint">${t('settings.tokenHint')}</p>
       <button class="btn ghost" type="button" id="set-rotate">${t('settings.rotate')}</button>
 
-      <h3 class="sheet-section">${t('settings.updates')}</h3>
-      <p class="sheet-hint" id="set-update">${update?.available
-    ? t('settings.updateAvailable', { version: escapeHtml(update.latest?.version || '?'), current: escapeHtml(update.current || '-') })
-    : t('settings.updateNone', { current: escapeHtml(update?.current || '-') })}</p>
-      <button class="btn" type="button" id="set-check-update">${t('settings.checkNow')}</button>
-      ${update?.available && state.selfUpdate?.supported
-    ? `<button class="btn primary" type="button" id="set-apply-update">${t('settings.installUpdate')}</button>
-       <p class="sheet-hint">${t('settings.installHint')}</p>`
-    : update?.available && state.selfUpdate?.reason
-      ? `<p class="sheet-hint">${escapeHtml(state.selfUpdate.reason)}</p>`
-      : ''}
+      <div id="set-update-box">${updateSectionInner()}</div>
     `,
     actions: [
       { label: t('sheet.close'), kind: 'ghost', onClick: () => closeSheet() },
@@ -1885,8 +1919,7 @@ async function openSettings() {
     closeSheet();
     showGate(t('gate.addHost'));
   });
-  el('set-check-update').addEventListener('click', () => checkUpdate({ force: true }));
-  el('set-apply-update')?.addEventListener('click', applyUpdate);
+  bindUpdateSection();
   el('set-rotate').addEventListener('click', rotateHostToken);
   el('set-qr-show').addEventListener('click', showPairingQr);
   renderDevices();
