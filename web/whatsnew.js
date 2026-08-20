@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.8.8': [
+    'Aprendo l\'app controlla da sola se c\'è una versione nuova e te lo dice col banner: non serve più premere "Controlla ora".'
+  ],
   '0.8.7': [
     'Nuova azione Mouse: clic sinistro/destro/centrale, doppio clic e rotellina su/giù.',
     'Puoi scegliere il colore del testo dei pulsanti, non solo lo sfondo.'

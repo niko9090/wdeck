@@ -3,6 +3,19 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.8] - 2026-08-21
+
+Gli aggiornamenti si fanno notare da soli.
+
+### Corretto
+
+- **All'apertura l'app controlla subito, e per davvero, se c'è una versione
+  nuova.** Prima all'avvio mostrava lo stato dell'ultimo controllo periodico
+  (che si aggiorna solo ogni 6 ore): capitava di vedere "nessun aggiornamento"
+  anche quando ce n'era uno, a meno di premere "Controlla ora". Ora al
+  collegamento fa una verifica fresca (silenziosa, al massimo una ogni 10
+  minuti) e, se c'è una versione nuova, mostra il banner da solo.
+
 ## [0.8.7] - 2026-08-21
 
 Una nuova azione e più controllo sull'aspetto dei pulsanti.

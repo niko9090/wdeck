@@ -400,7 +400,7 @@ function handleMessage(msg) {
       state.retry = 0;
       setStatus('online', t('status.online'));
       renderHosts();
-      checkUpdate();
+      autoCheckUpdate();
       checkClientFreshness();
       break;
 
@@ -2081,8 +2081,34 @@ async function checkClientFreshness() {
   location.reload();
 }
 
-async function checkUpdate({ force = false } = {}) {
-  const res = await api(`${ENDPOINTS.update}${force ? '?check=1' : ''}`);
+/**
+ * Controllo aggiornamenti.
+ * - `force`: chiede all'host una verifica FRESCA su GitHub (`?check=1`) invece
+ *   dello stato periodico (che si aggiorna solo ogni 6 ore).
+ * - `quiet`: fa comunque la verifica fresca ma senza i messaggi a schermo; e' il
+ *   controllo automatico all'apertura, che deve accorgersi degli aggiornamenti
+ *   e mostrare il banner senza infastidire con un toast a ogni collegamento.
+ */
+// Ultimo controllo automatico: evita di interrogare GitHub a ogni riconnessione
+// (una caduta di rete non deve tradursi in una raffica di richieste).
+let lastAutoCheck = 0;
+
+/**
+ * Controllo automatico all'apertura/riconnessione: verifica fresca ma silenziosa,
+ * al massimo una volta ogni 10 minuti. Cosi' aprendo l'app il banner compare da
+ * solo se c'e' un aggiornamento, senza aspettare il controllo periodico (6 ore)
+ * ne' costringere a premere "Controlla ora".
+ */
+function autoCheckUpdate() {
+  const ora = Date.now();
+  if (ora - lastAutoCheck < 10 * 60 * 1000) return;
+  lastAutoCheck = ora;
+  checkUpdate({ quiet: true });
+}
+
+async function checkUpdate({ force = false, quiet = false } = {}) {
+  const fresco = force || quiet;
+  const res = await api(`${ENDPOINTS.update}${fresco ? '?check=1' : ''}`);
   if (!res.ok) {
     // Il controllo automatico resta silenzioso; quello chiesto a mano no.
     if (force) toast(isOffline(res) ? t('net.unreachable') : t('settings.checkFailed'), 'err');
