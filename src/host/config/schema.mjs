@@ -332,12 +332,15 @@ function validateButton(ctx, path, button, page, seen, actionTypes) {
   checkString(ctx, `${path}.label`, button.label, { max: LIMITS.maxLabel });
   checkInt(ctx, `${path}.row`, button.row, { required: true, min: 0, max: LIMITS.maxRows - 1 });
   checkInt(ctx, `${path}.col`, button.col, { required: true, min: 0, max: LIMITS.maxCols - 1 });
-  // Un'icona e' un glifo incluso ("play") oppure un file caricato
-  // dall'utente ("custom:mio-logo", vedi src/host/icons.mjs).
+  // Un'icona e' un glifo incluso ("play"), un file caricato dall'utente
+  // ("custom:mio-logo", vedi src/host/icons.mjs) oppure un'emoji ("emoji:🔊").
+  // L'emoji e' testo Unicode qualunque, ma di lunghezza limitata e senza
+  // caratteri di controllo o pericolosi per l'HTML (il client la mostra come
+  // testo, mai come markup).
   if (button.icon !== undefined) {
     checkString(ctx, `${path}.icon`, button.icon, {
-      pattern: /^(?:[a-z0-9][a-z0-9-]{0,23}|custom:[a-z0-9][a-z0-9-]{0,31})$/,
-      label: 'nome icona oppure "custom:nome"'
+      pattern: /^(?:[a-z0-9][a-z0-9-]{0,23}|custom:[a-z0-9][a-z0-9-]{0,31}|emoji:[^ "'<>&]{1,16})$/u,
+      label: 'nome icona, "custom:nome" oppure "emoji:🙂"'
     });
   }
 

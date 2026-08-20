@@ -22,6 +22,22 @@ test('schema: il deck di produzione deck.json e\' valido', async () => {
   assert.equal(result.valid, true, JSON.stringify(result.errors, null, 2));
 });
 
+test('schema: accetta icone emoji e rifiuta quelle malformate', () => {
+  const conIcona = (icon) => {
+    const d = rawDeck();
+    d.profiles[0].pages[0].buttons[0].icon = icon;
+    return d;
+  };
+  for (const buona of ['emoji:🔊', 'emoji:🎮', 'emoji:🏠', 'play', 'custom:logo']) {
+    assert.equal(validate(conIcona(buona)).valid, true, `dovrebbe accettare ${buona}`);
+  }
+  for (const cattiva of ['emoji:', 'emoji:a b', 'EMOJI:x', 'emoji:<script>']) {
+    const r = validate(conIcona(cattiva));
+    assert.equal(r.valid, false, `dovrebbe rifiutare ${cattiva}`);
+    assert.ok(r.errors.some((e) => e.path.includes('icon')), `errore su icon per ${cattiva}`);
+  }
+});
+
 test('schema: rifiuta un input che non e\' un oggetto', () => {
   for (const input of [null, 42, 'testo', [], undefined]) {
     assert.equal(validate(input).valid, false, `accettato: ${JSON.stringify(input)}`);

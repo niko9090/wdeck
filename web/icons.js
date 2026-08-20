@@ -48,9 +48,18 @@ export const ICON_BY_ACTION = {
 
 /** Prefisso delle icone caricate dall'utente (vedi src/host/icons.mjs). */
 export const CUSTOM_PREFIX = 'custom:';
+export const EMOJI_PREFIX = 'emoji:';
 
 /** true se il nome punta a un'icona caricata dall'utente. */
 export const isCustomIcon = (name) => typeof name === 'string' && name.startsWith(CUSTOM_PREFIX);
+
+/** true se il nome e' un'emoji ("emoji:🔊"). */
+export const isEmojiIcon = (name) => typeof name === 'string' && name.startsWith(EMOJI_PREFIX);
+
+/** Neutralizza i caratteri pericolosi per l'HTML in un'emoji. */
+function escapeText(s) {
+  return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
 
 /**
  * Restituisce il markup SVG completo di un'icona inclusa.
@@ -70,6 +79,9 @@ export function iconSvg(name, actionType) {
  * @param {(name: string) => string} [customUrl] risolve "custom:x" nel suo URL
  */
 export function iconMarkup(name, actionType, customUrl) {
+  if (isEmojiIcon(name)) {
+    return `<span class="icon-emoji" aria-hidden="true">${escapeText(name.slice(EMOJI_PREFIX.length))}</span>`;
+  }
   if (isCustomIcon(name) && typeof customUrl === 'function') {
     const src = customUrl(name.slice(CUSTOM_PREFIX.length));
     return `<img class="icon-img" src="${src}" alt="" aria-hidden="true" loading="lazy" />`;

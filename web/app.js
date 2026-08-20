@@ -6,9 +6,9 @@
  */
 
 import { ENDPOINTS, MSG } from '/shared/protocol.mjs';
-import { CUSTOM_PREFIX, ICONS, iconMarkup, iconSvg } from './icons.js';
+import { CUSTOM_PREFIX, EMOJI_PREFIX, ICONS, iconMarkup, iconSvg, isEmojiIcon } from './icons.js';
 import { language, setLanguage, t } from './i18n.js';
-import { PRESETS } from './presets.js';
+import { PRESETS, PRESET_CATEGORIES } from './presets.js';
 import { WHATSNEW } from './whatsnew.js';
 
 const STORAGE = {
@@ -958,7 +958,16 @@ function allButtonIds(deck) {
 
 // ------------------------------------------------- scelta dell'icona
 
-/** Griglia di scelta dell'icona: glifi inclusi, icone caricate, caricamento. */
+/** Emoji piu' utili per un deck: audio, media, sistema, app, avvisi. */
+const EMOJI_PALETTE = [
+  '🔊', '🔇', '🔉', '▶️', '⏸️', '⏭️', '⏮️', '⏹️', '🎵', '🎧',
+  '🎬', '📷', '🎤', '🎮', '🖥️', '💻', '📁', '🌐', '🔒', '🔓',
+  '⚡', '💡', '🔔', '🔕', '⭐', '❤️', '✅', '❌', '➕', '➖',
+  '🏠', '⚙️', '🔍', '📧', '📅', '🗑️', '🖼️', '🎨', '🚀', '☀️',
+  '🌙', '🔥', '💬', '📣', '🎥', '🖨️', '⌨️', '🖱️', '🔗', '📌'
+];
+
+/** Griglia di scelta dell'icona: glifi inclusi, emoji, icone caricate, caricamento. */
 function iconPickerHtml(selected, customIcons) {
   const choice = (value, inner, title) => '<button type="button" class="icon-choice'
     + `${value === (selected ?? '') ? ' selected' : ''}" data-icon="${escapeHtml(value)}" title="${escapeHtml(title)}">${inner}</button>`;
@@ -966,16 +975,27 @@ function iconPickerHtml(selected, customIcons) {
   const builtin = Object.keys(ICONS)
     .map((name) => choice(name, iconSvg(name), name))
     .join('');
+  const emojis = EMOJI_PALETTE
+    .map((e) => choice(`${EMOJI_PREFIX}${e}`, `<span class="icon-emoji">${escapeHtml(e)}</span>`, e))
+    .join('');
   const custom = customIcons
     .map((icon) => choice(`${CUSTOM_PREFIX}${icon.name}`,
       `<img src="${customIconUrl(icon.name)}" alt="" />`, icon.name))
     .join('');
 
+  // Emoji personalizzata gia' scelta ma fuori dalla tavolozza: la si rimette nel campo.
+  const emojiCorrente = isEmojiIcon(selected) ? selected.slice(EMOJI_PREFIX.length) : '';
+
   return `
     <div class="icon-picker" id="ed-icons">
       ${choice('', `<span class="icon-auto">${t('edit.iconAuto')}</span>`, t('edit.iconDefault'))}
       ${builtin}
+      ${emojis}
       ${custom}
+    </div>
+    <div class="icon-emoji-row">
+      <input id="ed-emoji" type="text" maxlength="8" inputmode="text" value="${escapeHtml(emojiCorrente)}" placeholder="${t('edit.iconEmoji')}" aria-label="${t('edit.iconEmoji')}" />
+      <span class="sheet-hint">${t('edit.iconEmojiHint')}</span>
     </div>
     <div class="icon-upload">
       <label class="btn ghost small" for="ed-icon-file">${t('edit.iconUpload')}</label>
@@ -1000,7 +1020,19 @@ function bindIconPicker({ onPick }) {
 
   picker.addEventListener('click', (event) => {
     const choice = event.target.closest('.icon-choice');
-    if (choice) select(choice);
+    if (choice) {
+      select(choice);
+      const campo = el('ed-emoji');
+      if (campo && !choice.dataset.icon?.startsWith(EMOJI_PREFIX)) campo.value = '';
+    }
+  });
+
+  // Campo emoji libero: qualunque emoji digitata diventa l'icona, deselezionando
+  // la griglia (la scelta ora e' il testo, non un pulsante).
+  el('ed-emoji')?.addEventListener('input', (event) => {
+    const val = event.target.value.trim();
+    for (const other of picker.querySelectorAll('.icon-choice')) other.classList.remove('selected');
+    onPick(val ? `${EMOJI_PREFIX}${val}` : null);
   });
 
   el('ed-icon-file')?.addEventListener('change', async (event) => {
@@ -1275,11 +1307,18 @@ function choosePreset(cell) {
       <span class="preset-ico">${iconMarkup(p.icon)}</span>
       <span class="preset-name">${escapeHtml(t(`preset.${p.id}`))}</span>
     </button>`;
+  // Raggruppati per categoria: con tanti preset una griglia unica sarebbe un muro.
+  const sezioni = PRESET_CATEGORIES.map((cat) => {
+    const voci = PRESETS.filter((p) => p.category === cat.id);
+    if (!voci.length) return '';
+    return `<h3 class="sheet-section">${escapeHtml(t(cat.label))}</h3>
+      <div class="preset-grid">${voci.map(tile).join('')}</div>`;
+  }).join('');
   openSheet({
     title: t('preset.title'),
     body: `
       <p class="sheet-hint">${t('preset.hint')}</p>
-      <div class="preset-grid">${PRESETS.map(tile).join('')}</div>
+      ${sezioni}
       <button type="button" class="btn ghost" id="preset-blank">${t('preset.blank')}</button>
     `,
     actions: [{ label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() }]

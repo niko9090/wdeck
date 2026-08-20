@@ -87,7 +87,7 @@
         "label": { "type": "string", "maxLength": 48 },
         "row": { "type": "integer", "minimum": 0, "maximum": 7 },
         "col": { "type": "integer", "minimum": 0, "maximum": 11 },
-        "icon": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,23}$" },
+        "icon": { "type": "string", "pattern": "^([a-z0-9][a-z0-9-]{0,23}|custom:[a-z0-9][a-z0-9-]{0,31}|emoji:[^ \"'<>&]{1,16})$" },
         "color": { "$ref": "#/$defs/hexColor" },
         "textColor": { "$ref": "#/$defs/hexColor" },
         "action": { "$ref": "#/$defs/action" },

@@ -8,6 +8,10 @@
  */
 
 export const WHATSNEW = {
+  '0.8.6': [
+    'Molta più scelta: usa un\'emoji come icona (tavolozza pronta o scrivi la tua).',
+    'Tanti più pulsanti pronti, divisi per categoria: audio, sistema, finestre, modifica e web.'
+  ],
   '0.8.5': [
     'Molto più reattivo: i tasti media e le scorciatoie ora rispondono all\'istante, senza il ritardo di prima.'
   ],

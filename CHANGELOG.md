@@ -3,6 +3,21 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.6] - 2026-08-20
+
+Molta più scelta per personalizzare i pulsanti.
+
+### Aggiunto
+
+- **Emoji come icona dei pulsanti.** Nell'editor c'è una tavolozza di emoji e un
+  campo dove scriverne o incollarne una qualsiasi: icone colorate e infinite,
+  senza dover caricare immagini.
+- **Libreria di preset molto più ampia e divisa in categorie** — audio e media,
+  sistema, finestre e desktop, modifica, web: da *Muto*, *Play/Pausa* e
+  *Screenshot* a *Copia/Incolla/Annulla/Salva*, *Mostra desktop*, *Aggancia
+  finestra*, fino a scorciatoie per *YouTube*, *Google* e *Gmail*. Circa 26
+  pulsanti pronti da cui partire, poi personalizzabili.
+
 ## [0.8.5] - 2026-08-20
 
 Wdeck è molto più reattivo: i tasti rispondono all'istante.

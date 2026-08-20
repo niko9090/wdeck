@@ -7,20 +7,28 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { PRESETS } from '../web/presets.js';
-import { ICONS } from '../web/icons.js';
+import { PRESETS, PRESET_CATEGORIES } from '../web/presets.js';
+import { ICONS, isEmojiIcon } from '../web/icons.js';
 import { createDefaultRegistry } from '../src/host/actions/handlers/index.mjs';
 
 const registry = createDefaultRegistry();
 
-test('ogni preset ha id, icona nota e azione', () => {
+test('ogni preset ha id, icona nota (glifo o emoji), categoria e azione', () => {
+  const categorie = new Set(PRESET_CATEGORIES.map((c) => c.id));
   const visti = new Set();
   for (const p of PRESETS) {
     assert.ok(p.id, 'preset senza id');
     assert.ok(!visti.has(p.id), `id preset duplicato: ${p.id}`);
     visti.add(p.id);
-    assert.ok(p.icon in ICONS, `${p.id}: icona sconosciuta "${p.icon}"`);
+    assert.ok(p.icon in ICONS || isEmojiIcon(p.icon), `${p.id}: icona sconosciuta "${p.icon}"`);
+    assert.ok(categorie.has(p.category), `${p.id}: categoria sconosciuta "${p.category}"`);
     assert.ok(p.action && typeof p.action.type === 'string', `${p.id}: azione mancante`);
+  }
+});
+
+test('ogni categoria ha almeno un preset', () => {
+  for (const cat of PRESET_CATEGORIES) {
+    assert.ok(PRESETS.some((p) => p.category === cat.id), `categoria vuota: ${cat.id}`);
   }
 });
 
