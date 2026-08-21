@@ -864,6 +864,10 @@ function confirmPress(button) {
 // ---------------------------------------------------------------- pannello modale
 
 let sheetCloseHandler = null;
+// Vero solo se l'ultima pressione dentro il pannello e' iniziata sullo sfondo o
+// sulla X: evita che il pannello si chiuda per il "click" sintetico di una
+// pressione partita altrove (vedi bindSheet).
+let sheetDownOnClose = false;
 /** Elemento a cui restituire il focus alla chiusura del pannello. */
 let sheetLastFocus = null;
 
@@ -880,6 +884,9 @@ function openSheet({ title, body, actions = [], onClose = null }) {
   // Il pannello si riusa: solo a una vera apertura si ricorda chi aveva il
   // focus, cosi' concatenare due pannelli non perde il grilletto originale.
   if (ui.sheet.hidden) sheetLastFocus = document.activeElement;
+  // All'apertura nessuna pressione e' ancora iniziata sullo sfondo: cosi' un
+  // "click" sintetico subito dopo l'apertura non chiude il pannello.
+  sheetDownOnClose = false;
   ui.sheetTitle.textContent = title;
   ui.sheetBody.innerHTML = body;
   ui.sheetFoot.innerHTML = '';
@@ -2737,8 +2744,16 @@ function sendSliderValue(slider, { final = false } = {}) {
 }
 
 function bindSheet() {
+  // Chiudere il pannello richiede che il dito/mouse sia sceso E risalito sullo
+  // sfondo. Senza, un pannello aperto da una pressione su touch si chiuderebbe
+  // subito: la pressione parte sul bottone del deck, il pannello si apre sotto
+  // al dito, e il "click" sintetico del rilascio cade sullo sfondo. Era il caso
+  // "la conferma non resta visibile se non tengo premuto".
+  ui.sheet.addEventListener('pointerdown', (event) => {
+    sheetDownOnClose = !!event.target.closest('[data-close]');
+  });
   ui.sheet.addEventListener('click', (event) => {
-    if (event.target.closest('[data-close]')) closeSheet({ silent: false });
+    if (event.target.closest('[data-close]') && sheetDownOnClose) closeSheet({ silent: false });
   });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !ui.sheet.hidden) {

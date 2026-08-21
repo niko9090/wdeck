@@ -189,7 +189,19 @@ export const brightnessAction = {
 
     // La compilazione C# del primo avvio e' lenta: il timeout va oltre i 12s
     // di default, altrimenti la prima pressione fallisce sempre.
-    const out = await runLevelScript(script, { what: 'luminosita\'', timeoutMs: 30000 });
+    let out;
+    try {
+      out = await runLevelScript(script, { what: 'luminosita\'', timeoutMs: 30000 });
+    } catch (err) {
+      // Nessuno dei metodi (WMI, DDC/CI, gamma) ha funzionato: quasi sempre e'
+      // uno schermo che non si regola via software (PC fisso senza DDC/CI) o
+      // l'uso da Desktop Remoto, dove non c'e' un monitor fisico raggiungibile.
+      if (/nessun metodo|luminosita' non riuscit/i.test(err.message)) {
+        throw new Error('Questo schermo non consente di regolare la luminosita\' via software: '
+          + 'capita sui PC fissi con monitor senza DDC/CI e quando si usa il PC da Desktop Remoto.');
+      }
+      throw err;
+    }
     const via = out.mode === 'gamma' ? ' (attenuazione software)' : '';
     return { ok: true, detail: `luminosita': ${out.brightness}%${via}`, level: out.brightness, mode: out.mode };
   },

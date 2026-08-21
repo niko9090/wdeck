@@ -8,6 +8,10 @@
  */
 
 export const WHATSNEW = {
+  '0.8.12': [
+    'Su touch i messaggi di conferma restano visibili quando sollevi il dito (prima si chiudevano da soli).',
+    'La luminosità, se lo schermo non la supporta (PC fisso o Desktop Remoto), ora lo dice chiaramente.'
+  ],
   '0.8.11': [
     'Corretto il menu vicino all\'orologio: "Controlla aggiornamenti" e "Scarica e installa" ora funzionano (prima davano una pagina vuota o un errore 404).'
   ],

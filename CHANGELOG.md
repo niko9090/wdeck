@@ -3,6 +3,20 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.12] - 2026-08-21
+
+### Corretto
+
+- **Su touch, un messaggio di conferma non si chiude più da solo al rilascio del
+  dito.** La pressione apriva il pannello sotto al dito, e il "click" del rilascio
+  cadeva sullo sfondo chiudendolo. Ora lo sfondo chiude solo se la pressione
+  inizia e finisce su di esso (era il caso "la conferma non resta visibile se non
+  tengo premuto").
+- **Luminosità: messaggio chiaro quando lo schermo non è regolabile via
+  software.** Prima l'errore era output grezzo di PowerShell ("Preparazione dei
+  moduli…"); ora dice che lo schermo non supporta la regolazione via software,
+  cosa comune sui PC fissi senza DDC/CI e quando si usa il PC da Desktop Remoto.
+
 ## [0.8.11] - 2026-08-21
 
 Il menu della tray ora aggiorna davvero.

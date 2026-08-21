@@ -267,6 +267,10 @@ public class WdeckGamma {
 `.trim();
 
 const DDC_PREAMBLE = [
+  // Senza questo, il caricamento dei moduli CIM stampa una barra di avanzamento
+  // ("Preparazione dei moduli per il primo utilizzo") sullo stderr, che finiva
+  // per essere mostrata come "errore" al posto del messaggio vero.
+  '$ProgressPreference = \'SilentlyContinue\'',
   '$ddc = @\'',
   DDC_CSHARP,
   '\'@',
