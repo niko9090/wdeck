@@ -48,6 +48,13 @@ ${decode('urlList', urls.join("\n"))}
 $hostPid = ${Number(pid)}
 $version = '${String(version).replace(/'/g, "''")}'
 
+# $url arriva con lo slash finale ("http://127.0.0.1:8899/"): concatenare
+# "/api/..." darebbe "//api/...", che il server NON riconosce (pagina HTML per i
+# GET, 404 per i POST). $base e' la stessa base senza slash finale, da usare per
+# TUTTE le chiamate all'API. $deckUrl apre il deck gia' autenticato col token.
+$base = $url.TrimEnd('/')
+$deckUrl = "$base/?token=$token"
+
 # L'icona viene disegnata a runtime: nessun file .ico da distribuire e da
 # tenere allineato, e resta nitida a qualunque scala del desktop.
 $bmp = New-Object System.Drawing.Bitmap 32, 32
@@ -79,8 +86,8 @@ $titolo = $menu.Items.Add("Wdeck $version")
 $titolo.Enabled = $false
 [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 
-Add-Item 'Apri il deck nel browser' { Start-Process "$url" } | Out-Null
-Add-Item 'Apri le impostazioni' { Start-Process "$url#settings" } | Out-Null
+Add-Item 'Apri il deck nel browser' { Start-Process "$deckUrl" } | Out-Null
+Add-Item 'Apri le impostazioni' { Start-Process "$deckUrl#settings" } | Out-Null
 Add-Item 'Copia indirizzo per il telefono' {
   Set-Clipboard -Value $urlList
   $icon.BalloonTipTitle = 'Indirizzi copiati'
@@ -92,7 +99,7 @@ Add-Item 'Copia indirizzo per il telefono' {
 
 Add-Item 'Ricarica deck.json' {
   try {
-    Invoke-RestMethod -Uri "$url/api/reload" -Method POST -Headers @{ 'x-wdeck-token' = $token } | Out-Null
+    Invoke-RestMethod -Uri "$base/api/reload" -Method POST -Headers @{ 'x-wdeck-token' = $token } | Out-Null
     $icon.BalloonTipTitle = 'Wdeck'
     $icon.BalloonTipText = 'Configurazione ricaricata'
   } catch {
@@ -108,14 +115,14 @@ Add-Item 'Controlla aggiornamenti' {
   # e sembrerebbe che "non funzioni nulla". Qui l'utente ha chiesto una risposta:
   # la deve vedere sempre.
   try {
-    $res = Invoke-RestMethod -Uri "$url/api/update?check=1" -Headers @{ 'x-wdeck-token' = $token }
+    $res = Invoke-RestMethod -Uri "$base/api/update?check=1" -Headers @{ 'x-wdeck-token' = $token }
     if ($res.update.available) {
       if ($res.selfUpdate.supported) {
         $msg = "Disponibile la versione $($res.update.latest.version) (in uso la $($res.update.current)).\`n\`nVuoi scaricarla e installarla adesso?"
         $scelta = [System.Windows.Forms.MessageBox]::Show($msg, 'Aggiornamento disponibile', 'YesNo', 'Question')
         if ($scelta -eq 'Yes') {
           try {
-            $r2 = Invoke-RestMethod -Method Post -Uri "$url/api/update/apply" -Headers @{ 'x-wdeck-token' = $token }
+            $r2 = Invoke-RestMethod -Method Post -Uri "$base/api/update/apply" -Headers @{ 'x-wdeck-token' = $token }
             [System.Windows.Forms.MessageBox]::Show("Versione $($r2.version) installata. Wdeck si sta riavviando.", 'Aggiornato', 'OK', 'Information') | Out-Null
           } catch {
             [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Aggiornamento non riuscito', 'OK', 'Error') | Out-Null
@@ -143,7 +150,7 @@ Add-Item 'Scarica e installa aggiornamento' {
   $icon.BalloonTipText = 'Scarico l''aggiornamento...'
   $icon.ShowBalloonTip(3000)
   try {
-    $res = Invoke-RestMethod -Method Post -Uri "$url/api/update/apply" -Headers @{ 'x-wdeck-token' = $token }
+    $res = Invoke-RestMethod -Method Post -Uri "$base/api/update/apply" -Headers @{ 'x-wdeck-token' = $token }
     $icon.BalloonTipTitle = 'Aggiornato'
     $icon.BalloonTipText = "Versione $($res.version) installata. Wdeck si sta riavviando."
   } catch {
@@ -163,7 +170,7 @@ Add-Item 'Esci da Wdeck' {
 } | Out-Null
 
 $icon.ContextMenuStrip = $menu
-$icon.add_MouseDoubleClick({ Start-Process "$url" })
+$icon.add_MouseDoubleClick({ Start-Process "$deckUrl" })
 
 $icon.BalloonTipTitle = "Wdeck $version in esecuzione"
 $icon.BalloonTipText = "Deck ""$deckName"" raggiungibile su $url"

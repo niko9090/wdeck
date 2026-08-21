@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.8.11': [
+    'Corretto il menu vicino all\'orologio: "Controlla aggiornamenti" e "Scarica e installa" ora funzionano (prima davano una pagina vuota o un errore 404).'
+  ],
   '0.8.10': [
     'Modifica dei pulsanti più stabile su touch: la tastiera non compare più da sola aprendo l\'editor.',
     'Dall\'icona vicino all\'orologio apri direttamente le impostazioni, e "Controlla aggiornamenti" ti dà una risposta visibile.'

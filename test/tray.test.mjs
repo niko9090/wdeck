@@ -42,7 +42,15 @@ test('tray: l\'esito del controllo aggiornamenti usa una finestra visibile', () 
 });
 
 test('tray: le impostazioni aprono l\'ancora #settings', () => {
-  assert.ok(script.includes('$url#settings'), 'la voce impostazioni deve aprire $url#settings');
+  assert.ok(script.includes('#settings'), 'la voce impostazioni deve aprire l\'ancora #settings');
+});
+
+test('tray: le chiamate API non producono il doppio slash', () => {
+  // $url finisce con "/": usare "$url/api/..." darebbe "//api/...", che il
+  // server non riconosce (HTML per i GET, 404 per i POST). Devono passare da $base.
+  assert.ok(!script.includes('$url/api/'), 'le chiamate API non devono usare $url (doppio slash)');
+  assert.ok(script.includes('$base = $url.TrimEnd'), 'deve definire $base senza slash finale');
+  assert.ok(script.includes('$base/api/'), 'le chiamate API devono usare $base');
 });
 
 test('tray: token e url non finiscono in chiaro nello script', () => {

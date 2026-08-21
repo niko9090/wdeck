@@ -3,6 +3,20 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.11] - 2026-08-21
+
+Il menu della tray ora aggiorna davvero.
+
+### Corretto
+
+- **Dal menu vicino all'orologio, "Controlla aggiornamenti" e "Scarica e
+  installa" ora funzionano.** Costruivano gli indirizzi come `.../` + `/api/...`,
+  ottenendo un **doppio slash** (`//api/...`) che il server non riconosce: il
+  controllo riceveva una pagina vuota (per questo la versione non compariva) e
+  l'installazione falliva con un **404 "risorsa non trovata"**. Ora tutte le
+  chiamate usano una base corretta. Il menu apre anche il deck già autenticato
+  (con il token), così non chiede l'accesso ogni volta.
+
 ## [0.8.10] - 2026-08-21
 
 Editor più stabile su touch e menu della tray più utile.
