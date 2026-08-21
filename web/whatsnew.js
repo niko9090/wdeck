@@ -8,6 +8,10 @@
  */
 
 export const WHATSNEW = {
+  '0.8.18': [
+    'Il banner della nuova versione ora sparisce dopo aver aggiornato (prima poteva restare).',
+    'Ripristinato l\'avvio dei programmi in primo piano (una modifica recente lo aveva peggiorato).'
+  ],
   '0.8.17': [
     'I programmi vengono portati davanti anche dalla seconda pressione in poi (aggirato il blocco del "primo piano" di Windows).'
   ],

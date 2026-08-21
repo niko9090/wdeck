@@ -3,6 +3,19 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.18] - 2026-08-22
+
+### Corretto
+
+- **Il banner "nuova versione disponibile" sparisce dopo un aggiornamento
+  riuscito.** Prima poteva restare visibile (fino all'uscita di un'altra
+  versione), perché al riconnettersi il controllo automatico è limitato a uno
+  ogni 10 minuti. Ora, se al riconnettersi la versione dell'host è cambiata (ci
+  si è appena aggiornati), si forza un controllo fresco che azzera il banner.
+- **Ripristinato l'avvio dei programmi in primo piano.** Il "tap ALT" introdotto
+  in 0.8.17 per forzare il primo piano poteva far comparire la finestra dietro e
+  chiuderla: rimosso, si torna al comportamento precedente.
+
 ## [0.8.17] - 2026-08-21
 
 ### Migliorato

@@ -2114,6 +2114,14 @@ async function checkClientFreshness() {
     // Client allineato all'host: e' il momento buono per raccontare le novita'
     // se veniamo da un aggiornamento (versione cambiata da quella vista prima).
     maybeWhatsNew(hostVersion);
+    // Se l'host ha una versione diversa da quella su cui si basa il banner, ci
+    // siamo appena aggiornati: il banner mostrerebbe ancora "disponibile" perche'
+    // il controllo automatico e' limitato a uno ogni 10 minuti. Un controllo
+    // fresco (togliendo il freno) lo azzera se ora siamo all'ultima versione.
+    if (hostVersion && state.update && state.update.current !== hostVersion) {
+      lastAutoCheck = 0;
+      checkUpdate({ quiet: true });
+    }
     return;
   }
 
