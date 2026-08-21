@@ -3,6 +3,16 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.16] - 2026-08-21
+
+### Migliorato
+
+- **Avvio programma: la finestra viene portata davvero in primo piano.** Prima,
+  soprattutto via Desktop Remoto, l'app poteva aprirsi dietro le altre finestre
+  anche quando il sistema riportava "successo" (blocco del foreground di
+  Windows). Ora la finestra viene forzata in cima allo Z-order per un istante,
+  così compare davanti senza restare sempre-in-primo-piano.
+
 ## [0.8.15] - 2026-08-21
 
 ### Corretto

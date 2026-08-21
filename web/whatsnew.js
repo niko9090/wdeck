@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.8.16': [
+    'Avviando un programma, la finestra viene portata davvero in primo piano (prima poteva aprirsi dietro le altre, specie via Desktop Remoto).'
+  ],
   '0.8.15': [
     'Le richieste HTTP (webhook) ora raggiungono anche indirizzi locali come 127.0.0.1 e la rete di casa (utile per Home Assistant e servizi locali).',
     'Aggiornando dal menu vicino all\'orologio si apre il deck con la barra di avanzamento: vedi download e installazione.'

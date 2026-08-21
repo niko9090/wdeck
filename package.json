@@ -1,6 +1,6 @@
 {
   "name": "wdeck",
-  "version": "0.8.15",
+  "version": "0.8.16",
   "description": "Wdeck - Stream Deck software multi-piattaforma: host Node.js + client web PWA + firmware ESP32",
   "type": "module",
   "private": true,

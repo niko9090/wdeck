@@ -389,6 +389,12 @@ export const FOCUS_HELPER = [
   '  if ($tidFg -ne $tidMe) { $attached = $w::AttachThreadInput($tidFg, $tidMe, $true) }',
   '  [void]$w::BringWindowToTop($h)',
   '  $ok = $w::SetForegroundWindow($h)',
+  '  # SetForegroundWindow puo\' "riuscire" senza portare davvero la finestra',
+  '  # davanti (blocco del foreground, tipico via Desktop Remoto). Forzare la',
+  '  # cima dello Z-order per un istante (TOPMOST e subito NOTOPMOST) la fa',
+  '  # comparire davvero, senza lasciarla sempre-in-primo-piano.',
+  '  [void]$w::SetWindowPos($h, [IntPtr](-1), 0, 0, 0, 0, 0x0003)',
+  '  [void]$w::SetWindowPos($h, [IntPtr](-2), 0, 0, 0, 0, 0x0003)',
   '  if ($attached) { [void]$w::AttachThreadInput($tidFg, $tidMe, $false) }',
   '  return $ok',
   '}'
