@@ -90,7 +90,7 @@ test('registry predefinito: contiene tutte le azioni documentate', () => {
     'brightness', 'browser', 'clipboard', 'delay', 'desktop', 'discord', 'focus', 'folder',
     'game', 'homeassistant', 'hotkey', 'http', 'hue', 'launch', 'media', 'mic', 'mouse', 'mqtt',
     'navigate', 'noop', 'notify', 'obs', 'power', 'rdp', 'screenshot', 'script', 'sequence',
-    'spotify', 'stub', 'text', 'url', 'volume', 'window'
+    'sound', 'spotify', 'stub', 'text', 'url', 'volume', 'window'
   ];
   assert.deepEqual(registry.types(), expected);
   assert.equal(registry.size, builtinHandlers.length);

@@ -252,6 +252,61 @@ export function buildOpenUrlScript(url) {
   ].join('\n');
 }
 
+/** Estensioni audio riconosciute dall'azione "riproduci suono". */
+export const AUDIO_EXTENSIONS = ['.wav', '.mp3', '.m4a', '.aac', '.ogg', '.flac', '.wma'];
+
+/**
+ * Script PowerShell che riproduce un file audio con MediaPlayer (WPF), a un dato
+ * volume, e resta vivo per la durata del suono. Funzione pura: usata dal dry-run.
+ * Il percorso passa in base64 per evitare ogni problema di quoting.
+ * @param {string} soundPath
+ * @param {number} [volume] 0..100
+ * @returns {string}
+ */
+export function buildPlaySoundScript(soundPath, volume = 100) {
+  const b64 = Buffer.from(String(soundPath), 'utf8').toString('base64');
+  const vol = Math.max(0, Math.min(100, Number(volume) || 100)) / 100;
+  return [
+    '$ProgressPreference = \'SilentlyContinue\'',
+    `$b64 = '${b64}'`,
+    '$path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))',
+    'Add-Type -AssemblyName PresentationCore',
+    '$player = New-Object System.Windows.Media.MediaPlayer',
+    `$player.Volume = ${vol}`,
+    '$player.Open([System.Uri]::new($path))',
+    '$player.Play()',
+    // Attende che la durata sia nota (il file va caricato), poi dorme per quel
+    // tempo: senza, il processo uscirebbe e il suono si troncherebbe subito.
+    '$waited = 0',
+    'while (-not $player.NaturalDuration.HasTimeSpan -and $waited -lt 3000) { Start-Sleep -Milliseconds 50; $waited += 50 }',
+    '$ms = 8000',
+    'if ($player.NaturalDuration.HasTimeSpan) { $ms = [int]$player.NaturalDuration.TimeSpan.TotalMilliseconds + 400 }',
+    'if ($ms -gt 120000) { $ms = 120000 }',
+    'Start-Sleep -Milliseconds $ms'
+  ].join('\n');
+}
+
+/**
+ * Riproduce un file audio "spara e dimentica": lo script gira in un processo
+ * PowerShell staccato, cosi' il pulsante resta libero e piu' suoni possono
+ * sovrapporsi (soundboard). L'host non attende la fine del suono.
+ * @param {{path: string, volume?: number}} spec
+ * @returns {Promise<{pid: number|undefined}>}
+ */
+export function playSound({ path: soundPath, volume = 100 }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(powershellPath(), [
+      '-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
+      '-EncodedCommand', encodePowerShell(buildPlaySoundScript(soundPath, volume))
+    ], { detached: true, stdio: 'ignore', windowsHide: true });
+    child.on('error', reject);
+    setTimeout(() => {
+      child.unref();
+      resolve({ pid: child.pid });
+    }, 30);
+  });
+}
+
 /**
  * Avvia un programma esterno in modo detached (l'host non attende la chiusura).
  * @param {{path: string, args?: string[], cwd?: string}} spec

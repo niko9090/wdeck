@@ -3,6 +3,15 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.14] - 2026-08-21
+
+### Aggiunto
+
+- **Azione "Riproduci suono" (soundboard).** Un pulsante può far partire un file
+  audio (wav, mp3, m4a, aac, ogg, flac, wma) a volume regolabile. Il suono parte
+  e il pulsante resta subito libero, così più suoni possono sovrapporsi — utile
+  per effetti sonori in diretta o promemoria. (Solo Windows.)
+
 ## [0.8.13] - 2026-08-21
 
 ### Corretto

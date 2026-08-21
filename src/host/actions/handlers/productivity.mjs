@@ -8,7 +8,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildKeyScript, runPowerShell } from '../../platform/windows.mjs';
+import { AUDIO_EXTENSIONS, buildKeyScript, buildPlaySoundScript, playSound, runPowerShell } from '../../platform/windows.mjs';
 import { parseHotkey } from '../../platform/keys.mjs';
 
 /** Codifica una stringa per inserirla in uno script senza problemi di quoting. */
@@ -306,4 +306,43 @@ export function buildNotifyScript(params) {
   ].join('\n');
 }
 
-export default [clipboardAction, folderAction, screenshotAction, notifyAction];
+export const soundAction = {
+  type: 'sound',
+  title: 'Riproduci suono',
+  description: 'Riproduce un file audio (soundboard): wav, mp3, m4a, ogg, flac. Il suono parte e il '
+    + 'pulsante resta subito libero, cosi\' piu\' suoni possono sovrapporsi. Per ora solo Windows.',
+  platforms: ['win32'],
+  category: 'media',
+  paramsHelp: {
+    path: 'percorso del file audio (wav, mp3, m4a, aac, ogg, flac, wma)',
+    volume: 'volume 0..100 (default 100)'
+  },
+  fields: [
+    { key: 'path', label: 'File audio', type: 'text', required: true, help: 'percorso del file (wav, mp3, m4a, ogg, flac)', placeholder: 'C:\\Suoni\\applausi.mp3' },
+    { key: 'volume', label: 'Volume', type: 'number', help: '0..100', min: 0, max: 100, step: 1, default: 100 }
+  ],
+  validate(params) {
+    if (typeof params?.path !== 'string' || params.path.trim() === '') {
+      throw new Error('parametro "path" mancante');
+    }
+    const ext = path.extname(params.path).toLowerCase();
+    if (!AUDIO_EXTENSIONS.includes(ext)) {
+      throw new Error(`formato audio non supportato: "${ext || '(nessuno)'}" (ammessi: ${AUDIO_EXTENSIONS.join(', ')})`);
+    }
+    if (params.volume !== undefined) {
+      const v = Number(params.volume);
+      if (!Number.isFinite(v) || v < 0 || v > 100) throw new Error('parametro "volume" non valido: atteso 0..100');
+    }
+  },
+  describe: (params) => `riproduce "${path.basename(params?.path ?? '')}"`,
+  async run(params, ctx) {
+    if (ctx.dryRun) {
+      return { ok: true, simulated: true, detail: `riprodurrebbe ${params.path}`, script: buildPlaySoundScript(params.path, params.volume ?? 100) };
+    }
+    if (!fs.existsSync(params.path)) throw new Error(`file audio non trovato: ${params.path}`);
+    await playSound({ path: params.path, volume: params.volume ?? 100 });
+    return { ok: true, detail: `riproduce "${path.basename(params.path)}"` };
+  }
+};
+
+export default [clipboardAction, folderAction, screenshotAction, notifyAction, soundAction];

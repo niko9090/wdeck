@@ -415,7 +415,7 @@ Cosa serve installare:
 
 | categoria | azioni |
 |---|---|
-| Media e audio | `media`, `volume`, `mic`, `spotify` |
+| Media e audio | `media`, `volume`, `mic`, `spotify`, `sound` |
 | Tastiera e testo | `hotkey`, `text` |
 | Mouse | `mouse` |
 | Finestre e desktop | `focus`, `desktop`, `window` |

@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.8.14': [
+    'Nuova azione "Riproduci suono" (soundboard): un pulsante fa partire un file audio (wav, mp3, m4a, ogg, flac), a volume regolabile.'
+  ],
   '0.8.13': [
     'Avvio programma: ora basta il nome (es. explorer.exe, notepad.exe, calc.exe) come nella finestra Esegui, senza il percorso completo.'
   ],
