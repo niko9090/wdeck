@@ -8,6 +8,10 @@
  */
 
 export const WHATSNEW = {
+  '0.8.15': [
+    'Le richieste HTTP (webhook) ora raggiungono anche indirizzi locali come 127.0.0.1 e la rete di casa (utile per Home Assistant e servizi locali).',
+    'Aggiornando dal menu vicino all\'orologio si apre il deck con la barra di avanzamento: vedi download e installazione.'
+  ],
   '0.8.14': [
     'Nuova azione "Riproduci suono" (soundboard): un pulsante fa partire un file audio (wav, mp3, m4a, ogg, flac), a volume regolabile.'
   ],

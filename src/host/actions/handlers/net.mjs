@@ -143,13 +143,16 @@ export const httpAction = {
     }
     const timeoutMs = params.timeoutMs ?? 5000;
 
-    // SSRF: la destinazione e ogni redirect vengono ricontrollati, cosi' un
-    // 3xx verso 127.0.0.1 o 169.254.169.254 non viene seguito alla cieca.
+    // Protezione anti-SSRF: solo se richiesta (allowPrivateHttp = false). Di
+    // default un deck puo' contattare i propri servizi locali. Quando attiva,
+    // la destinazione e OGNI redirect vengono ricontrollati, cosi' un 3xx verso
+    // 127.0.0.1 o 169.254.169.254 non viene seguito alla cieca.
+    const bloccaPrivati = ctx.security?.allowPrivateHttp === false;
     let url = params.url;
     let response;
     const maxRedirects = 5;
     for (let hop = 0; ; hop++) {
-      await assertPublicHost(new URL(url).hostname);
+      if (bloccaPrivati) await assertPublicHost(new URL(url).hostname);
       response = await fetch(url, {
         method,
         headers: params.headers ?? undefined,

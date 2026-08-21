@@ -118,16 +118,12 @@ Add-Item 'Controlla aggiornamenti' {
     $res = Invoke-RestMethod -Uri "$base/api/update?check=1" -Headers @{ 'x-wdeck-token' = $token }
     if ($res.update.available) {
       if ($res.selfUpdate.supported) {
-        $msg = "Disponibile la versione $($res.update.latest.version) (in uso la $($res.update.current)).\`n\`nVuoi scaricarla e installarla adesso?"
+        $msg = "Disponibile la versione $($res.update.latest.version) (in uso la $($res.update.current)).\`n\`nVuoi scaricarla e installarla adesso? Si aprira' il deck con la barra di avanzamento."
         $scelta = [System.Windows.Forms.MessageBox]::Show($msg, 'Aggiornamento disponibile', 'YesNo', 'Question')
-        if ($scelta -eq 'Yes') {
-          try {
-            $r2 = Invoke-RestMethod -Method Post -Uri "$base/api/update/apply" -Headers @{ 'x-wdeck-token' = $token }
-            [System.Windows.Forms.MessageBox]::Show("Versione $($r2.version) installata. Wdeck si sta riavviando.", 'Aggiornato', 'OK', 'Information') | Out-Null
-          } catch {
-            [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Aggiornamento non riuscito', 'OK', 'Error') | Out-Null
-          }
-        }
+        # L'aggiornamento avviene nel browser, dove c'e' la barra che mostra
+        # download/verifica/installazione: cosi' si vede che sta procedendo e non
+        # e' bloccato, invece di un'attesa muta dalla tray.
+        if ($scelta -eq 'Yes') { Start-Process "$deckUrl#update" }
       } else {
         [System.Windows.Forms.MessageBox]::Show("Disponibile la versione $($res.update.latest.version). Apri il deck nel browser per aggiornare.", 'Aggiornamento disponibile', 'OK', 'Information') | Out-Null
       }
@@ -140,24 +136,10 @@ Add-Item 'Controlla aggiornamenti' {
 } | Out-Null
 
 Add-Item 'Scarica e installa aggiornamento' {
-  # Chiede conferma: da qui in poi si sostituisce un eseguibile e si riavvia,
-  # e chi sta usando il deck in questo momento se ne accorge.
-  $scelta = [System.Windows.Forms.MessageBox]::Show(
-    "Scarico la versione nuova, ne verifico l'impronta e riavvio Wdeck. La versione attuale resta come copia di sicurezza.",
-    'Aggiornare Wdeck?', 'YesNo', 'Question')
-  if ($scelta -ne 'Yes') { return }
-  $icon.BalloonTipTitle = 'Wdeck'
-  $icon.BalloonTipText = 'Scarico l''aggiornamento...'
-  $icon.ShowBalloonTip(3000)
-  try {
-    $res = Invoke-RestMethod -Method Post -Uri "$base/api/update/apply" -Headers @{ 'x-wdeck-token' = $token }
-    $icon.BalloonTipTitle = 'Aggiornato'
-    $icon.BalloonTipText = "Versione $($res.version) installata. Wdeck si sta riavviando."
-  } catch {
-    $icon.BalloonTipTitle = 'Aggiornamento non riuscito'
-    $icon.BalloonTipText = $_.Exception.Message
-  }
-  $icon.ShowBalloonTip(6000)
+  # Apre il deck nel browser sull'aggiornamento: li' c'e' la finestra con la
+  # barra di avanzamento (download, verifica, installazione, riavvio), cosi' si
+  # vede cosa sta succedendo invece di un'attesa muta.
+  Start-Process "$deckUrl#update"
 } | Out-Null
 
 [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))

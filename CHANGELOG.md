@@ -3,6 +3,22 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.15] - 2026-08-21
+
+### Corretto
+
+- **L'azione HTTP (webhook) può contattare indirizzi locali/privati** (127.0.0.1,
+  la rete di casa). Prima erano bloccati dalla protezione anti-SSRF, anche se
+  colpire i propri servizi locali (Home Assistant, webhook interni) è un uso
+  tipico di un deck. La protezione resta disponibile: basta mettere
+  `settings.security.allowPrivateHttp` a `false`.
+
+### Migliorato
+
+- **Aggiornando dal menu della tray si apre il deck con la barra di avanzamento**
+  (download, verifica, installazione, riavvio), invece di un'attesa muta: si vede
+  che sta procedendo e non è bloccato.
+
 ## [0.8.14] - 2026-08-21
 
 ### Aggiunto

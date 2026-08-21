@@ -28,6 +28,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
     allowUrlSchemes: ['http', 'https'],
     allowedExtensions: ['.exe', '.bat', '.cmd', '.ps1', '.py', '.sh'],
     allowExec: [],
+    // L'azione HTTP puo' contattare indirizzi locali/privati (127.0.0.1, la rete
+    // di casa). E' acceso di default perche' colpire i propri servizi locali
+    // (Home Assistant, webhook interni) e' un uso tipico di un deck - e le altre
+    // integrazioni (Home Assistant, MQTT, Hue) gia' parlano con indirizzi
+    // privati. Chi vuole la protezione anti-SSRF piena lo mette a false.
+    allowPrivateHttp: true,
     maxSequenceSteps: 32,
     devices: [],
     deviceTokenDays: null,
@@ -195,6 +201,7 @@ function validateSettings(ctx, settings) {
     else {
       checkBool(ctx, 'settings.security.requireToken', security.requireToken);
       checkBool(ctx, 'settings.security.dryRun', security.dryRun);
+      checkBool(ctx, 'settings.security.allowPrivateHttp', security.allowPrivateHttp);
       if (security.token !== undefined) {
         if (checkString(ctx, 'settings.security.token', security.token) && security.token.length > 0
           && security.token.length < LIMITS.minTokenLength) {

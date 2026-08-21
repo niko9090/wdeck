@@ -402,12 +402,15 @@ function handleMessage(msg) {
       renderHosts();
       autoCheckUpdate();
       checkClientFreshness();
-      // Deep-link dalle impostazioni della tray: aprendo l'indirizzo con
-      // "#settings" il pannello si apre da solo. Si azzera l'ancora subito, cosi'
-      // una riconnessione non lo riapre.
-      if (location.hash === '#settings') {
+      // Deep-link dalla tray: "#settings" apre le impostazioni, "#update" apre
+      // le impostazioni e avvia l'aggiornamento con la barra di avanzamento
+      // (cosi' dalla tray si vede la finestra che scarica e installa). Si azzera
+      // l'ancora subito, cosi' una riconnessione non la riapre.
+      if (location.hash === '#settings' || location.hash === '#update') {
+        const vuoleUpdate = location.hash === '#update';
         try { history.replaceState(null, '', location.pathname + location.search); } catch { /* history non disponibile */ }
-        openSettings();
+        if (vuoleUpdate) openUpdateFlow();
+        else openSettings();
       }
       break;
 
@@ -2145,6 +2148,21 @@ async function checkClientFreshness() {
  *   controllo automatico all'apertura, che deve accorgersi degli aggiornamenti
  *   e mostrare il banner senza infastidire con un toast a ogni collegamento.
  */
+/**
+ * Flusso di aggiornamento aperto dalla tray (deep-link "#update"): apre le
+ * impostazioni, fa un controllo fresco e, se c'e' una versione nuova
+ * installabile, avvia subito l'aggiornamento con la barra di avanzamento. Cosi'
+ * chi lo lancia dall'icona vicino all'orologio vede la finestra che scarica e
+ * installa, e capisce se sta procedendo.
+ */
+async function openUpdateFlow() {
+  await openSettings();
+  await checkUpdate({ force: true });
+  refreshUpdateSection();
+  if (state.update?.available && state.selfUpdate?.supported) applyUpdate();
+  else if (!state.update?.available) toast(t('settings.upToDate', { current: state.update?.current || '-' }), 'ok');
+}
+
 // Ultimo controllo automatico: evita di interrogare GitHub a ogni riconnessione
 // (una caduta di rete non deve tradursi in una raffica di richieste).
 let lastAutoCheck = 0;
