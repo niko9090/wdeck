@@ -3,6 +3,17 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.13] - 2026-08-21
+
+### Corretto
+
+- **Avvio programma per nome.** Scrivere solo `explorer.exe`, `notepad.exe`,
+  `calc.exe` o `mstsc.exe` (senza percorso) ora funziona come nella finestra
+  Esegui di Windows: il nome viene risolto sull'eseguibile già autorizzato nella
+  whitelist. Prima veniva cercato nella cartella del deck e non partiva. Risolve
+  anche "aprire Esplora file non fa nulla" (azione *Avvia programma* →
+  `explorer.exe`).
+
 ## [0.8.12] - 2026-08-21
 
 ### Corretto

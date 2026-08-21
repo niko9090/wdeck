@@ -83,6 +83,23 @@ export function checkExecutable(target, policy = {}) {
     };
   }
 
+  // Un nome "nudo" (senza cartella, es. "notepad.exe" o "explorer.exe") non e'
+  // un file nella cartella del deck: va cercato fra gli eseguibili gia'
+  // autorizzati, confrontando il solo nome. Cosi' scriverlo funziona come nella
+  // finestra Esegui di Windows, senza dover indicare il percorso completo - e
+  // resta comunque dentro la whitelist, quindi la sicurezza non cambia.
+  const bareName = !/[\\/]/.test(target);
+  if (bareName) {
+    const wanted = target.toLowerCase();
+    for (const pattern of allowExec) {
+      const absPattern = path.isAbsolute(pattern) ? pattern : path.resolve(baseDir, pattern);
+      const base = path.basename(absPattern);
+      if (!/[*?]/.test(base) && base.toLowerCase() === wanted) {
+        return { allowed: true, resolved: absPattern };
+      }
+    }
+  }
+
   // Il confronto va fatto sulla destinazione reale: un symlink (o una giunzione
   // su Windows) dentro una cartella consentita potrebbe puntare a un binario
   // vietato, e la sola normalizzazione della stringa non lo scoprirebbe. Se il

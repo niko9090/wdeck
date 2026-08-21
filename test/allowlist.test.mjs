@@ -35,6 +35,35 @@ test('allowlist: percorso esatto consentito', () => {
   assert.equal(result.resolved, path.normalize(target));
 });
 
+test('allowlist: un nome nudo si risolve su un eseguibile whitelisted', () => {
+  // "notepad.exe" (senza cartella) deve mappare sull'entry whitelisted, come
+  // nella finestra Esegui, invece di cercarlo nella cartella del deck.
+  const full = abs('windows/system32/notepad.exe');
+  const result = checkExecutable('notepad.exe', { allowExec: [full], allowedExtensions: ['.exe'], baseDir: BASE });
+  assert.equal(result.allowed, true);
+  assert.equal(result.resolved, full);
+});
+
+test('allowlist: un nome nudo non whitelisted resta bloccato', () => {
+  const result = checkExecutable('chrome.exe', {
+    allowExec: [abs('windows/system32/notepad.exe')],
+    allowedExtensions: ['.exe'],
+    baseDir: BASE
+  });
+  assert.equal(result.allowed, false);
+});
+
+test('allowlist: un pattern glob non viene confuso con un nome nudo', () => {
+  // Il basename del pattern "scripts/examples/*" e' "*", non deve mai fare match
+  // per nome con un eseguibile qualsiasi.
+  const result = checkExecutable('tool.exe', {
+    allowExec: ['scripts/examples/*'],
+    allowedExtensions: ['.exe'],
+    baseDir: BASE
+  });
+  assert.equal(result.allowed, false);
+});
+
 test('allowlist: percorso non elencato bloccato', () => {
   const result = checkExecutable(abs('windows/system32/cmd.exe'), {
     allowExec: [abs('windows/system32/notepad.exe')],

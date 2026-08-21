@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.8.13': [
+    'Avvio programma: ora basta il nome (es. explorer.exe, notepad.exe, calc.exe) come nella finestra Esegui, senza il percorso completo.'
+  ],
   '0.8.12': [
     'Su touch i messaggi di conferma restano visibili quando sollevi il dito (prima si chiudevano da soli).',
     'La luminosità, se lo schermo non la supporta (PC fisso o Desktop Remoto), ora lo dice chiaramente.'
