@@ -382,7 +382,12 @@ export const WINDOW_PINVOKE = [
 export const FOCUS_HELPER = [
   'function Wdeck-Focus([IntPtr]$h) {',
   '  if ($h -eq [IntPtr]::Zero) { return $false }',
-  '  if ($w::IsIconic($h)) { [void]$w::ShowWindow($h, 9) } else { [void]$w::ShowWindow($h, 5) }',
+  '  # Minimizza e subito ripristina: ripristinare una finestra la porta SEMPRE',
+  '  # in primo piano, anche quando SetForegroundWindow verrebbe bloccato perche',
+  '  # il comando arriva da un altro dispositivo o via Desktop Remoto (nessun',
+  '  # input recente sul PC). E\' la tecnica piu\' affidabile per questo caso.',
+  '  [void]$w::ShowWindow($h, 6)',
+  '  [void]$w::ShowWindow($h, 9)',
   '  $fg = $w::GetForegroundWindow()',
   '  $tidFg = $w::GetWindowThreadProcessId($fg, [IntPtr]::Zero)',
   '  $tidMe = $w::GetCurrentThreadId()',

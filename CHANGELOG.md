@@ -3,6 +3,17 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.19] - 2026-08-22
+
+### Migliorato
+
+- **Le finestre dei programmi avviati vengono portate davanti in modo più
+  affidabile** anche quando il pulsante è premuto da un altro dispositivo (il
+  telefono) o via Desktop Remoto. In quei casi Windows nega il primo piano
+  perché sul PC non c'è stato input di recente; ora si usa "minimizza e
+  ripristina", che riporta sempre la finestra in primo piano. Può causare un
+  breve sfarfallio.
+
 ## [0.8.18] - 2026-08-22
 
 ### Corretto
