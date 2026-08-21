@@ -3,6 +3,16 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.17] - 2026-08-21
+
+### Migliorato
+
+- **Avvio programma: la finestra va davanti anche dalla seconda pressione in
+  poi.** Windows concede il primo piano solo a chi ha ricevuto un input di
+  recente, quindi dal secondo avvio (o premendo da un altro dispositivo) la
+  finestra restava dietro. Ora un breve tap ALT sintetico sblocca il vincolo
+  appena prima di alzare la finestra.
+
 ## [0.8.16] - 2026-08-21
 
 ### Migliorato

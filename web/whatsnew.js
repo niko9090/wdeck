@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.8.17': [
+    'I programmi vengono portati davanti anche dalla seconda pressione in poi (aggirato il blocco del "primo piano" di Windows).'
+  ],
   '0.8.16': [
     'Avviando un programma, la finestra viene portata davvero in primo piano (prima poteva aprirsi dietro le altre, specie via Desktop Remoto).'
   ],
