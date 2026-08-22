@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.8.21': [
+    'Nuovo: gruppi di tasti con nome e colore. Raggruppa i comandi simili per riconoscerli a colpo d\'occhio — crei i gruppi dalla pagina (tocca il nome della pagina in alto) e assegni i tasti dall\'editor del tasto.'
+  ],
   '0.8.20': [
     'Su schermo touch ora puoi scorrere il dito in orizzontale per cambiare pagina, anche passando sopra i pulsanti (come sfogliare).',
     'In alto, accanto al nome del deck, vedi la versione di Wdeck in esecuzione.',

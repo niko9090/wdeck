@@ -211,3 +211,57 @@ test('normalizeDeck: non altera l\'oggetto di partenza', () => {
   normalizeDeck(deck);
   assert.equal(JSON.stringify(deck), before);
 });
+
+test('schema: i gruppi validi sono accettati e i bottoni possono riferirli', () => {
+  const deck = rawDeck();
+  const page = deck.profiles[0].pages[0];
+  page.groups = [{ id: 'audio', label: 'Audio', color: '#4c8dff' }];
+  page.buttons[0].group = 'audio';
+  const result = validate(deck);
+  assert.equal(result.valid, true, JSON.stringify(result.errors, null, 2));
+});
+
+test('schema: un gruppo malformato viene rifiutato', () => {
+  const casi = [
+    { id: 'Bad Id', label: 'x', color: '#fff' },
+    { id: 'ok', label: 'x', color: 'blu' },
+    { id: 'ok', color: '#fff' } // label mancante
+  ];
+  for (const g of casi) {
+    const deck = rawDeck();
+    deck.profiles[0].pages[0].groups = [g];
+    const r = validate(deck);
+    assert.equal(r.valid, false, `dovrebbe rifiutare ${JSON.stringify(g)}`);
+    assert.ok(r.errors.some((e) => e.path.includes('groups[0]')), `errore su groups[0] per ${JSON.stringify(g)}`);
+  }
+});
+
+test('schema: id di gruppo duplicati nella pagina sono un errore', () => {
+  const deck = rawDeck();
+  deck.profiles[0].pages[0].groups = [
+    { id: 'g', label: 'A', color: '#111111' },
+    { id: 'g', label: 'B', color: '#222222' }
+  ];
+  const r = validate(deck);
+  assert.equal(r.valid, false);
+  assert.ok(r.errors.some((e) => e.path.includes('groups[1].id')));
+});
+
+test('schema: un bottone che riferisce un gruppo inesistente e\' un errore', () => {
+  const deck = rawDeck();
+  deck.profiles[0].pages[0].buttons[0].group = 'fantasma';
+  const r = validate(deck);
+  assert.equal(r.valid, false);
+  assert.ok(r.errors.some((e) => e.path.includes('.group')));
+});
+
+test('normalizeDeck: espone groups per pagina e group per bottone', () => {
+  const deck = rawDeck();
+  deck.profiles[0].pages[0].groups = [{ id: 'audio', label: 'Audio', color: '#4c8dff' }];
+  deck.profiles[0].pages[0].buttons[0].group = 'audio';
+  const n = normalizeDeck(deck);
+  assert.deepEqual(n.profiles[0].pages[0].groups, [{ id: 'audio', label: 'Audio', color: '#4c8dff' }]);
+  assert.equal(n.profiles[0].pages[0].buttons[0].group, 'audio');
+  // un bottone senza gruppo ha group: null
+  assert.equal(n.profiles[0].pages[0].buttons[1]?.group ?? null, null);
+});

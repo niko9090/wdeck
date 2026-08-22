@@ -14,6 +14,8 @@ export const LIMITS = Object.freeze({
   maxRows: 8,
   maxCols: 12,
   maxLabel: 48,
+  maxGroupLabel: 32,
+  maxGroupsPerPage: 24,
   minTokenLength: 8,
   maxButtonsPerPage: 96
 });
@@ -330,7 +332,39 @@ function validateAction(ctx, path, action, actionTypes, depth = 0) {
   }
 }
 
-function validateButton(ctx, path, button, page, seen, actionTypes) {
+/**
+ * Valida l'elenco `page.groups` (gruppi visivi: label + colore) e restituisce
+ * l'insieme degli id validi, per controllare i riferimenti dai bottoni.
+ * @returns {Set<string>}
+ */
+function validateGroups(ctx, gpath, groups) {
+  const ids = new Set();
+  if (groups === undefined) return ids;
+  if (!Array.isArray(groups)) {
+    ctx.err(`${gpath}.groups`, 'atteso array di gruppi');
+    return ids;
+  }
+  if (groups.length > LIMITS.maxGroupsPerPage) {
+    ctx.err(`${gpath}.groups`, `troppi gruppi (max ${LIMITS.maxGroupsPerPage})`);
+  }
+  groups.forEach((group, i) => {
+    const path = `${gpath}.groups[${i}]`;
+    if (!isPlainObject(group)) {
+      ctx.err(path, 'atteso oggetto gruppo');
+      return;
+    }
+    checkString(ctx, `${path}.id`, group.id, { required: true, pattern: SLUG_RE, label: 'slug minuscolo' });
+    checkString(ctx, `${path}.label`, group.label, { required: true, max: LIMITS.maxGroupLabel });
+    checkString(ctx, `${path}.color`, group.color, { required: true, pattern: HEX_COLOR_RE, label: 'colore hex' });
+    if (typeof group.id === 'string') {
+      if (ids.has(group.id)) ctx.err(`${path}.id`, `id gruppo duplicato nella pagina: "${group.id}"`);
+      else ids.add(group.id);
+    }
+  });
+  return ids;
+}
+
+function validateButton(ctx, path, button, page, seen, actionTypes, groupIds = new Set()) {
   if (!isPlainObject(button)) {
     ctx.err(path, 'atteso oggetto bottone');
     return;
@@ -374,6 +408,14 @@ function validateButton(ctx, path, button, page, seen, actionTypes) {
   }
   if (button.color !== undefined) checkString(ctx, `${path}.color`, button.color, { pattern: HEX_COLOR_RE, label: 'colore hex' });
   if (button.textColor !== undefined) checkString(ctx, `${path}.textColor`, button.textColor, { pattern: HEX_COLOR_RE, label: 'colore hex' });
+
+  // Il gruppo, se indicato, deve riferirsi a un gruppo definito nella pagina.
+  if (button.group !== undefined) {
+    checkString(ctx, `${path}.group`, button.group, { pattern: SLUG_RE, label: 'slug minuscolo' });
+    if (typeof button.group === 'string' && !groupIds.has(button.group)) {
+      ctx.err(`${path}.group`, `gruppo "${button.group}" non definito nella pagina`);
+    }
+  }
 
   if (typeof button.row === 'number' && typeof page.rows === 'number' && button.row >= page.rows) {
     ctx.err(`${path}.row`, `riga ${button.row} fuori dalla griglia (rows=${page.rows})`);
@@ -524,9 +566,12 @@ export function validateDeck(raw, options = {}) {
         if (page.buttons.length > LIMITS.maxButtonsPerPage) {
           ctx.err(`${gpath}.buttons`, `troppi bottoni (max ${LIMITS.maxButtonsPerPage})`);
         }
+        // I gruppi visivi (label + colore) sono opzionali; qui si raccolgono gli
+        // id validi per poter poi controllare i riferimenti `button.group`.
+        const groupIds = validateGroups(ctx, gpath, page.groups);
         const seen = { cells: new Map(), buttonIds };
         page.buttons.forEach((button, bi) => {
-          validateButton(ctx, `${gpath}.buttons[${bi}]`, button, page, seen, actionTypes);
+          validateButton(ctx, `${gpath}.buttons[${bi}]`, button, page, seen, actionTypes, groupIds);
         });
       });
     });
@@ -564,6 +609,11 @@ export function normalizeDeck(raw) {
       name: page.name ?? page.id,
       rows: page.rows,
       cols: page.cols,
+      groups: (page.groups ?? []).map((group) => ({
+        id: group.id,
+        label: group.label,
+        color: group.color
+      })),
       buttons: (page.buttons ?? []).map((button) => ({
         id: button.id,
         label: button.label ?? '',
@@ -579,6 +629,7 @@ export function normalizeDeck(raw) {
         icon: button.icon ?? null,
         color: button.color ?? null,
         textColor: button.textColor ?? null,
+        group: button.group ?? null,
         action: { type: button.action.type, params: button.action.params ?? {} },
         holdAction: button.holdAction
           ? { type: button.holdAction.type, params: button.holdAction.params ?? {} }

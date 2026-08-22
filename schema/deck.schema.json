@@ -76,7 +76,22 @@
         "name": { "type": "string", "maxLength": 64 },
         "rows": { "type": "integer", "minimum": 1, "maximum": 8 },
         "cols": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "groups": {
+          "type": "array",
+          "maxItems": 24,
+          "description": "Gruppi visivi per la pagina: danno a un insieme di tile una label e un colore comuni.",
+          "items": { "$ref": "#/$defs/group" }
+        },
         "buttons": { "type": "array", "maxItems": 96, "items": { "$ref": "#/$defs/button" } }
+      }
+    },
+    "group": {
+      "type": "object",
+      "required": ["id", "label", "color"],
+      "properties": {
+        "id": { "$ref": "#/$defs/slug", "description": "univoco nella pagina" },
+        "label": { "type": "string", "maxLength": 32 },
+        "color": { "$ref": "#/$defs/hexColor" }
       }
     },
     "button": {
@@ -90,6 +105,7 @@
         "icon": { "type": "string", "pattern": "^([a-z0-9][a-z0-9-]{0,23}|custom:[a-z0-9][a-z0-9-]{0,31}|emoji:[^ \"'<>&]{1,16})$" },
         "color": { "$ref": "#/$defs/hexColor" },
         "textColor": { "$ref": "#/$defs/hexColor" },
+        "group": { "$ref": "#/$defs/slug", "description": "id di un gruppo definito nella stessa pagina" },
         "action": { "$ref": "#/$defs/action" },
         "holdAction": { "$ref": "#/$defs/action" }
       }

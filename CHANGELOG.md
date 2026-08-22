@@ -3,6 +3,17 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.21] - 2026-08-22
+
+### Aggiunto
+
+- **Gruppi di tasti con label e colore.** Ora puoi raggruppare più tasti sotto
+  un nome e un colore comuni, per riconoscere a colpo d'occhio a cosa
+  appartengono. I gruppi si creano dalla pagina (tocca il nome della pagina in
+  alto → sezione "Gruppi"), poi assegni ogni tasto al suo gruppo dall'editor del
+  tasto. Ogni tasto del gruppo mostra una barretta del colore sul lato sinistro e
+  sotto le pagine compare una legenda con i nomi dei gruppi.
+
 ## [0.8.20] - 2026-08-22
 
 ### Aggiunto

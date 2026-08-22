@@ -109,10 +109,10 @@ body {
 .app {
   height: 100%;
   display: grid;
-  /* cinque fasce: banner, barra, computer, griglia (occupa lo spazio), stato.
-     Ogni figlio e' ancorato alla sua fascia, cosi' quando il banner e' nascosto
-     la sua fascia collassa a zero senza spostare gli altri. */
-  grid-template-rows: auto auto auto 1fr auto;
+  /* fasce ancorate: banner, barra, computer, pagine, legenda gruppi, griglia
+     (occupa lo spazio), stato. Ogni figlio e' ancorato alla sua fascia, cosi'
+     quando una e' nascosta collassa a zero senza spostare le altre. */
+  grid-template-rows: auto auto auto auto auto 1fr auto;
   gap: var(--gap);
   padding: var(--gap);
   padding-top: max(var(--gap), env(safe-area-inset-top));
@@ -121,8 +121,10 @@ body {
 .app > .update-banner { grid-row: 1; }
 .app > .topbar { grid-row: 2; }
 .app > .hosts { grid-row: 3; }
-.app > .grid { grid-row: 4; }
-.app > .statusbar { grid-row: 5; }
+.app > .pages { grid-row: 4; }
+.app > .group-legend { grid-row: 5; }
+.app > .grid { grid-row: 6; }
+.app > .statusbar { grid-row: 7; }
 
 /* banner di nuova versione */
 .update-banner {
@@ -330,6 +332,49 @@ body {
 }
 
 .deck-btn[data-on='0'] .state-tag { color: var(--text-dim); }
+
+/* ---------------- gruppi visivi ----------------
+   Un gruppo da' a piu' tile una label e un colore comuni: la legenda sotto le
+   pagine spiega i colori, e ogni tile del gruppo porta una barretta colorata
+   sul lato sinistro per riconoscerlo a colpo d'occhio. */
+.group-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: color-mix(in srgb, var(--group-color) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--group-color) 45%, var(--border));
+}
+.group-chip .group-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--group-color);
+}
+
+/* barretta del colore del gruppo sul bordo sinistro del tile */
+.deck-btn[data-group]::after,
+.deck-slider[data-group]::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 4px;
+  border-radius: 0 3px 3px 0;
+  background: var(--group-color);
+  pointer-events: none;
+}
 
 /* ---------------- modalita' modifica ---------------- */
 
@@ -697,6 +742,16 @@ body {
 .field-row .field { flex: 1 1 0; min-width: 0; }
 .field.checkbox { display: flex; align-items: center; gap: 10px; }
 .field.checkbox input { width: 18px; height: 18px; }
+
+/* righe di gestione gruppi nell'editor della pagina */
+.pg-groups { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.pg-group-row { display: flex; align-items: center; gap: 8px; }
+.pg-group-row .pg-group-color {
+  flex: 0 0 auto; width: 40px; height: 40px; padding: 2px;
+  background: #0f131a; border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+}
+.pg-group-row .pg-group-label { flex: 1 1 auto; min-width: 0; }
+.pg-group-row .pg-group-del { flex: 0 0 auto; color: var(--err); }
 .field.checkbox span { margin: 0; text-transform: none; letter-spacing: 0; font-size: 14px; }
 
 .select.wide { max-width: 100%; width: 100%; }

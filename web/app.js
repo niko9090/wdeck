@@ -45,6 +45,7 @@ const ui = {
   profileSelect: el('profile-select'),
   hosts: el('hosts'),
   pages: el('pages'),
+  groupLegend: el('group-legend'),
   grid: el('grid'),
   statusText: el('status-text'),
   lastAction: el('last-action'),
@@ -641,13 +642,18 @@ function renderPages() {
  * griglia a ogni messaggio di stato, che e' quello che rendeva l'interfaccia
  * a scatti nella prima versione.
  */
+/** Colore di ogni gruppo della pagina corrente: id -> hex. */
+let currentGroupColors = new Map();
+
 function renderGrid() {
   const page = currentPage();
   if (!page) return;
 
-  const signature = JSON.stringify([state.profileId, page.id, state.editing, page.buttons]);
+  const signature = JSON.stringify([state.profileId, page.id, state.editing, page.buttons, page.groups]);
   if (ui.grid.dataset.signature === signature) return;
   ui.grid.dataset.signature = signature;
+
+  currentGroupColors = new Map((page.groups ?? []).map((g) => [g.id, g.color]));
 
   ui.grid.style.gridTemplateColumns = `repeat(${page.cols}, minmax(0, 1fr))`;
   ui.grid.style.gridTemplateRows = `repeat(${page.rows}, minmax(0, 1fr))`;
@@ -674,6 +680,40 @@ function renderGrid() {
   }
   ui.grid.innerHTML = parts.join('');
   applyStatuses();
+  renderGroupLegend(page);
+}
+
+/**
+ * Legenda dei gruppi: sotto le pagine mostra un "chip" colorato con la label di
+ * ogni gruppo, cosi' si riconosce a colpo d'occhio a cosa serve ogni colore.
+ */
+function renderGroupLegend(page) {
+  if (!ui.groupLegend) return;
+  const groups = page.groups ?? [];
+  if (!groups.length) {
+    ui.groupLegend.hidden = true;
+    ui.groupLegend.innerHTML = '';
+    return;
+  }
+  ui.groupLegend.hidden = false;
+  ui.groupLegend.innerHTML = groups.map((g) =>
+    `<span class="group-chip" style="--group-color:${cssColor(g.color) || 'var(--accent)'}">`
+    + `<span class="group-dot"></span>${escapeHtml(g.label)}</span>`
+  ).join('');
+}
+
+/** Colore del gruppo di un tile (hex) o null se non ne ha uno valido. */
+function groupColorOf(button) {
+  return button.group ? (currentGroupColors.get(button.group) || null) : null;
+}
+/** Attributo `data-group` (con la variabile colore va nello style del tile). */
+function groupData(button) {
+  return groupColorOf(button) ? ` data-group="${escapeHtml(button.group)}"` : '';
+}
+/** Frammento di stile `--group-color:#hex` da unire allo style del tile (o ''). */
+function groupColorVar(button) {
+  const color = groupColorOf(button);
+  return color ? `--group-color:${cssColor(color)}` : '';
 }
 
 function buttonHtml(button) {
@@ -682,9 +722,10 @@ function buttonHtml(button) {
   const style = [
     bg ? `background:${bg}` : '',
     fg ? `color:${fg}` : '',
-    button.span > 1 ? `grid-column:span ${Number(button.span) || 1}` : ''
+    button.span > 1 ? `grid-column:span ${Number(button.span) || 1}` : '',
+    groupColorVar(button)
   ].filter(Boolean).join(';');
-  return `<button class="deck-btn" type="button" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}" style="${style}" title="${escapeHtml(button.label || button.id)}">`
+  return `<button class="deck-btn" type="button" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}"${groupData(button)} style="${style}" title="${escapeHtml(button.label || button.id)}">`
     + `<span class="type-tag">${escapeHtml(button.action?.type)}</span>`
     + controlIcon(button)
     + (state.deck.ui?.showLabels === false ? '' : `<span class="label">${escapeHtml(button.label)}</span>`)
@@ -701,9 +742,10 @@ function sliderHtml(button) {
   const accent = cssColor(button.color);
   const style = [
     accent ? `--slider-accent:${accent}` : '',
-    `grid-column:span ${Number(button.span) || 2}`
+    `grid-column:span ${Number(button.span) || 2}`,
+    groupColorVar(button)
   ].filter(Boolean).join(';');
-  return `<div class="deck-slider" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}" data-min="${min}" data-max="${max}" data-step="${button.step ?? 1}" style="${style}"`
+  return `<div class="deck-slider" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}"${groupData(button)} data-min="${min}" data-max="${max}" data-step="${button.step ?? 1}" style="${style}"`
     + ` role="slider" tabindex="0" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}" aria-label="${escapeHtml(button.label || button.id)}">`
     + `<div class="slider-fill" style="width:${percent}%"></div>`
     + '<div class="slider-content">'
@@ -1506,6 +1548,11 @@ async function editButton(buttonId, cell, seed = null) {
       </div>
       <label class="field checkbox"><input id="ed-confirm" type="checkbox"${draft.confirm ? ' checked' : ''} /><span>${t('edit.confirm')}</span></label>
       <label class="field checkbox"><input id="ed-status" type="checkbox"${draft.status === false ? '' : ' checked'} /><span>${t('edit.showStatus')}</span></label>
+      <label class="field"><span>${t('edit.group')}</span><select id="ed-group" class="select wide">
+        <option value="">${t('edit.groupNone')}</option>
+        ${(page.groups ?? []).map((g) => `<option value="${escapeHtml(g.id)}"${draft.group === g.id ? ' selected' : ''}>${escapeHtml(g.label)}</option>`).join('')}
+      </select></label>
+      <p class="sheet-hint">${t('edit.groupHint')}</p>
     `,
     // L'eliminazione NON sta piu' qui: si fa dalla "x" sul tile in modifica,
     // cosi' l'editor riguarda solo cosa fa il pulsante, non la sua esistenza.
@@ -1607,6 +1654,7 @@ async function saveButtonDraft(draft, existing) {
     span: Math.max(1, Number(el('ed-span').value) || 1),
     confirm: el('ed-confirm').checked,
     status: el('ed-status').checked,
+    group: el('ed-group')?.value || null,
     holdAction,
     action: { type: el('ed-type').value, params }
   };
@@ -1745,6 +1793,11 @@ function editPage(pageId) {
       </div>
       <label class="field checkbox"><input id="pg-default" type="checkbox"${isDefault ? ' checked disabled' : ''} /><span>${t('page.default')}</span></label>
       ${isLast ? `<p class="sheet-hint">${t('page.onlyOne')}</p>` : ''}
+
+      <h3 class="sheet-section">${t('page.groups')}</h3>
+      <p class="sheet-hint">${t('page.groupsHint')}</p>
+      <div id="pg-groups" class="pg-groups"></div>
+      <button class="btn ghost small" type="button" id="pg-add-group">${t('page.addGroup')}</button>
     `,
     actions: [
       ...(isLast ? [] : [{ label: t('sheet.delete'), kind: 'danger', onClick: () => removePage(page.id) }]),
@@ -1755,6 +1808,26 @@ function editPage(pageId) {
 
   el('pg-left').addEventListener('click', () => movePage(page.id, -1));
   el('pg-right').addEventListener('click', () => movePage(page.id, 1));
+
+  // Sezione gruppi: righe editabili (colore + label + elimina), con "aggiungi".
+  const groupsBox = el('pg-groups');
+  const addGroupRow = (group) => {
+    const row = document.createElement('div');
+    row.className = 'pg-group-row';
+    row.dataset.id = group?.id ?? uniqueSlug('gruppo', pageGroupIds());
+    row.innerHTML = `
+      <input type="color" class="pg-group-color" value="${group?.color ?? '#4c8dff'}" />
+      <input type="text" class="pg-group-label" maxlength="32" placeholder="${t('page.groupLabelPh')}" value="${escapeHtml(group?.label ?? '')}" />
+      <button type="button" class="icon-btn pg-group-del" title="${t('edit.remove')}">&#10005;</button>`;
+    row.querySelector('.pg-group-del').addEventListener('click', () => row.remove());
+    groupsBox.appendChild(row);
+  };
+  // id gia' presenti fra le righe, per generarne di nuovi senza collisioni.
+  function pageGroupIds() {
+    return [...groupsBox.querySelectorAll('.pg-group-row')].map((r) => r.dataset.id);
+  }
+  (page.groups ?? []).forEach((g) => addGroupRow(g));
+  el('pg-add-group').addEventListener('click', () => addGroupRow(null));
 }
 
 async function savePage(pageId) {
@@ -1765,6 +1838,20 @@ async function savePage(pageId) {
   page.rows = Math.max(1, Math.min(8, Number(el('pg-rows').value) || page.rows));
   page.cols = Math.max(1, Math.min(12, Number(el('pg-cols').value) || page.cols));
   if (el('pg-default').checked) profile.defaultPage = page.id;
+
+  // Gruppi: si leggono le righe della sezione; una riga senza label si scarta.
+  const groups = [];
+  for (const row of document.querySelectorAll('#pg-groups .pg-group-row')) {
+    const label = row.querySelector('.pg-group-label').value.trim();
+    if (!label) continue;
+    groups.push({ id: row.dataset.id, label, color: row.querySelector('.pg-group-color').value });
+  }
+  page.groups = groups;
+  // I bottoni che puntavano a un gruppo ora rimosso perdono il riferimento,
+  // altrimenti la validazione dell'host rifiuterebbe il deck.
+  const validGroupIds = new Set(groups.map((g) => g.id));
+  for (const b of page.buttons) if (b.group && !validGroupIds.has(b.group)) b.group = null;
+
   await persistDeck(deck, t('page.saved', { name: page.name }));
 }
 
