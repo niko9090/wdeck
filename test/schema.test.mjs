@@ -265,3 +265,23 @@ test('normalizeDeck: espone groups per pagina e group per bottone', () => {
   // un bottone senza gruppo ha group: null
   assert.equal(n.profiles[0].pages[0].buttons[1]?.group ?? null, null);
 });
+
+test('schema: page.source accetta i valori dinamici e rifiuta gli altri', () => {
+  for (const s of ['windows', 'apps', 'widgets']) {
+    const deck = rawDeck();
+    deck.profiles[0].pages[0].source = s;
+    assert.equal(validate(deck).valid, true, `dovrebbe accettare source=${s}`);
+  }
+  const deck = rawDeck();
+  deck.profiles[0].pages[0].source = 'boh';
+  const r = validate(deck);
+  assert.equal(r.valid, false);
+  assert.ok(r.errors.some((e) => e.path.includes('.source')));
+});
+
+test('normalizeDeck: espone source per pagina (null se assente)', () => {
+  const deck = rawDeck();
+  deck.profiles[0].pages[0].source = 'windows';
+  const n = normalizeDeck(deck);
+  assert.equal(n.profiles[0].pages[0].source, 'windows');
+});

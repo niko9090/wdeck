@@ -76,6 +76,10 @@
         "name": { "type": "string", "maxLength": 64 },
         "rows": { "type": "integer", "minimum": 1, "maximum": 8 },
         "cols": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "source": {
+          "enum": ["windows", "apps", "widgets"],
+          "description": "Pagina dinamica: i tile arrivano dall'host (finestre aperte, app del menu Start, widget di stato) invece che da 'buttons'."
+        },
         "groups": {
           "type": "array",
           "maxItems": 24,

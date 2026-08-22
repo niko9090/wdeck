@@ -79,6 +79,8 @@ const state = {
   actionGroups: null,
   /** icone caricate dall'utente su questo host, lette all'apertura dell'editor */
   customIcons: null,
+  /** script aggiunti dall'utente (cartella scripts), per i suggerimenti nell'editor */
+  scripts: null,
   /** ultimo livello noto di ogni slider, per non farlo saltare al re-render */
   levels: new Map(),
   /** stato reale dei controlli letto dall'host: id -> {on, level, text} */
@@ -644,10 +646,19 @@ function renderPages() {
  */
 /** Colore di ogni gruppo della pagina corrente: id -> hex. */
 let currentGroupColors = new Map();
+/** Timer delle pagine dinamiche (finestre/app/widget), da fermare al cambio pagina. */
+let dynTimer = null;
+function clearDynTimer() { if (dynTimer) { clearInterval(dynTimer); dynTimer = null; } }
 
 function renderGrid() {
   const page = currentPage();
   if (!page) return;
+
+  // Le pagine dinamiche (finestre/app/widget) prendono i tile dall'host e hanno
+  // un rendering e un ciclo di aggiornamento propri.
+  if (page.source) { renderDynamicPage(page); return; }
+  clearDynTimer();
+  ui.grid.classList.remove('dynamic');
 
   const signature = JSON.stringify([state.profileId, page.id, state.editing, page.buttons, page.groups]);
   if (ui.grid.dataset.signature === signature) return;
@@ -700,6 +711,144 @@ function renderGroupLegend(page) {
     `<span class="group-chip" style="--group-color:${cssColor(g.color) || 'var(--accent)'}">`
     + `<span class="group-dot"></span>${escapeHtml(g.label)}</span>`
   ).join('');
+}
+
+// ------------------------------------------------- pagine dinamiche
+
+/**
+ * Rendering di una pagina dinamica (finestre/app/widget): i tile arrivano
+ * dall'host. Si allestisce una sola volta per pagina (guardia sulla signature) e
+ * si avvia il ciclo di aggiornamento; il timer si ferma cambiando pagina.
+ */
+function renderDynamicPage(page) {
+  const signature = `dyn:${state.profileId}:${page.id}:${page.source}`;
+  if (ui.grid.dataset.signature === signature) return;
+  ui.grid.dataset.signature = signature;
+  clearDynTimer();
+
+  ui.grid.classList.add('dynamic');
+  ui.grid.classList.remove('editing');
+  ui.grid.style.gridTemplateColumns = '';
+  ui.grid.style.gridTemplateRows = '';
+  renderGroupLegend(page); // le pagine dinamiche non hanno gruppi: nasconde la legenda
+  ui.grid.innerHTML = `<div class="dyn-msg">${escapeHtml(t('dyn.loading'))}</div>`;
+
+  if (page.source === 'windows') setupWindowsPage();
+  else if (page.source === 'apps') setupAppsPage();
+  else if (page.source === 'widgets') setupWidgetsPage();
+}
+
+/** Messaggio a tutta pagina (caricamento, vuoto, errore). */
+function dynMessage(text) {
+  return `<div class="dyn-msg">${escapeHtml(text)}</div>`;
+}
+
+/** Un tile dinamico che, toccato, esegue un'azione lato host. */
+function dynTile({ action, arg, label, sub, icon, color }) {
+  const style = color ? ` style="--group-color:${cssColor(color)}"` : '';
+  return `<button class="deck-btn dyn-tile" type="button" data-dyn-action="${action}" data-dyn-arg="${escapeHtml(String(arg))}"${style}>`
+    + `<span class="dyn-ico">${iconMarkup(icon)}</span>`
+    + `<span class="label">${escapeHtml(label)}</span>`
+    + (sub ? `<span class="dyn-sub">${escapeHtml(sub)}</span>` : '')
+    + '</button>';
+}
+
+/** Pagina "Finestre": elenco delle finestre aperte, aggiornato ogni 3s. */
+function setupWindowsPage() {
+  let lastKey = '';
+  const load = async () => {
+    const res = await api(ENDPOINTS.windows);
+    if (!res.ok) { setDynHtml(dynMessage(t('dyn.error')), 'err'); return; }
+    if (res.data.platform !== 'win32') { setDynHtml(dynMessage(t('dyn.winOnly'))); lastKey = 'winonly'; return; }
+    const wins = res.data.windows ?? [];
+    const key = wins.map((w) => `${w.handle}:${w.title}`).join('|');
+    if (key === lastKey) return; // nessun cambiamento: niente re-render (no sfarfallio)
+    lastKey = key;
+    if (!wins.length) { setDynHtml(dynMessage(t('dyn.noWindows'))); return; }
+    setDynHtml(wins.map((w) => dynTile({
+      action: 'focus-window', arg: w.handle, label: w.title, sub: w.process, icon: 'emoji:🪟'
+    })).join(''));
+  };
+  load();
+  dynTimer = setInterval(() => { if (currentPage()?.source === 'windows') load(); }, 3000);
+}
+
+/** Pagina "App": scorciatoie del menu Start; caricata una volta (cambiano di rado). */
+function setupAppsPage() {
+  const load = async () => {
+    const res = await api(ENDPOINTS.apps);
+    if (!res.ok) { setDynHtml(dynMessage(t('dyn.error')), 'err'); return; }
+    if (res.data.platform !== 'win32') { setDynHtml(dynMessage(t('dyn.winOnly'))); return; }
+    const apps = res.data.apps ?? [];
+    if (!apps.length) { setDynHtml(dynMessage(t('dyn.noApps'))); return; }
+    setDynHtml(apps.map((a) => dynTile({
+      action: 'launch-app', arg: a.path, label: a.name, icon: 'emoji:🚀'
+    })).join(''));
+  };
+  load();
+}
+
+/** Pagina "Widget": orologio (dal vivo) + stato del PC (CPU/memoria/uptime). */
+function setupWidgetsPage() {
+  let info = null;
+  const widget = (icon, big, sub) =>
+    `<div class="deck-btn widget-tile"><span class="dyn-ico">${iconMarkup(icon)}</span>`
+    + `<span class="widget-big">${escapeHtml(big)}</span><span class="dyn-sub">${escapeHtml(sub)}</span></div>`;
+  const draw = () => {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const dateStr = now.toLocaleDateString();
+    const tiles = [widget('emoji:🕒', `${hh}:${mm}:${ss}`, dateStr)];
+    if (info) {
+      tiles.push(widget('emoji:💻', info.host, `CPU ${info.cpu}%`));
+      tiles.push(widget('emoji:🧠', `${info.mem.percent}%`, `${info.mem.usedMb} / ${info.mem.totalMb} MB`));
+      tiles.push(widget('emoji:⏱️', formatUptime(info.uptimeSec), t('dyn.uptime')));
+    }
+    setDynHtml(tiles.join(''));
+  };
+  const refresh = async () => {
+    const res = await api(ENDPOINTS.sysinfo);
+    if (res.ok) info = res.data.info;
+    draw();
+  };
+  refresh();
+  let ticks = 0;
+  dynTimer = setInterval(() => {
+    if (currentPage()?.source !== 'widgets') return;
+    ticks += 1;
+    if (ticks % 5 === 0) refresh(); // stato PC ogni ~5s
+    else draw(); // orologio ogni secondo
+  }, 1000);
+}
+
+/** Sostituisce il contenuto della griglia dinamica (con eventuale stato d'errore). */
+function setDynHtml(html, cls = '') {
+  ui.grid.innerHTML = html;
+  ui.grid.classList.toggle('dyn-error', cls === 'err');
+}
+
+/** "acceso da 3g 4h 12m" a partire dai secondi di uptime. */
+function formatUptime(sec) {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return `${d}g ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+/** Esegue l'azione di un tile dinamico (focus finestra / avvio app). */
+async function runDynTile(element) {
+  const action = element.dataset.dynAction;
+  const arg = element.dataset.dynArg;
+  element.classList.add('active');
+  let res;
+  if (action === 'focus-window') res = await api(ENDPOINTS.windows, { method: 'POST', body: { handle: arg } });
+  else if (action === 'launch-app') res = await api(ENDPOINTS.apps, { method: 'POST', body: { path: arg } });
+  setTimeout(() => element.classList.remove('active'), 200);
+  if (res && !res.ok) toast(res.data?.error?.message || t('dyn.actionFailed'), 'err');
 }
 
 /** Colore del gruppo di un tile (hex) o null se non ne ha uno valido. */
@@ -1013,6 +1162,14 @@ async function loadCustomIcons({ force = false } = {}) {
   const res = await api(ENDPOINTS.icons);
   state.customIcons = res.ok ? (res.data.icons ?? []) : [];
   return state.customIcons;
+}
+
+/** Elenco degli script aggiunti dall'utente (cartella scripts), per i suggerimenti. */
+async function loadScripts({ force = false } = {}) {
+  if (state.scripts && !force) return state.scripts;
+  const res = await api(ENDPOINTS.scripts);
+  state.scripts = res.ok ? (res.data.scripts ?? []) : [];
+  return state.scripts;
 }
 
 /** Copia di lavoro del deck: l'editor non modifica mai quella ricevuta. */
@@ -1338,6 +1495,21 @@ function buildFieldControl(field, params, onSync) {
       if (field.placeholder) input.placeholder = field.placeholder;
       input.value = current ?? '';
       input.addEventListener('input', () => setParam(input.value));
+      // Campo che suggerisce gli script aggiunti dal tray: un datalist con i
+      // percorsi disponibili, cosi' si scelgono invece di scriverli a mano.
+      if (field.suggest === 'scripts' && Array.isArray(state.scripts) && state.scripts.length) {
+        const listId = `scripts-${field.key}`;
+        const dl = document.createElement('datalist');
+        dl.id = listId;
+        for (const s of state.scripts) {
+          const opt = document.createElement('option');
+          opt.value = s.path;
+          opt.label = s.name;
+          dl.appendChild(opt);
+        }
+        input.setAttribute('list', listId);
+        wrap.appendChild(dl);
+      }
   }
 
   const labelSpan = document.createElement('span');
@@ -1466,7 +1638,7 @@ function choosePreset(cell) {
 }
 
 async function editButton(buttonId, cell, seed = null) {
-  const [groups, customIcons] = await Promise.all([loadActions(), loadCustomIcons()]);
+  const [groups, customIcons] = await Promise.all([loadActions(), loadCustomIcons(), loadScripts()]);
   const page = currentPage();
   if (!page) return;
   const existing = page.buttons.find((b) => b.id === buttonId) ?? null;
@@ -1782,6 +1954,13 @@ function editPage(pageId) {
     title: t('page.title', { name: page.name }),
     body: `
       <label class="field"><span>${t('page.name')}</span><input id="pg-name" type="text" maxlength="64" value="${escapeHtml(page.name)}" /></label>
+      <label class="field"><span>${t('page.type')}</span><select id="pg-source" class="select wide">
+        <option value=""${!page.source ? ' selected' : ''}>${t('page.typeNormal')}</option>
+        <option value="windows"${page.source === 'windows' ? ' selected' : ''}>${t('page.typeWindows')}</option>
+        <option value="apps"${page.source === 'apps' ? ' selected' : ''}>${t('page.typeApps')}</option>
+        <option value="widgets"${page.source === 'widgets' ? ' selected' : ''}>${t('page.typeWidgets')}</option>
+      </select></label>
+      <p class="sheet-hint">${t('page.typeHint')}</p>
       <div class="field-row">
         <label class="field"><span>${t('page.rows')}</span><input id="pg-rows" type="number" min="1" max="8" value="${page.rows}" /></label>
         <label class="field"><span>${t('page.cols')}</span><input id="pg-cols" type="number" min="1" max="12" value="${page.cols}" /></label>
@@ -1837,6 +2016,8 @@ async function savePage(pageId) {
   page.name = el('pg-name').value.trim() || page.id;
   page.rows = Math.max(1, Math.min(8, Number(el('pg-rows').value) || page.rows));
   page.cols = Math.max(1, Math.min(12, Number(el('pg-cols').value) || page.cols));
+  const src = el('pg-source')?.value;
+  if (src) page.source = src; else delete page.source;
   if (el('pg-default').checked) profile.defaultPage = page.id;
 
   // Gruppi: si leggono le righe della sezione; una riga senza label si scarta.
@@ -2747,8 +2928,17 @@ function bindGrid() {
   };
 
   ui.grid.addEventListener('pointerdown', async (event) => {
+    // Tile di una pagina dinamica (finestre/app): scatta al rilascio come i
+    // pulsanti, cosi' lo swipe orizzontale sopra di essi cambia comunque pagina.
+    const dyn = event.target.closest('.dyn-tile');
+    if (dyn) {
+      gesture = { kind: 'dyn', element: dyn, startX: event.clientX, startY: event.clientY, fired: false };
+      dyn.classList.add('pending');
+      return;
+    }
+
     const slider = event.target.closest('.deck-slider');
-    const button = event.target.closest('.deck-btn:not(.empty)');
+    const button = event.target.closest('.deck-btn:not(.empty):not(.dyn-tile):not(.widget-tile)');
     const empty = event.target.closest('.deck-btn.empty');
 
     if (state.editing) {
@@ -2832,7 +3022,7 @@ function bindGrid() {
     // l'eventuale hold in attesa va annullato.
     if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
       clearHold();
-      if (gesture.kind === 'button' && !gesture.fired) {
+      if ((gesture.kind === 'button' || gesture.kind === 'dyn') && !gesture.fired) {
         gesture.element.classList.remove('pending');
         gesture.kind = 'swipe';
       }
@@ -2866,6 +3056,9 @@ function bindGrid() {
       const spec = gesture.spec;
       gesture.element.classList.remove('pending');
       runPress(gesture.element, spec);
+    } else if (gesture.kind === 'dyn' && !gesture.fired) {
+      gesture.element.classList.remove('pending');
+      runDynTile(gesture.element);
     } else if (gesture.kind === 'swipe' && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
       stepPage(dx < 0 ? 1 : -1);
     }

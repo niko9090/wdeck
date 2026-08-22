@@ -25,6 +25,7 @@ import { createStatusTracker } from './status.mjs';
 import { createAuth } from './security/auth.mjs';
 import { createRateLimits } from './security/ratelimit.mjs';
 import { createIconStore } from './icons.mjs';
+import { ensureScriptsDir } from './scripts.mjs';
 import { loadTlsOptions } from './security/tls.mjs';
 import { createMdnsResponder } from './discovery.mjs';
 import { createAuditLog, pressEntry } from './audit.mjs';
@@ -128,6 +129,9 @@ export function createHost(options = {}) {
 
   const state = createState(deck);
   const baseDir = path.dirname(configFile);
+  // Cartella degli script suggeriti (baseDir/scripts): creata subito cosi'
+  // l'utente la trova pronta dove lasciare i suoi .ps1/.bat/.exe.
+  ensureScriptsDir(baseDir);
 
   /**
    * Scrive su deck.json una modifica del blocco sicurezza.
@@ -545,6 +549,7 @@ export function createHost(options = {}) {
           token: auth.token,
           version: host.version,
           deckName: configStore.get().name,
+          scriptsDir: path.join(baseDir, 'scripts'),
           logger
         });
       }

@@ -12,6 +12,8 @@ import {
   MAX_ICONS as MAX_ICON_COUNT,
   MAX_ICON_BYTES as MAX_ICON_BYTES_PER_FILE
 } from '../icons.mjs';
+import { listScripts } from '../scripts.mjs';
+import { listWindows, focusWindowByHandle, listStartMenuApps, launchStartMenuApp, readSystemInfo } from '../platform/desktop.mjs';
 
 const MAX_BODY = 64 * 1024;
 
@@ -401,6 +403,82 @@ export function createApiRouter(host) {
         sendJson(res, 200, { ok: true, icon: saved });
       } catch (err) {
         sendError(res, 400, ERROR_CODES.badRequest, err.message);
+      }
+    },
+
+    // Script che l'utente ha aggiunto nella cartella "scripts" (dal menu tray):
+    // l'editor li propone come suggerimenti per le azioni "avvia"/"script".
+    [`GET ${ENDPOINTS.scripts}`]: (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const scripts = listScripts(host.baseDir).map((s) => ({ name: s.name, path: s.file, ext: s.ext }));
+      sendJson(res, 200, { ok: true, scripts });
+    },
+
+    // Finestre aperte sul PC: la "pagina Finestre" le mostra come tile e un tocco
+    // porta davanti quella scelta. Solo Windows; altrove elenco vuoto.
+    [`GET ${ENDPOINTS.windows}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      try {
+        const windows = await listWindows();
+        sendJson(res, 200, { ok: true, windows, platform: process.platform });
+      } catch (err) {
+        sendError(res, 500, ERROR_CODES.internal, err.message);
+      }
+    },
+
+    // Porta in primo piano la finestra scelta nella "pagina Finestre".
+    [`POST ${ENDPOINTS.windows}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      if (!allow(res, host.limits.checkPress({ address: addressOf(req) }), 'comandi')) return;
+      const body = await readJsonBody(req);
+      const handle = body?.handle;
+      if (handle === undefined || handle === null || `${handle}` === '') {
+        sendError(res, 400, ERROR_CODES.badRequest, 'campo "handle" mancante');
+        return;
+      }
+      try {
+        const ok = await focusWindowByHandle(handle);
+        sendJson(res, ok ? 200 : 500, { ok });
+      } catch (err) {
+        sendError(res, 500, ERROR_CODES.internal, err.message);
+      }
+    },
+
+    // App installate (scorciatoie del menu Start): la "pagina App" le lancia.
+    [`GET ${ENDPOINTS.apps}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      try {
+        const apps = await listStartMenuApps();
+        sendJson(res, 200, { ok: true, apps, platform: process.platform });
+      } catch (err) {
+        sendError(res, 500, ERROR_CODES.internal, err.message);
+      }
+    },
+
+    // Lancia una app scelta nella "pagina App" (una scorciatoia del menu Start).
+    [`POST ${ENDPOINTS.apps}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      if (!allow(res, host.limits.checkPress({ address: addressOf(req) }), 'comandi')) return;
+      const body = await readJsonBody(req);
+      if (!body?.path || typeof body.path !== 'string') {
+        sendError(res, 400, ERROR_CODES.badRequest, 'campo "path" mancante');
+        return;
+      }
+      try {
+        const ok = await launchStartMenuApp(body.path);
+        sendJson(res, ok ? 200 : 500, { ok });
+      } catch (err) {
+        sendError(res, 400, ERROR_CODES.badRequest, err.message);
+      }
+    },
+
+    // Stato del PC per i widget (CPU, memoria, host, ora): letto dal sistema.
+    [`GET ${ENDPOINTS.sysinfo}`]: async (req, res) => {
+      if (!requireAuth(req, res)) return;
+      try {
+        sendJson(res, 200, { ok: true, info: await readSystemInfo() });
+      } catch (err) {
+        sendError(res, 500, ERROR_CODES.internal, err.message);
       }
     },
 

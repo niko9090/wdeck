@@ -57,6 +57,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
 /** Tipi di controllo che un elemento della griglia puo' assumere. */
 export const CONTROL_KINDS = ['button', 'slider'];
 
+/** Sorgenti delle pagine dinamiche: i tile arrivano dall'host, non da `buttons`. */
+export const PAGE_SOURCES = ['windows', 'apps', 'widgets'];
+
 class Ctx {
   constructor() {
     this.errors = [];
@@ -548,6 +551,11 @@ export function validateDeck(raw, options = {}) {
         }
         checkString(ctx, `${gpath}.id`, page.id, { required: true, pattern: SLUG_RE, label: 'slug minuscolo' });
         checkString(ctx, `${gpath}.name`, page.name, { max: 64 });
+        // Una pagina "dinamica" (finestre/app/widget) prende i suoi tile dall'host
+        // invece che da `buttons`; il campo e' opzionale e assente = pagina normale.
+        if (page.source !== undefined && !PAGE_SOURCES.includes(page.source)) {
+          ctx.err(`${gpath}.source`, `valore ammesso: ${PAGE_SOURCES.join(' | ')}`);
+        }
         checkInt(ctx, `${gpath}.rows`, page.rows, { required: true, min: 1, max: LIMITS.maxRows });
         checkInt(ctx, `${gpath}.cols`, page.cols, { required: true, min: 1, max: LIMITS.maxCols });
         if (typeof page.id === 'string') {
@@ -609,6 +617,7 @@ export function normalizeDeck(raw) {
       name: page.name ?? page.id,
       rows: page.rows,
       cols: page.cols,
+      source: page.source ?? null,
       groups: (page.groups ?? []).map((group) => ({
         id: group.id,
         label: group.label,

@@ -550,6 +550,52 @@ perche' un tag `<img>` non puo' portare header. Servito con
 `X-Content-Type-Options: nosniff` e una `Content-Security-Policy` restrittiva:
 difesa in profondita' sugli SVG, che sono gia' ripuliti al caricamento.
 
+### `GET /api/scripts`
+
+Elenco degli script che l'utente ha aggiunto nella cartella `scripts/` (accanto a
+`deck.json`), dal menu della tray. L'editor li propone come suggerimenti per le
+azioni `launch`/`script`. I file di quella cartella sono autorizzati d'ufficio
+dalla whitelist (estensioni ammesse: `.ps1 .bat .cmd .exe .lnk .vbs .py`).
+
+```json
+{ "ok": true, "scripts": [{ "name": "backup.ps1", "path": "C:\\...\\scripts\\backup.ps1", "ext": ".ps1" }] }
+```
+
+### `GET /api/windows`
+
+Finestre aperte sul PC (solo Windows): la "pagina Finestre" le mostra come tile.
+
+```json
+{ "ok": true, "platform": "win32", "windows": [{ "handle": "12345", "title": "Blocco note", "process": "notepad" }] }
+```
+
+### `POST /api/windows`
+
+Porta in primo piano la finestra indicata (`{ "handle": "12345" }`), scelta fra
+quelle elencate da `GET /api/windows`.
+
+### `GET /api/apps`
+
+App installate, ricavate dalle scorciatoie del menu Start (solo Windows): la
+"pagina App" le lancia.
+
+```json
+{ "ok": true, "platform": "win32", "apps": [{ "name": "Blocco note", "path": "C:\\...\\Notepad.lnk" }] }
+```
+
+### `POST /api/apps`
+
+Avvia una app (`{ "path": "C:\\...\\Notepad.lnk" }`), accettando solo una
+scorciatoia che sta davvero sotto una cartella del menu Start.
+
+### `GET /api/sysinfo`
+
+Stato del PC per i widget: host, CPU%, memoria, uptime, numero di core.
+
+```json
+{ "ok": true, "info": { "host": "PC", "cpu": 12, "mem": { "usedMb": 8000, "totalMb": 16000, "percent": 50 }, "uptimeSec": 3600, "cores": 8 } }
+```
+
 ### `GET /api/update`
 
 Stato del controllo aggiornamenti. Con `?check=1` interroga subito le release

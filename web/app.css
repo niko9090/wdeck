@@ -376,6 +376,48 @@ body {
   pointer-events: none;
 }
 
+/* ---------------- pagine dinamiche (finestre/app/widget) ----------------
+   I tile arrivano dall'host e sono di numero variabile: la griglia va a
+   riempimento automatico invece che a righe/colonne fisse. */
+.grid.dynamic {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+  grid-template-rows: none !important;
+  grid-auto-rows: minmax(84px, auto);
+  align-content: start;
+  overflow-y: auto;
+}
+.dyn-tile, .widget-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  padding: 10px 8px;
+  overflow: hidden;
+}
+.dyn-tile .dyn-ico, .widget-tile .dyn-ico { font-size: clamp(20px, 5vmin, 30px); line-height: 1; }
+.dyn-tile .label {
+  font-size: 13px; line-height: 1.2;
+  max-width: 100%;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dyn-sub {
+  font-size: 11px; color: var(--text-dim);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dyn-tile.active { transform: scale(0.94); }
+.widget-tile { cursor: default; }
+.widget-tile .widget-big { font-size: clamp(18px, 5vmin, 28px); font-weight: 700; }
+.dyn-msg {
+  grid-column: 1 / -1;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.grid.dynamic.dyn-error .dyn-msg { color: var(--err); }
+
 /* ---------------- modalita' modifica ---------------- */
 
 .grid.editing .deck-btn.empty {

@@ -11,6 +11,20 @@ import path from 'node:path';
 
 const CASE_INSENSITIVE = process.platform === 'win32';
 
+// Estensioni ammesse per i file nella cartella "scripts" di Wdeck: quella
+// cartella e' popolata dall'utente (dal menu vicino all'orologio) apposta per
+// essere eseguita, quindi i suoi file sono autorizzati senza doverli elencare
+// a mano in allowExec. Resta un insieme ristretto e sensato.
+const SCRIPT_DIR_EXTS = new Set(['.ps1', '.bat', '.cmd', '.exe', '.lnk', '.vbs', '.py']);
+
+/** True se `resolved` sta dentro la cartella `scriptsDir`. */
+function isInside(resolved, scriptsDir) {
+  if (!scriptsDir) return false;
+  const a = normalizeForCompare(resolved);
+  const b = normalizeForCompare(scriptsDir).replace(/\/$/, '');
+  return a === b || a.startsWith(`${b}/`);
+}
+
 /** Normalizza un percorso per il confronto (separatori e maiuscole). */
 export function normalizeForCompare(p) {
   const normalized = path.normalize(p).replace(/\\/g, '/');
@@ -64,6 +78,16 @@ export function checkExecutable(target, policy = {}) {
   const resolved = path.isAbsolute(target) ? path.normalize(target) : path.resolve(baseDir, target);
 
   const ext = path.extname(resolved).toLowerCase();
+
+  // I file nella cartella "scripts" di Wdeck (baseDir/scripts) sono autorizzati
+  // d'ufficio: e' la cartella che l'utente riempie apposta dal menu tray perche'
+  // vengano suggeriti ed eseguiti. Resta il filtro sulle estensioni sensate.
+  const scriptsDir = policy.scriptsDir ?? path.join(baseDir, 'scripts');
+  if (isInside(resolved, scriptsDir)) {
+    if (SCRIPT_DIR_EXTS.has(ext)) return { allowed: true, resolved };
+    return { allowed: false, reason: `estensione "${ext || '(nessuna)'}" non ammessa per gli script`, resolved };
+  }
+
   if (allowedExtensions.length > 0) {
     const allowedExt = allowedExtensions.map((e) => e.toLowerCase());
     if (!allowedExt.includes(ext)) {

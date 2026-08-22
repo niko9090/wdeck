@@ -3,6 +3,31 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.9.0] - 2026-08-22
+
+### Aggiunto
+
+- **Pagine dinamiche.** Una pagina può ora essere di un "tipo" che si riempie da
+  solo (dal menu della pagina → "Tipo di pagina"):
+  - **Finestre aperte** — mostra le finestre del PC come tile; toccane una per
+    portarla in primo piano (un task-switcher dal telefono/tablet). Si aggiorna
+    da sola.
+  - **App installate** — le scorciatoie del menu Start come tile; toccane una per
+    avviarla.
+  - **Widget** — orologio dal vivo e stato del PC (CPU, memoria, tempo di
+    accensione).
+- **Script dal menu vicino all'orologio.** Dalla tray "Aggiungi uno script…"
+  copia un tuo `.ps1/.bat/.exe…` nella cartella di Wdeck; da lì l'host lo propone
+  come **suggerimento** nell'editor (azioni Avvia/Script) da applicare a un
+  pulsante o a uno slider. C'è anche "Apri la cartella degli script". I file di
+  quella cartella sono autorizzati automaticamente, senza doverli aggiungere alla
+  whitelist a mano.
+
+### Note
+
+- Le pagine dinamiche (finestre/app) funzionano quando l'host gira su Windows;
+  altrove la pagina resta vuota con un avviso.
+
 ## [0.8.21] - 2026-08-22
 
 ### Aggiunto

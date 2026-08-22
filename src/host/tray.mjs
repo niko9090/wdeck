@@ -19,10 +19,10 @@ import { powershellPath, isWindows } from './platform/windows.mjs';
 /**
  * Genera lo script PowerShell della tray.
  *
- * @param {{url: string, urls: string[], token: string, pid: number, version: string, deckName: string}} spec
+ * @param {{url: string, urls: string[], token: string, pid: number, version: string, deckName: string, scriptsDir?: string}} spec
  * @returns {string}
  */
-export function buildTrayScript({ url, urls = [], token, pid, version, deckName }) {
+export function buildTrayScript({ url, urls = [], token, pid, version, deckName, scriptsDir = '' }) {
   const b64 = (value) => Buffer.from(String(value), 'utf8').toString('base64');
   const decode = (name, value) => `$${name} = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64(value)}'))`;
 
@@ -45,6 +45,7 @@ ${decode('url', url)}
 ${decode('token', token)}
 ${decode('deckName', deckName)}
 ${decode('urlList', urls.join("\n"))}
+${decode('scriptsDir', scriptsDir)}
 $hostPid = ${Number(pid)}
 $version = '${String(version).replace(/'/g, "''")}'
 
@@ -108,6 +109,40 @@ Add-Item 'Ricarica deck.json' {
   }
   $icon.ShowBalloonTip(4000)
 } | Out-Null
+
+# Aggiunge uno script alla cartella "scripts" di Wdeck: da li' l'host lo propone
+# come suggerimento nell'editor, per un pulsante o uno slider.
+Add-Item 'Aggiungi uno script...' {
+  $dlg = New-Object System.Windows.Forms.OpenFileDialog
+  $dlg.Title = 'Scegli uno script o programma da aggiungere a Wdeck'
+  $dlg.Filter = 'Script e programmi (*.ps1;*.bat;*.cmd;*.exe;*.lnk;*.vbs;*.py)|*.ps1;*.bat;*.cmd;*.exe;*.lnk;*.vbs;*.py|Tutti i file (*.*)|*.*'
+  if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    try {
+      if (-not (Test-Path $scriptsDir)) { New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null }
+      $nome = [System.IO.Path]::GetFileName($dlg.FileName)
+      Copy-Item -LiteralPath $dlg.FileName -Destination (Join-Path $scriptsDir $nome) -Force
+      $icon.BalloonTipTitle = 'Script aggiunto'
+      $icon.BalloonTipText = "Ora ""$nome"" e' tra i suggerimenti nell'editor (azione Avvia/Script)."
+    } catch {
+      $icon.BalloonTipTitle = 'Aggiunta non riuscita'
+      $icon.BalloonTipText = $_.Exception.Message
+    }
+    $icon.ShowBalloonTip(4000)
+  }
+} | Out-Null
+
+Add-Item 'Apri la cartella degli script' {
+  try {
+    if (-not (Test-Path $scriptsDir)) { New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null }
+    Start-Process explorer.exe $scriptsDir
+  } catch {
+    $icon.BalloonTipTitle = 'Apertura non riuscita'
+    $icon.BalloonTipText = $_.Exception.Message
+    $icon.ShowBalloonTip(4000)
+  }
+} | Out-Null
+
+[void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 
 Add-Item 'Controlla aggiornamenti' {
   # Esito mostrato con una finestra (MessageBox) e non con un fumetto: i fumetti
@@ -183,10 +218,10 @@ $icon.Dispose()
 /**
  * Avvia l'icona nell'area di notifica.
  *
- * @param {{url: string, urls?: string[], token: string, version: string, deckName: string, logger?: object}} spec
+ * @param {{url: string, urls?: string[], token: string, version: string, deckName: string, scriptsDir?: string, logger?: object}} spec
  * @returns {{stop: () => void, pid: number|null, scriptFile: string|null}}
  */
-export function startTray({ url, urls = [], token, version, deckName, logger = console }) {
+export function startTray({ url, urls = [], token, version, deckName, scriptsDir = '', logger = console }) {
   const inactive = { stop() {}, pid: null, scriptFile: null };
   if (!isWindows()) {
     logger.debug?.('[wdeck] icona nella barra disponibile solo su Windows');
@@ -197,7 +232,7 @@ export function startTray({ url, urls = [], token, version, deckName, logger = c
   try {
     fs.writeFileSync(
       scriptFile,
-      buildTrayScript({ url, urls, token, pid: process.pid, version, deckName }),
+      buildTrayScript({ url, urls, token, pid: process.pid, version, deckName, scriptsDir }),
       'utf8'
     );
   } catch (err) {

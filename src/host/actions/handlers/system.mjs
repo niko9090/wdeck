@@ -32,7 +32,8 @@ export const launchAction = {
       key: 'path',
       label: 'Eseguibile',
       type: 'text',
-      help: 'percorso eseguibile (deve essere in allowExec)',
+      suggest: 'scripts',
+      help: 'percorso eseguibile (deve essere in allowExec) o uno script aggiunto dal tray',
       placeholder: 'C:\\Windows\\notepad.exe',
       required: true
     },
@@ -149,7 +150,8 @@ export const scriptAction = {
       key: 'path',
       label: 'Script',
       type: 'text',
-      help: 'percorso dello script .ps1/.bat/.cmd/.py/.mjs (deve essere in allowExec)',
+      suggest: 'scripts',
+      help: 'percorso dello script .ps1/.bat/.cmd/.py/.mjs (o uno aggiunto dal tray)',
       required: true
     },
     {

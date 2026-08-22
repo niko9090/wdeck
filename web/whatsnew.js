@@ -8,6 +8,10 @@
  */
 
 export const WHATSNEW = {
+  '0.9.0': [
+    'Nuovo: pagine dinamiche. Dal menu della pagina scegli "Tipo di pagina" per avere una pagina "Finestre aperte" (task switcher: tocca per portare davanti), "App installate" (tocca per avviare) o "Widget" (orologio e stato del PC).',
+    'Nuovo: dal menu vicino all\'orologio puoi aggiungere tuoi script (.ps1/.bat/.exe…); poi te li ritrovi tra i suggerimenti nell\'editor, da mettere su un pulsante o uno slider.'
+  ],
   '0.8.21': [
     'Nuovo: gruppi di tasti con nome e colore. Raggruppa i comandi simili per riconoscerli a colpo d\'occhio — crei i gruppi dalla pagina (tocca il nome della pagina in alto) e assegni i tasti dall\'editor del tasto.'
   ],
