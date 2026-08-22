@@ -8,6 +8,13 @@
  */
 
 export const WHATSNEW = {
+  '0.8.20': [
+    'Su schermo touch ora puoi scorrere il dito in orizzontale per cambiare pagina, anche passando sopra i pulsanti (come sfogliare).',
+    'In alto, accanto al nome del deck, vedi la versione di Wdeck in esecuzione.',
+    'In modifica puoi riordinare i pulsanti anche su una pagina piena: trascinane uno sopra un altro e si scambiano di posto.',
+    'Eliminare un pulsante è più chiaro: in modifica ogni tile ha una "×" in alto a destra (con conferma), separata dalla modifica dell\'azione.',
+    'Impostare una scorciatoia da tastiera è più facile: tieni premuta tutta la combinazione (es. Ctrl+Shift+S) e viene registrata quando lasci i tasti, senza più fermarsi al primo.'
+  ],
   '0.8.19': [
     'Le finestre dei programmi avviati vengono portate davanti in modo più deciso (minimizza-e-ripristina), anche premendo dal telefono o via Desktop Remoto. Può esserci un breve sfarfallio.'
   ],

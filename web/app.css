@@ -77,6 +77,14 @@ body {
 
 .field input:focus { border-color: var(--accent); }
 
+/* campo hotkey in ascolto: si vede che sta "registrando" la combinazione */
+.field input[data-recording] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  caret-color: transparent;
+}
+.field input[data-recording]::placeholder { color: var(--accent); }
+
 .btn {
   width: 100%;
   padding: 12px 16px;
@@ -152,6 +160,14 @@ body {
 
 .topbar-left, .topbar-right { display: flex; align-items: center; gap: 8px; }
 .topbar strong { font-size: 15px; }
+
+.app-version {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  opacity: 0.85;
+  letter-spacing: 0.3px;
+}
 
 .dot {
   width: 10px; height: 10px; border-radius: 50%;
@@ -343,6 +359,32 @@ body {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
+
+/* la cella (vuota o gia' occupata da un tile) su cui si sta per rilasciare:
+   con uno scambio il tile evidenziato prendera' il posto di quello trascinato */
+.grid.editing .deck-btn:not(.empty).drop-target,
+.grid.editing .deck-slider.drop-target {
+  outline-color: var(--accent);
+  outline-style: solid;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* "x" di eliminazione su ogni tile in modifica */
+.grid.editing .tile-remove {
+  position: absolute;
+  top: 2px; right: 4px;
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--err);
+  color: #fff;
+  font-size: 12px; font-weight: 800; line-height: 1;
+  cursor: pointer;
+  z-index: 3;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.grid.editing .tile-remove:hover { filter: brightness(1.1); }
+/* la "x" compare solo in modifica: fuori da .grid.editing non e' resa */
 
 /* scheda "+" e matita sulle schede pagina, solo in modifica */
 .page-tab .page-edit {

@@ -3,6 +3,38 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.8.20] - 2026-08-22
+
+### Aggiunto
+
+- **Swipe fra le pagine sugli schermi touch.** Scorrendo il dito in orizzontale
+  (anche sopra i pulsanti) si passa alla pagina successiva o precedente, come
+  sfogliare. Per permetterlo, i pulsanti senza azione di "tieni premuto" ora
+  scattano al rilascio del dito invece che alla pressione: il pulsante si
+  "abbassa" comunque subito, quindi la reattività resta buona.
+- **Versione in esecuzione mostrata nella barra in alto**, accanto al nome del
+  deck, così si sa sempre quale versione di Wdeck sta girando sull'host.
+- **Eliminare un tile ha ora un comando suo:** in modifica, ogni pulsante mostra
+  una "×" in alto a destra che lo elimina (con conferma). Aggiungere resta il "+"
+  sulle caselle vuote. Aggiungere ed eliminare sono così separati dalla modifica
+  dell'azione.
+
+### Corretto
+
+- **Ora si possono riordinare i pulsanti anche su una pagina piena.** Trascinando
+  un tile sopra un altro i due si scambiano di posto (prima si poteva spostare
+  solo verso le caselle vuote, quindi su una pagina piena sembrava non funzionare
+  nulla).
+- **Tolta l'eliminazione dall'editor del tile:** la finestra di modifica ora
+  riguarda solo cosa fa il pulsante; per eliminarlo si usa la "×" sul tile.
+- **La cattura delle scorciatoie ora aspetta l'intera combinazione.** Prima
+  registrava al primo tasto premuto, quindi combinazioni come `ctrl+shift+s`
+  venivano troncate. Ora si tiene premuta tutta la combinazione: il campo mostra
+  dal vivo cosa stai componendo e registra il risultato quando lasci i tasti.
+- **Il banner "nuova versione" sparisce in modo più affidabile dopo
+  l'aggiornamento.** Il controllo che lo azzera al riconnettersi ora parte sempre
+  quando la versione dell'host è cambiata, anche se la pagina non si ricarica.
+
 ## [0.8.19] - 2026-08-22
 
 ### Migliorato

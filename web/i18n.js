@@ -130,6 +130,10 @@ const DICTIONARIES = {
     'edit.saved': '"{label}" salvato',
     'edit.removed': 'controllo eliminato',
     'edit.moved': 'controllo spostato',
+    'edit.remove': 'Elimina',
+    'edit.hotkeyRecording': 'premi la combinazione…',
+    'edit.removeTitle': 'Eliminare il tile?',
+    'edit.removeBody': 'Vuoi eliminare "{label}"? L\'azione non si puo\' annullare.',
     'edit.rejected': 'salvataggio rifiutato',
     'edit.vanished': 'Questo controllo non esiste piu\': ricarica il deck.',
 
@@ -369,6 +373,10 @@ const DICTIONARIES = {
     'edit.saved': '"{label}" saved',
     'edit.removed': 'control deleted',
     'edit.moved': 'control moved',
+    'edit.remove': 'Delete',
+    'edit.hotkeyRecording': 'press the combination…',
+    'edit.removeTitle': 'Delete this tile?',
+    'edit.removeBody': 'Delete "{label}"? This cannot be undone.',
     'edit.rejected': 'save refused',
     'edit.vanished': 'This control no longer exists: reload the deck.',
 

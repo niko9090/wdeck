@@ -36,6 +36,7 @@ const ui = {
   gateError: el('gate-error'),
   app: el('app'),
   deckName: el('deck-name'),
+  version: el('app-version'),
   dot: el('status-dot'),
   dryBadge: el('dry-badge'),
   update: el('btn-update'),
@@ -84,6 +85,8 @@ const state = {
   /** cursore attualmente sotto il dito: non va riallineato dall'host */
   draggingId: null,
   update: null,
+  /** versione dell'host in esecuzione, mostrata nella barra in alto */
+  version: null,
   /** true finche' ha senso ritentare la connessione (falso dopo un token scaduto) */
   shouldReconnect: true,
   /** timer del prossimo tentativo di riconnessione, cancellabile */
@@ -681,11 +684,12 @@ function buttonHtml(button) {
     fg ? `color:${fg}` : '',
     button.span > 1 ? `grid-column:span ${Number(button.span) || 1}` : ''
   ].filter(Boolean).join(';');
-  return `<button class="deck-btn" type="button" data-id="${escapeHtml(button.id)}" style="${style}" title="${escapeHtml(button.label || button.id)}">`
+  return `<button class="deck-btn" type="button" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}" style="${style}" title="${escapeHtml(button.label || button.id)}">`
     + `<span class="type-tag">${escapeHtml(button.action?.type)}</span>`
     + controlIcon(button)
     + (state.deck.ui?.showLabels === false ? '' : `<span class="label">${escapeHtml(button.label)}</span>`)
     + (button.confirm ? '<span class="confirm-tag" title="chiede conferma">!</span>' : '')
+    + removeBadge()
     + '</button>';
 }
 
@@ -699,14 +703,25 @@ function sliderHtml(button) {
     accent ? `--slider-accent:${accent}` : '',
     `grid-column:span ${Number(button.span) || 2}`
   ].filter(Boolean).join(';');
-  return `<div class="deck-slider" data-id="${escapeHtml(button.id)}" data-min="${min}" data-max="${max}" data-step="${button.step ?? 1}" style="${style}"`
+  return `<div class="deck-slider" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}" data-min="${min}" data-max="${max}" data-step="${button.step ?? 1}" style="${style}"`
     + ` role="slider" tabindex="0" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}" aria-label="${escapeHtml(button.label || button.id)}">`
     + `<div class="slider-fill" style="width:${percent}%"></div>`
     + '<div class="slider-content">'
     + controlIcon(button)
     + `<span class="slider-label">${escapeHtml(button.label)}</span>`
     + `<span class="slider-value">${value}</span>`
-    + '</div></div>';
+    + '</div>'
+    + removeBadge()
+    + '</div>';
+}
+
+/**
+ * "x" di eliminazione mostrata su ogni tile in modalita' modifica: dà a
+ * aggiungere/eliminare un comando proprio, separato dall'editor dell'azione.
+ */
+function removeBadge() {
+  if (!state.editing) return '';
+  return `<span class="tile-remove" data-remove="1" title="${t('edit.remove')}" aria-label="${t('edit.remove')}">&#10005;</span>`;
 }
 
 function renderStatus() {
@@ -719,6 +734,14 @@ function renderStatus() {
   ];
   ui.statusText.textContent = parts.join(' - ');
   if (state.hostState.lastAction) renderLastAction(state.hostState.lastAction);
+}
+
+/** Mostra nella barra in alto la versione dell'host attualmente in esecuzione. */
+function renderVersion() {
+  const v = state.version || state.update?.current || '';
+  if (!ui.version) return;
+  ui.version.textContent = v ? `v${v}` : '';
+  ui.version.hidden = !v;
 }
 
 /**
@@ -1125,24 +1148,66 @@ function dynamicFieldOptions(type) {
   return (prof?.pages ?? []).map((pg) => ({ value: pg.id, label: pg.name || pg.id }));
 }
 
+const HOTKEY_MODS = { Control: 'ctrl', Shift: 'shift', Alt: 'alt', Meta: 'win' };
+const HOTKEY_MOD_ORDER = ['ctrl', 'shift', 'alt', 'win'];
+
 /**
- * Cattura una combinazione di tasti in un campo "hotkey": premendo
- * ctrl+shift+k il campo si riempie da solo con "ctrl+shift+k", senza doverla
- * scrivere a mano. I soli modificatori si ignorano finche' non arriva un tasto.
+ * Cattura una combinazione di tasti in un campo "hotkey" ASPETTANDO il rilascio.
+ *
+ * Il problema di prima: si registrava al primo tasto NON modificatore premuto,
+ * quindi una combinazione premuta anche solo di poco scaglionata (o la lettera
+ * un istante prima dei modificatori) veniva troncata al primo tasto. Ora si
+ * tiene premuta tutta la combinazione: il campo mostra dal vivo cosa si sta
+ * componendo e registra il combo PIU' COMPLETO quando si lasciano i tasti.
  */
-function captureHotkey(event, input, setParam) {
-  const key = event.key.toLowerCase();
-  if (['control', 'shift', 'alt', 'meta'].includes(key)) return;
-  event.preventDefault();
-  const mods = [];
-  if (event.ctrlKey) mods.push('ctrl');
-  if (event.shiftKey) mods.push('shift');
-  if (event.altKey) mods.push('alt');
-  if (event.metaKey) mods.push('win');
-  const nome = key === ' ' ? 'space' : key;
-  const combo = [...mods, nome].join('+');
-  input.value = combo;
-  setParam(combo);
+function bindHotkeyCapture(input, setParam) {
+  const down = new Set(); // tasti attualmente premuti (modificatori + tasto)
+  let best = ''; // combo con piu' tasti visto durante questa pressione
+  let recording = false;
+
+  const nameOf = (event) => {
+    if (event.key in HOTKEY_MODS) return HOTKEY_MODS[event.key];
+    return event.key === ' ' ? 'space' : event.key.toLowerCase();
+  };
+  const isMod = (n) => HOTKEY_MOD_ORDER.includes(n);
+  // Compone "ctrl+shift+s" dai tasti premuti; serve un tasto non modificatore.
+  const compose = () => {
+    const mods = HOTKEY_MOD_ORDER.filter((m) => down.has(m));
+    const main = [...down].find((n) => !isMod(n));
+    return main ? { combo: [...mods, main].join('+'), full: true } : { combo: mods.join('+'), full: false };
+  };
+
+  const savedPlaceholder = input.placeholder;
+  input.addEventListener('focus', () => {
+    recording = true; down.clear(); best = '';
+    input.dataset.recording = '1';
+    input.value = '';
+    input.placeholder = t('edit.hotkeyRecording');
+  });
+  input.addEventListener('blur', () => {
+    recording = false; delete input.dataset.recording;
+    input.placeholder = savedPlaceholder;
+    input.value = best || input.value; // se non ha completato, tiene il valore vecchio
+  });
+  input.addEventListener('keydown', (event) => {
+    if (!recording) return;
+    event.preventDefault();
+    down.add(nameOf(event));
+    const { combo, full } = compose();
+    // "best" = combo con almeno un tasto vero e piu' tasti di quello precedente,
+    // cosi' rilasci scaglionati non lo accorciano.
+    if (full && combo.split('+').length >= (best ? best.split('+').length : 0)) best = combo;
+    input.value = combo; // anteprima dal vivo
+  });
+  input.addEventListener('keyup', (event) => {
+    if (!recording) return;
+    event.preventDefault();
+    down.delete(nameOf(event));
+    if (down.size === 0 && best) { // tutto rilasciato: registra il combo completo
+      setParam(best);
+      input.value = best;
+    }
+  });
 }
 
 /**
@@ -1222,8 +1287,8 @@ function buildFieldControl(field, params, onSync) {
       input.type = 'text';
       input.placeholder = field.placeholder ?? 'es. ctrl+shift+m';
       input.value = current ?? '';
-      input.addEventListener('input', () => setParam(input.value));
-      input.addEventListener('keydown', (event) => captureHotkey(event, input, setParam));
+      input.readOnly = true; // si compila premendo i tasti, non digitando
+      bindHotkeyCapture(input, setParam);
       break;
     default:
       input = document.createElement('input');
@@ -1442,8 +1507,9 @@ async function editButton(buttonId, cell, seed = null) {
       <label class="field checkbox"><input id="ed-confirm" type="checkbox"${draft.confirm ? ' checked' : ''} /><span>${t('edit.confirm')}</span></label>
       <label class="field checkbox"><input id="ed-status" type="checkbox"${draft.status === false ? '' : ' checked'} /><span>${t('edit.showStatus')}</span></label>
     `,
+    // L'eliminazione NON sta piu' qui: si fa dalla "x" sul tile in modifica,
+    // cosi' l'editor riguarda solo cosa fa il pulsante, non la sua esistenza.
     actions: [
-      ...(existing ? [{ label: t('sheet.delete'), kind: 'danger', onClick: () => removeButton(existing.id) }] : []),
       { label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() },
       { label: t('sheet.save'), kind: 'primary', onClick: () => saveButtonDraft(draft, existing) }
     ]
@@ -1606,12 +1672,26 @@ async function removeButton(buttonId) {
   await persistDeck(deck, t('edit.removed'));
 }
 
+/** Chiede conferma prima di eliminare un tile dalla "x" in modifica. */
+function confirmRemoveTile(buttonId) {
+  const button = currentPage()?.buttons.find((b) => b.id === buttonId);
+  if (!button) return;
+  openSheet({
+    title: t('edit.removeTitle'),
+    body: `<p class="sheet-text">${t('edit.removeBody', { label: escapeHtml(button.label || button.id) })}</p>`,
+    actions: [
+      { label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() },
+      { label: t('sheet.delete'), kind: 'danger', onClick: () => { closeSheet(); removeButton(buttonId); } }
+    ]
+  });
+}
+
 /**
  * Sposta un controllo in un'altra cella della stessa pagina.
  *
- * Non si controlla qui se la cella e' libera: la sovrapposizione la rileva
- * l'host, che e' l'unico a vedere la configurazione intera, e la risposta
- * arriva come messaggio di errore.
+ * Se la cella di arrivo e' occupata da un altro tile i due si SCAMBIANO di
+ * posto: cosi' si puo' riordinare anche una pagina piena, non solo trascinare
+ * verso le caselle vuote (era la causa del "non riesco a spostare i pulsanti").
  * @param {string} buttonId
  * @param {{row: number, col: number}} target
  */
@@ -1621,6 +1701,20 @@ async function moveButton(buttonId, target) {
   const button = page.buttons.find((b) => b.id === buttonId);
   if (!button) return false;
   if (button.row === target.row && button.col === target.col) return false;
+
+  // Chi occupa la cella di arrivo (tenendo conto della larghezza/span).
+  const occupant = page.buttons.find((b) => {
+    if (b.id === button.id) return false;
+    if (b.row !== target.row) return false;
+    const span = Number(b.span) || 1;
+    return target.col >= b.col && target.col < b.col + span;
+  });
+
+  if (occupant) {
+    // Scambio: l'altro tile prende la vecchia posizione di questo.
+    occupant.row = button.row;
+    occupant.col = button.col;
+  }
   button.row = target.row;
   button.col = target.col;
   return persistDeck(deck, t('edit.moved'), { quiet: true });
@@ -2105,8 +2199,20 @@ async function checkClientFreshness() {
     if (!res.ok || !res.data?.buildId) return;
     hostBuild = res.data.buildId;
     hostVersion = res.data.version;
+    if (hostVersion) { state.version = hostVersion; renderVersion(); }
   } catch {
     return; // host non raggiungibile: si riprovera' al prossimo collegamento
+  }
+
+  // Se l'host ha una versione diversa da quella su cui si basa il banner, ci
+  // siamo appena aggiornati: il banner mostrerebbe ancora "disponibile" perche'
+  // il controllo automatico e' limitato a uno ogni 10 minuti. Un controllo
+  // fresco (togliendo il freno) lo azzera se ora siamo all'ultima versione.
+  // Va fatto SEMPRE (anche prima dell'eventuale auto-guarigione della cache):
+  // se la ricarica non parte, e' l'unico modo di aggiornare il banner.
+  if (hostVersion && state.update && state.update.current && state.update.current !== hostVersion) {
+    lastAutoCheck = 0;
+    checkUpdate({ quiet: true });
   }
 
   if (hostBuild === mine) {
@@ -2114,14 +2220,6 @@ async function checkClientFreshness() {
     // Client allineato all'host: e' il momento buono per raccontare le novita'
     // se veniamo da un aggiornamento (versione cambiata da quella vista prima).
     maybeWhatsNew(hostVersion);
-    // Se l'host ha una versione diversa da quella su cui si basa il banner, ci
-    // siamo appena aggiornati: il banner mostrerebbe ancora "disponibile" perche'
-    // il controllo automatico e' limitato a uno ogni 10 minuti. Un controllo
-    // fresco (togliendo il freno) lo azzera se ora siamo all'ultima versione.
-    if (hostVersion && state.update && state.update.current !== hostVersion) {
-      lastAutoCheck = 0;
-      checkUpdate({ quiet: true });
-    }
     return;
   }
 
@@ -2327,6 +2425,7 @@ function renderUpdateProgress({ phase, done, total } = {}) {
 
 function showUpdate(status) {
   state.update = status;
+  if (status?.current && !state.version) { state.version = status.current; renderVersion(); }
   ui.update.hidden = !status?.available;
   if (status?.available) {
     ui.update.textContent = `v${status.latest.version}`;
@@ -2538,12 +2637,13 @@ function cellAt(clientX, clientY) {
   return { row, col };
 }
 
-/** Evidenzia la cella su cui il controllo verrebbe rilasciato. */
+/** Evidenzia la cella su cui il controllo verrebbe rilasciato (vuota o tile). */
 function highlightDropCell(clientX, clientY) {
   clearDropCell();
   const cell = cellAt(clientX, clientY);
   if (!cell) return;
-  const target = ui.grid.querySelector(`[data-empty="${cell.row}:${cell.col}"]`);
+  const target = ui.grid.querySelector(`[data-empty="${cell.row}:${cell.col}"]`)
+    ?? ui.grid.querySelector(`[data-row="${cell.row}"][data-col="${cell.col}"]`);
   if (target) target.classList.add('drop-target');
 }
 
@@ -2566,6 +2666,13 @@ function bindGrid() {
 
     if (state.editing) {
       const control = button ?? slider;
+      // La "x" sul tile elimina il comando: gesto a parte, non apre l'editor
+      // ne' fa partire un trascinamento.
+      if (control && event.target.closest('.tile-remove')) {
+        event.preventDefault();
+        confirmRemoveTile(control.dataset.id);
+        return;
+      }
       if (control) {
         // Un tocco apre l'editor, un trascinamento sposta: quale dei due sia
         // si capisce solo al rilascio, quindi qui si registra soltanto l'inizio.
@@ -2598,16 +2705,16 @@ function bindGrid() {
       };
       button.classList.add('pending');
 
-      // Con un'azione di hold configurata bisogna attendere per capire quale
-      // delle due l'utente voleva; senza, si parte subito.
+      // Si aspetta sempre il rilascio prima di premere: cosi' uno swipe
+      // orizzontale sul bottone scorre le pagine invece di premerlo. Il rilascio
+      // segue il tocco quasi subito (e il bottone si "abbassa" gia' ora, come
+      // riscontro), quindi la reattivita' resta buona. Con un'azione di hold si
+      // fa partire quella dopo la soglia, come prima.
       if (spec?.holdAction) {
         gesture.holdTimer = setTimeout(() => {
           gesture.fired = true;
           runPress(button, spec, { hold: true });
         }, 550);
-      } else {
-        gesture.fired = true;
-        runPress(button, spec);
       }
       return;
     }
