@@ -47,7 +47,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
       auth: { windowMs: 300000, max: 10 }
     }
   },
-  ui: { theme: 'dark', accent: '#4c8dff', showLabels: true, language: 'auto' },
+  ui: { theme: 'dark', style: 'default', accent: '#4c8dff', showLabels: true, language: 'auto' },
   status: { enabled: true, intervalMs: 8000 },
   discovery: { enabled: true },
   tray: { enabled: true },
@@ -99,6 +99,15 @@ export function defaultSpan(kind) {
   if (kind === 'slider' || kind === 'xy' || kind === 'pad' || kind === 'chart') return 2;
   return 1;
 }
+
+/**
+ * Stili del deck: la FORMA (superfici, raggi, ombre, carattere, densita').
+ *
+ * E' un'impostazione a parte da `ui.theme`, che invece e' la LUCE (chiaro,
+ * scuro, automatico). Uno stile ridefinisce solo i token del foglio di stile:
+ * non tocca il markup, quindi non puo' rompere una funzione.
+ */
+export const UI_STYLES = ['default', 'keycap', 'ceramica', 'console', 'quaderno', 'strumento', 'oscura'];
 
 /** Sorgenti delle pagine dinamiche: i tile arrivano dall'host, non da `buttons`. */
 export const PAGE_SOURCES = ['windows', 'apps', 'widgets'];
@@ -358,6 +367,9 @@ function validateSettings(ctx, settings) {
     else {
       if (ui.theme !== undefined && !['dark', 'light', 'auto'].includes(ui.theme)) {
         ctx.err('settings.ui.theme', 'valore ammesso: dark | light | auto');
+      }
+      if (ui.style !== undefined && !UI_STYLES.includes(ui.style)) {
+        ctx.err('settings.ui.style', `valore ammesso: ${UI_STYLES.join(' | ')}`);
       }
       if (ui.accent !== undefined) checkString(ctx, 'settings.ui.accent', ui.accent, { pattern: HEX_COLOR_RE, label: 'colore hex' });
       checkBool(ctx, 'settings.ui.showLabels', ui.showLabels);

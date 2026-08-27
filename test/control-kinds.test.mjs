@@ -11,11 +11,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  CONTROL_KINDS, READONLY_KINDS, DELTA_KINDS, PAIR_KINDS,
-  defaultSpan, validateDeck, normalizeDeck
+  CONTROL_KINDS, READONLY_KINDS, DELTA_KINDS, PAIR_KINDS, UI_STYLES,
+  defaultSpan, validateDeck, normalizeDeck, DEFAULT_SETTINGS
 } from '../src/host/config/schema.mjs';
 import { compactDeck } from '../src/host/config/writer.mjs';
 import { rawDeck } from '../tools/fixtures.mjs';
+import { readFileSync } from 'node:fs';
+
+const leggi = (rel) => readFileSync(new URL('../' + rel, import.meta.url), 'utf8');
 
 const TIPI = ['noop', 'media', 'hotkey', 'text', 'launch', 'navigate', 'sequence', 'delay'];
 
@@ -140,4 +143,83 @@ test('i campi dei tipi nuovi sopravvivono al salvataggio su deck.json', () => {
   const sel = compactDeck(normalizeDeck(conControllo({ kind: 'selector', options: ['A', 'B'] })))
     .profiles[0].pages[0].buttons[0];
   assert.deepEqual(sel.options, ['A', 'B']);
+});
+
+
+// ------------------------------------------------------------------ client
+//
+// Il client non ha un test in browser: qui si verifica che gli agganci ci
+// siano, cioe' che ogni tipo dichiarato dall'host abbia un pezzo di markup,
+// uno stile e - dove serve - un gesto.
+
+test('client: ogni kind ha il suo markup e il suo stile', () => {
+  const app = leggi('web/app.js');
+  const css = leggi('web/app.css');
+  for (const kind of CONTROL_KINDS) {
+    if (kind === 'button' || kind === 'slider') continue;   // hanno il markup storico
+    assert.ok(app.includes(`case '${kind}':`), `manca il markup del tipo "${kind}"`);
+    assert.match(css, new RegExp(`\\.ctl-${kind}[\\s.,{:]`), `manca lo stile del tipo "${kind}"`);
+  }
+});
+
+test('client: ogni kind ha nome e spiegazione nelle due lingue', () => {
+  const i18n = leggi('web/i18n.js');
+  for (const kind of CONTROL_KINDS) {
+    const nome = (i18n.match(new RegExp(`'edit\\.kindName\\.${kind}'`, 'g')) ?? []).length;
+    const aiuto = (i18n.match(new RegExp(`'edit\\.kindHint\\.${kind}'`, 'g')) ?? []).length;
+    assert.equal(nome, 2, `"${kind}" deve avere un nome in italiano e in inglese`);
+    assert.equal(aiuto, 2, `"${kind}" deve avere una spiegazione in italiano e in inglese`);
+  }
+});
+
+test('client: manopole e rotelle mandano scarti, la tavoletta una coppia', () => {
+  const app = leggi('web/app.js');
+  assert.ok(app.includes('function rotateCtl'), 'manca il gesto della manopola');
+  assert.match(app, /pressButton\(gesture\.element, \{ delta: verso \}\)/, 'la rotella deve mandare uno scarto');
+  assert.match(app, /delta !== undefined \? \{ delta \}/, 'il client deve saper inviare delta');
+  assert.match(app, /x !== undefined && y !== undefined \? \{ x, y \}/, 'x e y devono viaggiare insieme');
+});
+
+test('client: i comandi di sola lettura non fanno partire un gesto', () => {
+  const app = leggi('web/app.js');
+  // Il ramo deve esserci PRIMA di qualunque invio: un quadrante toccato deve
+  // lasciar passare lo swipe fra pagine, non premere.
+  assert.match(app, /READONLY_KINDS\.includes\(kind\)[\s\S]{0,200}kind: 'swipe'/);
+});
+
+test('client: l\u2019elenco dei tipi di sola lettura e\u2019 lo stesso dell\u2019host', () => {
+  const app = leggi('web/app.js');
+  const riga = app.match(/const READONLY_KINDS = \[(.*?)\]/s);
+  assert.ok(riga, 'il client deve dichiarare i tipi di sola lettura');
+  const nelClient = riga[1].split(',').map((x) => x.trim().replace(/'/g, '')).filter(Boolean);
+  assert.deepEqual(nelClient, READONLY_KINDS, 'host e client devono essere d\u2019accordo su cosa non si preme');
+});
+
+// ------------------------------------------------------------------ stili
+
+test('stile: e\u2019 un\u2019impostazione separata dal chiaro/scuro', () => {
+  assert.equal(DEFAULT_SETTINGS.ui.style, 'default');
+  assert.ok(UI_STYLES.includes('default'));
+  const deck = rawDeck();
+  deck.settings = { ...(deck.settings ?? {}), ui: { style: 'inventato' } };
+  assert.equal(validateDeck(deck, { actionTypes: TIPI }).valid, false);
+  deck.settings.ui.style = 'console';
+  assert.equal(validateDeck(deck, { actionTypes: TIPI }).valid, true);
+});
+
+test('stile: ogni stile dichiarato ha davvero i suoi token nel CSS', () => {
+  const css = leggi('web/app.css');
+  for (const stile of UI_STYLES) {
+    if (stile === 'default') continue;
+    assert.ok(css.includes(`[data-style='${stile}']`), `lo stile "${stile}" non ha token nel CSS`);
+  }
+});
+
+test('stile: ogni stile ha un nome nelle due lingue', () => {
+  const i18n = leggi('web/i18n.js');
+  for (const stile of UI_STYLES) {
+    const chiave = 'settings.style' + stile.charAt(0).toUpperCase() + stile.slice(1);
+    const quante = (i18n.match(new RegExp(`'${chiave}'`, 'g')) ?? []).length;
+    assert.equal(quante, 2, `lo stile "${stile}" deve avere un nome in italiano e in inglese`);
+  }
 });

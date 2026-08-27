@@ -268,7 +268,7 @@ sono rimossi da `publicDeck()`.
     "version": 1,
     "name": "Wdeck",
     "defaultProfile": "default",
-    "ui": { "theme": "dark", "accent": "#4c8dff", "showLabels": true },
+    "ui": { "theme": "dark", "style": "default", "accent": "#4c8dff", "showLabels": true },
     "profiles": [
       {
         "id": "default",

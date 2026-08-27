@@ -513,8 +513,16 @@ function applyState(hostState) {
  */
 function applyTheme(uiConfig) {
   if (!uiConfig) return;
-  if (uiConfig.accent) document.documentElement.style.setProperty('--accent', uiConfig.accent);
   const root = document.documentElement;
+
+  // Lo stile viene prima dell'accento: uno stile porta il proprio accento nei
+  // token, e un accento scelto a mano deve poterlo comunque scavalcare.
+  root.dataset.style = uiConfig.style && uiConfig.style !== 'default' ? uiConfig.style : '';
+  if (!root.dataset.style) root.removeAttribute('data-style');
+
+  if (uiConfig.accent) root.style.setProperty('--accent', uiConfig.accent);
+  else root.style.removeProperty('--accent');
+
   root.classList.toggle('theme-auto', uiConfig.theme === 'auto');
   root.classList.toggle('theme-light', uiConfig.theme === 'light');
 
@@ -686,7 +694,7 @@ function renderGrid() {
       }
       // Le celle successive a quella iniziale sono gia' coperte dallo span.
       if (button.col !== col) continue;
-      parts.push(button.kind === 'slider' ? sliderHtml(button) : buttonHtml(button));
+      parts.push(controlHtml(button));
     }
   }
   ui.grid.innerHTML = parts.join('');
@@ -906,6 +914,313 @@ function sliderHtml(button) {
     + '</div>';
 }
 
+/* ------------------------------------------------------------------ comandi
+
+   Un deck non e' fatto di soli pulsanti: ci sono manopole che girano, rotelle
+   che scorrono, tavolette a due assi e quadranti che leggono soltanto.
+
+   Ogni tipo e' un pezzo di markup e un comportamento; l'aspetto arriva sempre
+   dai token del tema (--ctl-surf, --ctl-edge, --ctl-accent...), mai da colori
+   scritti qui. Cosi' un tema nuovo non tocca una riga di comportamento.       */
+
+/** Comandi che mostrano lo stato dell'host e non accettano pressioni. */
+const READONLY_KINDS = ['gauge', 'meter', 'chart', 'display'];
+
+/**
+ * I tipi di comando offerti dall'editor, raggruppati per COME si comandano.
+ * L'ordine e' quello che serve a chi sceglie: prima i piu' comuni.
+ */
+const KIND_GROUPS = [
+  { key: 'press', kinds: ['button', 'folder', 'macro', 'timer', 'pad', 'selector'] },
+  { key: 'drag', kinds: ['slider', 'xy', 'color'] },
+  { key: 'turn', kinds: ['encoder', 'jog', 'stepper'] },
+  { key: 'read', kinds: READONLY_KINDS }
+];
+
+function kindOptions(scelto) {
+  return KIND_GROUPS.map((g) =>
+    `<optgroup label="${escapeHtml(t(`edit.kindGroup.${g.key}`))}">`
+    + g.kinds.map((k) =>
+      `<option value="${k}"${k === scelto ? ' selected' : ''}>${escapeHtml(t(`edit.kindName.${k}`))}</option>`).join('')
+    + '</optgroup>').join('');
+}
+
+/** Campi che solo alcuni tipi hanno: intervallo, opzioni, righe, secondi... */
+function kindFieldsHtml(kind, draft) {
+  const num = (id, label, value, extra = '') =>
+    `<label class="field"><span>${escapeHtml(label)}</span><input id="${id}" type="number" ${extra} value="${value}" /></label>`;
+  const righe = [];
+
+  if (['slider', 'encoder', 'stepper', 'gauge', 'meter'].includes(kind)) {
+    righe.push('<div class="field-row">'
+      + num('ed-min', t('edit.min'), draft.min ?? 0, 'step="any"')
+      + num('ed-max', t('edit.max'), draft.max ?? 100, 'step="any"')
+      + (['gauge', 'meter'].includes(kind) ? '' : num('ed-step', t('edit.step'), draft.step ?? 1, 'step="any" min="0"'))
+      + '</div>');
+  }
+  if (kind === 'slider') {
+    righe.push(`<div class="field-row">
+      <label class="field"><span>${t('edit.orientation')}</span><select id="ed-orientation" class="select">
+        <option value="h"${(draft.orientation ?? 'h') === 'h' ? ' selected' : ''}>${t('edit.orientationH')}</option>
+        <option value="v"${draft.orientation === 'v' ? ' selected' : ''}>${t('edit.orientationV')}</option>
+      </select></label>
+      <label class="field checkbox"><input id="ed-center" type="checkbox"${draft.center ? ' checked' : ''} /><span>${t('edit.center')}</span></label>
+    </div>`);
+  }
+  if (kind === 'selector') {
+    righe.push(`<label class="field"><span>${t('edit.options')}</span>`
+      + `<input id="ed-options" type="text" value="${escapeHtml((draft.options ?? []).join(', '))}" placeholder="Auto, Manuale, Fermo" /></label>`);
+  }
+  if (kind === 'pad') {
+    righe.push('<div class="field-row">'
+      + num('ed-rows', t('edit.padRows'), draft.rows ?? 4, 'min="1" max="8"')
+      + num('ed-cols', t('edit.padCols'), draft.cols ?? 4, 'min="1" max="8"')
+      + '</div>');
+  }
+  if (kind === 'timer') {
+    righe.push(num('ed-seconds', t('edit.seconds'), draft.seconds ?? 1500, 'min="1" max="86400"'));
+  }
+  if (kind === 'color') {
+    righe.push(`<label class="field"><span>${t('edit.colorMode')}</span><select id="ed-mode" class="select">
+      <option value="kelvin"${(draft.mode ?? 'kelvin') === 'kelvin' ? ' selected' : ''}>${t('edit.colorKelvin')}</option>
+      <option value="rgb"${draft.mode === 'rgb' ? ' selected' : ''}>${t('edit.colorRgb')}</option>
+    </select></label>`);
+  }
+  return righe.join('');
+}
+
+/** Legge dal form i campi del tipo scelto. */
+function readKindFields(kind) {
+  const numero = (id, fallback) => {
+    const v = Number(el(id)?.value);
+    return Number.isFinite(v) ? v : fallback;
+  };
+  const out = {};
+  if (['slider', 'encoder', 'stepper', 'gauge', 'meter'].includes(kind)) {
+    out.min = numero('ed-min', 0);
+    out.max = numero('ed-max', 100);
+    if (!['gauge', 'meter'].includes(kind)) out.step = Math.max(0.001, numero('ed-step', 1));
+  }
+  if (kind === 'slider') {
+    out.orientation = el('ed-orientation')?.value === 'v' ? 'v' : 'h';
+    out.center = el('ed-center')?.checked === true;
+  }
+  if (kind === 'selector') {
+    out.options = String(el('ed-options')?.value ?? '')
+      .split(',').map((o) => o.trim()).filter(Boolean).slice(0, 8);
+  }
+  if (kind === 'pad') {
+    out.rows = Math.min(8, Math.max(1, Math.round(numero('ed-rows', 4))));
+    out.cols = Math.min(8, Math.max(1, Math.round(numero('ed-cols', 4))));
+  }
+  if (kind === 'timer') out.seconds = Math.min(86400, Math.max(1, Math.round(numero('ed-seconds', 1500))));
+  if (kind === 'color') out.mode = el('ed-mode')?.value === 'rgb' ? 'rgb' : 'kelvin';
+  return out;
+}
+
+/** Larghezza predefinita in celle: la stessa che usa l'host. */
+function kindDefaultSpan(kind) {
+  return ['slider', 'xy', 'pad', 'chart'].includes(kind) ? 2 : 1;
+}
+
+/** Instrada un controllo al suo markup. */
+function controlHtml(button) {
+  const kind = button.kind ?? 'button';
+  if (kind === 'slider') return sliderHtml(button);
+  if (kind === 'button') return buttonHtml(button);
+  return ctlHtml(button, kind);
+}
+
+/** Valore corrente di un controllo: quello reale se c'e', altrimenti il centro. */
+function ctlValue(button) {
+  const min = button.min ?? 0;
+  const max = button.max ?? 100;
+  const stored = state.levels.get(button.id);
+  return typeof stored === 'number' ? stored : Math.round((min + max) / 2);
+}
+
+/** Frazione 0..1 di un valore dentro il suo intervallo. */
+function ctlFraction(button, value) {
+  const min = button.min ?? 0;
+  const max = button.max ?? 100;
+  if (max <= min) return 0;
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
+}
+
+/** mm:ss da un numero di secondi. */
+function mmss(secondi) {
+  const s = Math.max(0, Math.round(secondi));
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+function ctlHtml(button, kind) {
+  const accent = cssColor(button.color);
+  const fg = cssColor(button.textColor);
+  const style = [
+    accent ? `--ctl-accent:${accent}` : '',
+    fg ? `color:${fg}` : '',
+    button.span > 1 ? `grid-column:span ${Number(button.span) || 1}` : '',
+    groupColorVar(button)
+  ].filter(Boolean).join(';');
+
+  const readonly = READONLY_KINDS.includes(kind);
+
+  return `<div class="deck-ctl ctl-${kind}" data-id="${escapeHtml(button.id)}" data-kind="${kind}"`
+    + ` data-row="${button.row}" data-col="${button.col}"${groupData(button)} style="${style}"`
+    // Un comando che si preme e' un bottone anche per chi usa la tastiera o un
+    // lettore di schermo; uno di sola lettura e' un'immagine di stato.
+    + (readonly
+      ? ` role="img" aria-label="${escapeHtml(button.label || button.id)}"`
+      : ` role="button" tabindex="0" aria-label="${escapeHtml(button.label || button.id)}"`)
+    + ` title="${escapeHtml(button.label || button.id)}">`
+    + ctlInner(button, kind)
+    + '</div>';
+}
+
+/** Contenuto di un controllo: si ridisegna da solo quando il valore cambia. */
+function ctlInner(button, kind) {
+  const label = state.deck.ui?.showLabels === false ? '' : `<span class="ctl-label">${escapeHtml(button.label)}</span>`;
+  return ctlBody(button, kind, label)
+    + (button.confirm ? '<span class="confirm-tag" title="chiede conferma">!</span>' : '')
+    + removeBadge();
+}
+
+/**
+ * Ridisegna il solo contenuto di un controllo.
+ *
+ * Ricostruire tutta la griglia a ogni scatto di manopola azzererebbe le
+ * animazioni e farebbe sfarfallare il resto della pagina; qui cambia soltanto
+ * l'interno del comando toccato.
+ */
+function refreshCtl(element) {
+  const spec = currentPage()?.buttons.find((b) => b.id === element.dataset.id);
+  if (!spec) return;
+  element.innerHTML = ctlInner(spec, element.dataset.kind);
+}
+
+function ctlBody(button, kind, label) {
+  const value = ctlValue(button);
+  const frazione = ctlFraction(button, value);
+  const stato = state.statuses?.[button.id];
+
+  switch (kind) {
+    // --- girano e mandano scatti -------------------------------------------
+    case 'encoder':
+      return '<span class="enc-wrap">'
+        + `<span class="enc-ring" style="--v:${frazione}"></span>`
+        + `<span class="enc"><span class="enc-mark" style="transform:rotate(${frazione * 300 - 150}deg)"></span></span>`
+        + '</span>' + label
+        + `<span class="ctl-value">${escapeHtml(String(value))}</span>`;
+
+    case 'jog':
+      // Una rotella non ha ne' inizio ne' fine: nessun valore da mostrare.
+      return '<span class="jog"></span>' + label;
+
+    case 'stepper':
+      return '<span class="st-row">'
+        + '<button class="st-btn" type="button" data-step-dir="-1" tabindex="-1" aria-label="-">&minus;</button>'
+        + `<span class="st-val">${escapeHtml(String(value))}</span>`
+        + '<button class="st-btn" type="button" data-step-dir="1" tabindex="-1" aria-label="+">+</button>'
+        + '</span>' + label;
+
+    // --- si trascinano ------------------------------------------------------
+    case 'xy':
+      return '<span class="xy">'
+        + '<span class="xy-h"></span><span class="xy-v"></span><span class="xy-puck"></span>'
+        + '</span>' + label;
+
+    case 'color':
+      return label + `<span class="sp sp-${escapeHtml(button.mode ?? 'kelvin')}"><span class="sp-knob"></span></span>`;
+
+    // --- si premono ---------------------------------------------------------
+    case 'selector': {
+      const scelto = stato?.text ?? ctlPick(button.id) ?? (button.options ?? [])[0];
+      return '<span class="sg">'
+        + (button.options ?? []).map((o) =>
+          `<button class="sg-opt" type="button" tabindex="-1" data-opt="${escapeHtml(o)}"`
+          + ` aria-selected="${o === scelto}">${escapeHtml(o)}</button>`).join('')
+        + '</span>' + label;
+    }
+
+    case 'pad': {
+      const rows = button.rows ?? 4;
+      const cols = button.cols ?? 4;
+      const celle = [];
+      for (let r = 0; r < rows; r += 1) {
+        for (let c = 0; c < cols; c += 1) {
+          celle.push(`<button class="pd-cell" type="button" tabindex="-1" data-cell="${r},${c}" aria-label="${r + 1}-${c + 1}"></button>`);
+        }
+      }
+      return `<span class="pd" style="--pd-cols:${cols}">${celle.join('')}</span>` + label;
+    }
+
+    case 'timer': {
+      const totale = button.seconds ?? 1500;
+      const rimasti = ctlTimer(button.id)?.left ?? totale;
+      return `<span class="rg" style="--v:${totale ? rimasti / totale : 0}"><span>${mmss(rimasti)}</span></span>` + label;
+    }
+
+    case 'folder':
+      return '<span class="fl"><i></i><i></i><i></i><i></i></span>' + label;
+
+    case 'macro': {
+      const passi = Math.max(2, Math.min(8, button.action?.params?.steps?.length ?? 4));
+      return controlIcon(button) + label + `<span class="mc">${'<i></i>'.repeat(passi)}</span>`;
+    }
+
+    // --- leggono e basta ----------------------------------------------------
+    case 'gauge': {
+      const livello = typeof stato?.level === 'number' ? ctlFraction(button, stato.level) : 0;
+      const testo = stato?.text ?? (typeof stato?.level === 'number' ? String(stato.level) : '--');
+      return `<span class="gg"><span class="gg-arc"></span><span class="gg-nd" style="--v:${livello}"></span></span>`
+        + label + `<span class="ctl-value">${escapeHtml(testo)}</span>`;
+    }
+
+    case 'meter': {
+      const livello = typeof stato?.level === 'number' ? ctlFraction(button, stato.level) : 0;
+      return `<span class="mt"><i style="--l:${livello}"></i><i style="--l:${livello * 0.86}"></i></span>` + label;
+    }
+
+    case 'chart':
+      return `<span class="sk">${sparkSvg(stato?.series)}</span>` + label;
+
+    case 'display':
+      return `<span class="rd-big">${escapeHtml(stato?.text ?? '--')}</span>`
+        + `<span class="rd-sub">${escapeHtml(button.label ?? '')}</span>`;
+
+    default:
+      return controlIcon(button) + label;
+  }
+}
+
+/** Opzione scelta di un selettore, finche' l'host non dice la sua. */
+const ctlPicks = new Map();
+function ctlPick(id) { return ctlPicks.get(id); }
+
+/** Stato locale dei timer: {left, running, tick}. */
+const ctlTimers = new Map();
+function ctlTimer(id) { return ctlTimers.get(id); }
+
+/**
+ * Grafico da una serie di numeri mandata dall'host. Senza serie disegna una
+ * linea piatta: un grafico vuoto deve sembrare "nessun dato", non rotto.
+ */
+function sparkSvg(series) {
+  const dati = Array.isArray(series) ? series.filter((n) => typeof n === 'number' && Number.isFinite(n)) : [];
+  if (dati.length < 2) return '<svg viewBox="0 0 100 40" preserveAspectRatio="none"><path class="sk-line" d="M0 20 L100 20"></path></svg>';
+  const max = Math.max(...dati);
+  const min = Math.min(...dati, 0);
+  const scala = max - min || 1;
+  const punti = dati.map((n, i) => [(i / (dati.length - 1)) * 100, 38 - ((n - min) / scala) * 34]);
+  const d = punti.map((pt, i) => `${i ? 'L' : 'M'}${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`).join(' ');
+  const ultimo = punti[punti.length - 1];
+  return '<svg viewBox="0 0 100 40" preserveAspectRatio="none">'
+    + `<path class="sk-area" d="${d} L100 40 L0 40 Z"></path>`
+    + `<path class="sk-line" d="${d}"></path>`
+    + `<circle class="sk-dot" cx="${ultimo[0].toFixed(1)}" cy="${ultimo[1].toFixed(1)}" r="2"></circle>`
+    + '</svg>';
+}
+
 /**
  * "x" di eliminazione mostrata su ogni tile in modalita' modifica: dà a
  * aggiungere/eliminare un comando proprio, separato dall'editor dell'azione.
@@ -952,6 +1267,13 @@ function applyStatusTo(element, entry) {
   if (!entry || entry.error || typeof entry.on !== 'boolean') delete element.dataset.on;
   else element.dataset.on = entry.on ? '1' : '0';
 
+  // Un quadrante, un livello, un grafico o un display SONO lo stato: quando
+  // arriva un dato nuovo il loro contenuto va rifatto, non solo decorato.
+  if (READONLY_KINDS.includes(element.dataset.kind)) {
+    refreshCtl(element);
+    return;
+  }
+
   setStateTag(element, entry?.error ? '!' : (entry?.text ?? ''));
 
   // Il livello reale allinea il cursore, tranne mentre il dito lo sta muovendo:
@@ -993,7 +1315,7 @@ function renderLastAction(entry) {
  * aspettare la risposta dell'host per illuminare il tasto lo faceva sembrare
  * lento anche quando l'azione partiva in pochi millisecondi.
  */
-function pressButton(element, { hold = false, release = false, value } = {}) {
+function pressButton(element, { hold = false, release = false, value, delta, x, y } = {}) {
   const buttonId = element.dataset.id;
   if (!buttonId) return;
   const requestId = `r${++state.requestSeq}`;
@@ -1007,6 +1329,10 @@ function pressButton(element, { hold = false, release = false, value } = {}) {
     hold,
     release,
     ...(value !== undefined ? { value } : {}),
+    // Una manopola manda uno scarto, la tavoletta una coppia: vedi
+    // docs/PROTOCOL.md, "Valore, scarto, coppia".
+    ...(delta !== undefined ? { delta } : {}),
+    ...(x !== undefined && y !== undefined ? { x, y } : {}),
     dryRun: state.simulate,
     requestId
   });
@@ -1731,14 +2057,13 @@ async function editButton(buttonId, cell, seed = null) {
       </div>
 
       <div class="field-row">
-        <label class="field"><span>${t('edit.kind')}</span><select id="ed-kind" class="select">
-          <option value="button"${draft.kind !== 'slider' ? ' selected' : ''}>${t('edit.kindButton')}</option>
-          <option value="slider"${draft.kind === 'slider' ? ' selected' : ''}>${t('edit.kindSlider')}</option>
-        </select></label>
+        <label class="field"><span>${t('edit.kind')}</span><select id="ed-kind" class="select wide">${kindOptions(draft.kind ?? 'button')}</select></label>
         <label class="field"><span>${t('edit.color')}</span><input id="ed-color" type="color" value="${draft.color ?? '#2d3b55'}" /></label>
         <label class="field"><span>${t('edit.textColor')}</span><input id="ed-text-color" type="color" value="${draft.textColor ?? '#ffffff'}" /></label>
         <label class="field"><span>${t('edit.width')}</span><input id="ed-span" type="number" min="1" max="12" value="${draft.span ?? 1}" /></label>
       </div>
+      <div id="ed-kind-fields" class="ed-fields"></div>
+      <p id="ed-kind-hint" class="sheet-hint"></p>
       <label class="field checkbox"><input id="ed-confirm" type="checkbox"${draft.confirm ? ' checked' : ''} /><span>${t('edit.confirm')}</span></label>
       <label class="field checkbox"><input id="ed-status" type="checkbox"${draft.status === false ? '' : ' checked'} /><span>${t('edit.showStatus')}</span></label>
       <label class="field"><span>${t('edit.group')}</span><select id="ed-group" class="select wide">
@@ -1830,6 +2155,27 @@ async function editButton(buttonId, cell, seed = null) {
   };
   typeSelect.addEventListener('change', describe);
   describe();
+
+  // Il tipo di comando decide quali campi hanno senso: cambiarlo ridisegna
+  // solo quel pezzo di form, senza perdere il resto di cio' che si stava
+  // scrivendo.
+  const kindSelect = el('ed-kind');
+  const aggiornaKind = () => {
+    const kind = kindSelect.value;
+    el('ed-kind-fields').innerHTML = kindFieldsHtml(kind, draft);
+    el('ed-kind-hint').textContent = t(`edit.kindHint.${kind}`);
+    // Un comando di sola lettura non si preme: le azioni di pressione
+    // prolungata e di rilascio non scatterebbero mai.
+    const readonly = READONLY_KINDS.includes(kind);
+    for (const id of ['ed-hold-type', 'ed-release-type', 'ed-confirm']) {
+      const campo = el(id);
+      if (!campo) continue;
+      campo.disabled = readonly;
+      campo.closest('.field')?.classList.toggle('disabled', readonly);
+    }
+  };
+  kindSelect.addEventListener('change', aggiornaKind);
+  aggiornaKind();
 }
 
 async function saveButtonDraft(draft, existing) {
@@ -1873,6 +2219,12 @@ async function saveButtonDraft(draft, existing) {
   }
 
   const kind = el('ed-kind').value;
+  const perTipo = readKindFields(kind);
+  const readonly = READONLY_KINDS.includes(kind);
+  if (kind === 'selector' && perTipo.options.length < 2) {
+    toast(t('edit.optionsTooFew'), 'err');
+    return;
+  }
   const next = {
     ...draft,
     label: el('ed-label').value.trim(),
@@ -1881,19 +2233,23 @@ async function saveButtonDraft(draft, existing) {
     color: el('ed-color').value,
     textColor: el('ed-text-color').value,
     span: Math.max(1, Number(el('ed-span').value) || 1),
-    confirm: el('ed-confirm').checked,
     status: el('ed-status').checked,
     group: el('ed-group')?.value || null,
-    holdAction,
-    releaseAction,
+    // Un comando di sola lettura non puo' avere azioni di pressione: l'host le
+    // rifiuterebbe, e un'impostazione inerte e' peggio di un errore.
+    holdAction: readonly ? null : holdAction,
+    releaseAction: readonly ? null : releaseAction,
+    confirm: readonly ? false : el('ed-confirm').checked,
     action: { type: el('ed-type').value, params }
   };
-  if (kind === 'slider') {
-    next.min = draft.min ?? 0;
-    next.max = draft.max ?? 100;
-    next.step = draft.step ?? 1;
-    if (!draft.span) next.span = Math.max(2, next.span);
+  Object.assign(next, perTipo);
+
+  // I campi degli altri tipi vanno via: un pulsante non deve portarsi dietro
+  // l'intervallo di un cursore.
+  for (const campo of ['min', 'max', 'step', 'orientation', 'center', 'options', 'rows', 'cols', 'seconds', 'mode']) {
+    if (!(campo in perTipo)) delete next[campo];
   }
+  if (!draft.span) next.span = Math.max(kindDefaultSpan(kind), next.span);
 
   const currentId = currentPage()?.id;
   const deck = cloneDeck();
@@ -2306,6 +2662,7 @@ async function openSettings() {
   const settings = res.data?.settings ?? {};
 
   const temaAttuale = state.deck?.ui?.theme ?? 'dark';
+  const stileAttuale = state.deck?.ui?.style ?? 'default';
   const linguaAttuale = state.deck?.ui?.language ?? 'auto';
   const opzione = (value, selected, label) => `<option value="${value}"${value === selected ? ' selected' : ''}>${label}</option>`;
 
@@ -2331,6 +2688,16 @@ async function openSettings() {
           ${opzione('en', linguaAttuale, 'English')}
         </select></label>
       </div>
+      <label class="field"><span>${t('settings.style')}</span><select id="set-style" class="select wide">
+        ${opzione('default', stileAttuale, t('settings.styleDefault'))}
+        ${opzione('keycap', stileAttuale, t('settings.styleKeycap'))}
+        ${opzione('ceramica', stileAttuale, t('settings.styleCeramica'))}
+        ${opzione('console', stileAttuale, t('settings.styleConsole'))}
+        ${opzione('quaderno', stileAttuale, t('settings.styleQuaderno'))}
+        ${opzione('strumento', stileAttuale, t('settings.styleStrumento'))}
+        ${opzione('oscura', stileAttuale, t('settings.styleOscura'))}
+      </select></label>
+      <p class="sheet-hint">${t('settings.styleHint')}</p>
 
       <h3 class="sheet-section">${t('settings.computers')}</h3>
       <div class="host-list">${state.hosts.map((h) => `
@@ -2462,8 +2829,10 @@ async function saveSettings() {
 
   const ui = {};
   const tema = el('set-theme').value;
+  const stile = el('set-style')?.value ?? 'default';
   const lingua = el('set-language').value;
   if (tema !== (state.deck?.ui?.theme ?? 'dark')) ui.theme = tema;
+  if (stile !== (state.deck?.ui?.style ?? 'default')) ui.style = stile;
   if (lingua !== (state.deck?.ui?.language ?? 'auto')) ui.language = lingua;
   if (Object.keys(ui).length > 0) patch.ui = ui;
 
@@ -2996,11 +3365,12 @@ function bindGrid() {
     }
 
     const slider = event.target.closest('.deck-slider');
+    const ctl = event.target.closest('.deck-ctl');
     const button = event.target.closest('.deck-btn:not(.empty):not(.dyn-tile):not(.widget-tile)');
     const empty = event.target.closest('.deck-btn.empty');
 
     if (state.editing) {
-      const control = button ?? slider;
+      const control = button ?? slider ?? ctl;
       // La "x" sul tile elimina il comando: gesto a parte, non apre l'editor
       // ne' fa partire un trascinamento.
       if (control && event.target.closest('.tile-remove')) {
@@ -3024,6 +3394,39 @@ function bindGrid() {
       state.draggingId = slider.dataset.id;
       gesture = { kind: 'slider', element: slider, startX: event.clientX, startY: event.clientY, lastSent: 0 };
       applySliderFromPointer(slider, event.clientX);
+      return;
+    }
+
+    // Manopole, rotelle, tavolette, matrici, selettori: ognuno ha il suo gesto,
+    // ma tutti passano di qui perche' lo swipe fra pagine deve continuare a
+    // funzionare anche sopra di loro.
+    if (ctl) {
+      const kind = ctl.dataset.kind;
+      // I comandi di sola lettura non si premono: lasciano passare lo swipe.
+      if (READONLY_KINDS.includes(kind)) {
+        gesture = { kind: 'swipe', startX: event.clientX, startY: event.clientY };
+        return;
+      }
+      const spec = currentPage().buttons.find((b) => b.id === ctl.dataset.id);
+      ctl.setPointerCapture?.(event.pointerId);
+      gesture = {
+        kind: 'ctl',
+        ctlKind: kind,
+        element: ctl,
+        spec,
+        // Il sotto-elemento toccato: "+"/"-", un'opzione, una cella della matrice.
+        sub: event.target.closest('[data-step-dir],[data-opt],[data-cell]'),
+        startX: event.clientX,
+        startY: event.clientY,
+        angle: null,
+        moved: false
+      };
+      if (kind === 'xy' || kind === 'color') {
+        state.draggingId = ctl.dataset.id;
+        applyCtlDrag(gesture, event);
+      } else {
+        ctl.classList.add('pending');
+      }
       return;
     }
 
@@ -3087,6 +3490,21 @@ function bindGrid() {
       applySliderFromPointer(gesture.element, event.clientX);
       return;
     }
+
+    if (gesture.kind === 'ctl') {
+      const k = gesture.ctlKind;
+      // Manopola e rotella leggono l'ANGOLO del dito attorno al centro: e' il
+      // solo modo per cui girare in tondo e trascinare di lato fanno lo stesso.
+      if (k === 'encoder' || k === 'jog') { rotateCtl(gesture, event); return; }
+      if (k === 'xy' || k === 'color') { gesture.moved = true; applyCtlDrag(gesture, event); return; }
+      // Gli altri sono pressioni: oltre i 12 px in orizzontale il gesto e' uno
+      // swipe fra pagine, non un tocco.
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+        gesture.element.classList.remove('pending');
+        gesture.kind = 'swipe';
+      }
+      return;
+    }
     // Oltre i 12 px in orizzontale il gesto e' uno swipe, non una pressione:
     // l'eventuale hold in attesa va annullato.
     if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
@@ -3115,6 +3533,13 @@ function bindGrid() {
         const cell = cellAt(event.clientX, event.clientY);
         if (cell) moveButton(element.dataset.id, cell);
       }
+      return;
+    }
+
+    if (gesture.kind === 'ctl') {
+      finishCtlGesture(gesture);
+      state.draggingId = null;
+      gesture = null;
       return;
     }
 
@@ -3160,6 +3585,40 @@ function bindGrid() {
   // questo sia `user-select: none` in CSS: da solo il CSS non basta su tutti
   // i motori, e da solo questo non copre il doppio tap.
   ui.grid.addEventListener('selectstart', (event) => event.preventDefault());
+
+  // Tastiera sui comandi: Invio e barra spaziatrice premono, le frecce girano
+  // manopole e passo-passo. Senza, meta' dei comandi sarebbe raggiungibile col
+  // Tab ma inservibile.
+  ui.grid.addEventListener('keydown', (event) => {
+    const ctl = event.target.closest?.('.deck-ctl');
+    if (!ctl || state.editing) return;
+    const kind = ctl.dataset.kind;
+    if (READONLY_KINDS.includes(kind)) return;
+    const spec = currentPage()?.buttons.find((b) => b.id === ctl.dataset.id);
+    if (!spec) return;
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (kind === 'timer') toggleTimer(ctl, spec);
+      else runPress(ctl, spec);
+      return;
+    }
+
+    const verso = event.key === 'ArrowRight' || event.key === 'ArrowUp' ? 1
+      : event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1 : 0;
+    if (!verso) return;
+    if (kind === 'encoder' || kind === 'stepper') {
+      event.preventDefault();
+      const passo = spec.step ?? 1;
+      const prossimo = Math.min(spec.max ?? 100, Math.max(spec.min ?? 0, ctlValue(spec) + verso * passo));
+      state.levels.set(spec.id, prossimo);
+      refreshCtl(ctl);
+      pressButton(ctl, { delta: verso * passo });
+    } else if (kind === 'jog') {
+      event.preventDefault();
+      pressButton(ctl, { delta: verso });
+    }
+  });
 
   // Uno slider con role="slider" e tabindex="0" deve rispondere alle frecce:
   // senza questo la tastiera non lo puo' regolare (WCAG 2.1.1) e le frecce
@@ -3210,6 +3669,198 @@ async function runPress(element, spec, options = {}) {
   }
   if (navigator.vibrate) navigator.vibrate(options.hold ? 30 : 12);
   pressButton(element, options);
+}
+
+/* --------------------------------------------------------- gesti dei comandi
+
+   Tre famiglie: quelli che GIRANO (manopola, rotella) leggono l'angolo del dito
+   e mandano scatti; quelli che si TRASCINANO (tavoletta, striscia colore)
+   mandano posizioni; quelli che si PREMONO (passo-passo, selettore, matrice,
+   timer, cartella, macro) scattano al rilascio come i pulsanti.              */
+
+/** Angolo in gradi del dito rispetto al centro dell'elemento. */
+function angleFromCenter(element, event) {
+  const rect = element.getBoundingClientRect();
+  return Math.atan2(event.clientY - (rect.top + rect.height / 2),
+    event.clientX - (rect.left + rect.width / 2)) * 180 / Math.PI;
+}
+
+/** Manopola e rotella: dall'angolo agli scatti. */
+function rotateCtl(gesture, event) {
+  const perno = gesture.element.querySelector('.enc, .jog') ?? gesture.element;
+  const a = angleFromCenter(perno, event);
+  if (gesture.angle === null) { gesture.angle = a; return; }
+
+  let d = a - gesture.angle;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  // Sotto la soglia non succede nulla: senza, il minimo tremolio del dito
+  // sparerebbe decine di messaggi al secondo verso l'host.
+  if (Math.abs(d) < 8) return;
+  gesture.angle = a;
+  gesture.moved = true;
+
+  const spec = gesture.spec;
+  const verso = d > 0 ? 1 : -1;
+
+  if (gesture.ctlKind === 'jog') {
+    // Una rotella non ha un valore: manda solo scatti, all'infinito.
+    pressButton(gesture.element, { delta: verso });
+    gesture.element.querySelector('.jog')?.style.setProperty('--rot', `${(gesture.rot = (gesture.rot ?? 0) + d)}deg`);
+    return;
+  }
+
+  const passo = spec?.step ?? 1;
+  const min = spec?.min ?? 0;
+  const max = spec?.max ?? 100;
+  const attuale = ctlValue(spec);
+  const prossimo = Math.min(max, Math.max(min, Math.round((attuale + verso * passo) / passo) * passo));
+  if (prossimo === attuale) return;
+  state.levels.set(spec.id, prossimo);
+  refreshCtl(gesture.element);
+  pressButton(gesture.element, { delta: verso * passo });
+}
+
+/** Tavoletta e striscia colore: dalla posizione del dito ai valori. */
+function applyCtlDrag(gesture, event) {
+  const element = gesture.element;
+  const now = Date.now();
+
+  if (gesture.ctlKind === 'xy') {
+    const area = element.querySelector('.xy');
+    if (!area) return;
+    const rect = area.getBoundingClientRect();
+    const fx = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const fy = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+    area.style.setProperty('--x', fx);
+    area.style.setProperty('--y', fy);
+    gesture.pending = { x: Math.round(fx * 100), y: Math.round((1 - fy) * 100) };
+  } else {
+    const barra = element.querySelector('.sp');
+    if (!barra) return;
+    const rect = barra.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    barra.style.setProperty('--v', f);
+    const min = gesture.spec?.min ?? 0;
+    const max = gesture.spec?.max ?? 100;
+    gesture.pending = { value: Math.round(min + f * (max - min)) };
+  }
+
+  // Stessa regola dello slider: al piu' un messaggio ogni 120 ms mentre il dito
+  // si muove, e uno definitivo al rilascio.
+  if (now - (gesture.lastSent ?? 0) < 120) return;
+  gesture.lastSent = now;
+  pressButton(element, gesture.pending);
+}
+
+/** Chiude il gesto di un comando: ognuno conclude a modo suo. */
+function finishCtlGesture(gesture) {
+  const element = gesture.element;
+  const spec = gesture.spec;
+  element.classList.remove('pending');
+
+  switch (gesture.ctlKind) {
+    case 'xy':
+    case 'color':
+      // Il valore definitivo parte sempre, anche se l'ultimo era stato scartato
+      // dal limitatore: altrimenti il PC resterebbe a un passo dalla posizione.
+      if (gesture.pending) pressButton(element, gesture.pending);
+      return;
+
+    case 'jog':
+      return;
+
+    case 'encoder':
+      // Un tocco senza rotazione e' la pressione dell'albero: la seconda azione
+      // della manopola.
+      if (!gesture.moved) runPress(element, spec);
+      return;
+
+    case 'stepper': {
+      const dir = Number(gesture.sub?.dataset.stepDir);
+      if (!dir) return;
+      const passo = spec?.step ?? 1;
+      const min = spec?.min ?? 0;
+      const max = spec?.max ?? 100;
+      const prossimo = Math.min(max, Math.max(min, ctlValue(spec) + dir * passo));
+      state.levels.set(spec.id, prossimo);
+      refreshCtl(element);
+      pressButton(element, { delta: dir * passo });
+      return;
+    }
+
+    case 'selector': {
+      const scelta = gesture.sub?.dataset.opt;
+      if (scelta === undefined) return;
+      ctlPicks.set(spec.id, scelta);
+      refreshCtl(element);
+      // Il selettore manda l'INDICE dell'opzione come valore: e' l'unico dato
+      // che serve all'host e passa dal campo che esiste gia'.
+      pressButton(element, { value: (spec.options ?? []).indexOf(scelta) });
+      return;
+    }
+
+    case 'pad': {
+      const cella = gesture.sub?.dataset.cell;
+      if (!cella) return;
+      const [riga, colonna] = cella.split(',').map(Number);
+      // La cella e' un indirizzo a due numeri: e' esattamente la coppia della
+      // tavoletta, quindi non serve un campo nuovo.
+      pressButton(element, { x: colonna, y: riga });
+      return;
+    }
+
+    case 'timer': {
+      if (gesture.moved) return;
+      toggleTimer(element, spec);
+      return;
+    }
+
+    default:
+      // Cartella e macro: pressione normale, con la conferma se richiesta.
+      if (!gesture.moved) runPress(element, spec);
+  }
+}
+
+/**
+ * Avvia o ferma un conto alla rovescia.
+ *
+ * Il tempo scorre nel client (l'host non ha bisogno di saperlo secondo per
+ * secondo) e l'azione parte una volta sola, quando arriva a zero.
+ */
+function toggleTimer(element, spec) {
+  const id = spec.id;
+  const totale = spec.seconds ?? 1500;
+  const corrente = ctlTimers.get(id);
+
+  if (corrente?.tick) {
+    clearInterval(corrente.tick);
+    ctlTimers.set(id, { left: corrente.left, tick: null });
+    refreshCtl(element);
+    return;
+  }
+
+  let rimasti = corrente?.left ?? totale;
+  if (rimasti <= 0) rimasti = totale;
+  const tick = setInterval(() => {
+    const voce = ctlTimers.get(id);
+    if (!voce) return;
+    voce.left -= 1;
+    // Il tile puo' essere stato ridisegnato: si ricerca ogni volta.
+    const vivo = ui.grid.querySelector(`.deck-ctl[data-id="${CSS.escape(id)}"]`);
+    if (!vivo) { clearInterval(tick); ctlTimers.delete(id); return; }
+    if (voce.left <= 0) {
+      clearInterval(tick);
+      ctlTimers.set(id, { left: 0, tick: null });
+      refreshCtl(vivo);
+      runPress(vivo, spec);
+      return;
+    }
+    refreshCtl(vivo);
+  }, 1000);
+
+  ctlTimers.set(id, { left: rimasti, tick });
+  refreshCtl(element);
 }
 
 /** Converte la posizione orizzontale del dito nel valore dello slider. */

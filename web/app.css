@@ -13,6 +13,16 @@
   --err: #e05260;
   --radius: 14px;
   --gap: clamp(6px, 1.4vmin, 14px);
+
+  /* Token dei comandi. Manopole, tavolette e quadranti non hanno colori
+     propri: prendono tutto da qui, e uno "stile" (vedi in fondo al file) li
+     ridefinisce per intero senza toccare una riga di comportamento. */
+  --ctl-surf: var(--bg-btn);      /* la faccia del comando */
+  --ctl-surf-2: var(--bg);        /* l'incavo: piste, tracce, fondi */
+  --ctl-edge: var(--border);      /* lo spigolo */
+  --ctl-hi: rgba(255, 255, 255, 0.07);  /* il filo di luce in alto */
+  --ctl-accent: var(--accent);    /* sovrascritto dal colore del singolo tile */
+  --ctl-shadow: 0 2px 0 var(--ctl-edge), 0 5px 12px -5px rgba(0, 0, 0, 0.5);
 }
 
 * { box-sizing: border-box; }
@@ -885,3 +895,503 @@ body {
   :root.theme-auto .field textarea { background: #f7f9fc; }
   :root.theme-auto .deck-btn .type-tag { color: rgba(0, 0, 0, 0.35); }
 }
+
+
+/* ==========================================================================
+   COMANDI - manopole, rotelle, tavolette, quadranti
+   Un solo insieme di componenti: l'aspetto arriva sempre dai token qui sopra.
+   ========================================================================== */
+
+.deck-ctl {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 8px 7px;
+  color: var(--text);
+  background: var(--ctl-surf);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--ctl-hi), inset 0 0 0 1px var(--ctl-edge), var(--ctl-shadow);
+  overflow: hidden;
+  cursor: pointer;
+  /* Come i pulsanti: la griglia gestisce da se' i gesti, e sul deck non c'e'
+     mai niente da selezionare. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform 90ms ease, box-shadow 90ms ease, background 160ms ease;
+}
+
+.deck-ctl.pending { transform: translateY(2px); box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45), inset 0 0 0 1px var(--ctl-edge); }
+.deck-ctl.ok { box-shadow: inset 0 0 0 2px var(--ok), var(--ctl-shadow); }
+.deck-ctl.err { box-shadow: inset 0 0 0 2px var(--err), var(--ctl-shadow); }
+
+/* I comandi di sola lettura non si premono: niente cursore a manina, niente
+   affondamento. Deve VEDERSI che non rispondono al tocco. */
+.deck-ctl[data-kind="gauge"],
+.deck-ctl[data-kind="meter"],
+.deck-ctl[data-kind="chart"],
+.deck-ctl[data-kind="display"] { cursor: default; }
+
+.ctl-label {
+  font-size: clamp(9px, 1.7vmin, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+  line-height: 1.15;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctl-value {
+  font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* spia di stato, come sui pulsanti */
+.deck-ctl[data-on]::after {
+  content: '';
+  position: absolute;
+  top: 6px; right: 6px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  opacity: 0.4;
+  transition: background 140ms ease, opacity 140ms ease, box-shadow 140ms ease;
+}
+.deck-ctl[data-on='1']::after { background: var(--ctl-accent); opacity: 1; box-shadow: 0 0 7px var(--ctl-accent); }
+
+/* barretta del gruppo, come sugli altri tile */
+.deck-ctl[data-group]::before {
+  content: '';
+  position: absolute;
+  top: 6px; bottom: 6px; left: 0;
+  width: 4px;
+  border-radius: 0 3px 3px 0;
+  background: var(--group-color);
+  pointer-events: none;
+}
+
+/* ---------------- manopola ---------------- */
+.enc-wrap { position: relative; display: grid; place-items: center; }
+
+.ctl-encoder .enc {
+  position: relative;
+  width: clamp(34px, 8vmin, 48px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--text) 20%, var(--ctl-surf)), var(--ctl-surf-2) 74%);
+  box-shadow: inset 0 1px 0 var(--ctl-hi), 0 3px 7px -2px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--ctl-edge);
+}
+
+/* la tacca: dice dove sta la manopola senza bisogno di leggere il numero */
+.ctl-encoder .enc-mark {
+  position: absolute;
+  left: 50%; top: 8%;
+  width: 2px; height: 26%;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--ctl-accent);
+  box-shadow: 0 0 6px var(--ctl-accent);
+  transform-origin: 50% 161%;
+}
+
+/* l'anello: quanto si e' girato, a colpo d'occhio */
+.ctl-encoder .enc-ring {
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  background: conic-gradient(from 180deg, var(--ctl-accent) calc(var(--v, 0) * 360deg), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 60%, #000 62%);
+  mask: radial-gradient(circle, transparent 60%, #000 62%);
+  opacity: 0.8;
+}
+
+/* ---------------- rotella ---------------- */
+.ctl-jog .jog {
+  width: clamp(38px, 9vmin, 54px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  position: relative;
+  overflow: hidden;
+  background: repeating-conic-gradient(from 0deg, var(--ctl-surf) 0 6deg, var(--ctl-surf-2) 6deg 12deg);
+  box-shadow: inset 0 0 0 1px var(--ctl-edge), inset 0 0 14px rgba(0, 0, 0, 0.5), 0 3px 8px -3px rgba(0, 0, 0, 0.55);
+  transform: rotate(var(--rot, 0deg));
+}
+.ctl-jog .jog::after {
+  content: '';
+  position: absolute;
+  inset: 32%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--text) 18%, var(--ctl-surf)), var(--ctl-surf-2));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+/* ---------------- tavoletta a due assi ---------------- */
+.ctl-xy { padding: 7px; }
+.ctl-xy .xy {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 46px;
+  border-radius: 8px;
+  background: var(--ctl-surf-2);
+  background-image: linear-gradient(var(--ctl-hi) 1px, transparent 1px), linear-gradient(90deg, var(--ctl-hi) 1px, transparent 1px);
+  background-size: 25% 25%;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.ctl-xy .xy-h, .ctl-xy .xy-v { position: absolute; background: color-mix(in srgb, var(--ctl-accent) 45%, transparent); }
+.ctl-xy .xy-h { left: 0; right: 0; height: 1px; top: calc(var(--y, 0.5) * 100%); }
+.ctl-xy .xy-v { top: 0; bottom: 0; width: 1px; left: calc(var(--x, 0.5) * 100%); }
+.ctl-xy .xy-puck {
+  position: absolute;
+  width: 13px; height: 13px;
+  margin: -6.5px 0 0 -6.5px;
+  border-radius: 50%;
+  background: var(--ctl-accent);
+  box-shadow: 0 0 12px var(--ctl-accent);
+  left: calc(var(--x, 0.5) * 100%);
+  top: calc(var(--y, 0.5) * 100%);
+}
+
+/* ---------------- passo-passo ---------------- */
+.ctl-stepper .st-row { display: flex; align-items: center; gap: 8px; }
+.ctl-stepper .st-btn {
+  width: 26px; height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: var(--ctl-surf-2);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--ctl-hi), 0 1px 0 var(--ctl-edge);
+}
+.ctl-stepper .st-btn:active { transform: translateY(1px); }
+.ctl-stepper .st-val {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+  font-size: clamp(14px, 3vmin, 18px);
+  font-weight: 700;
+  min-width: 3.2ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- selettore a posizioni ---------------- */
+.ctl-selector .sg {
+  display: flex;
+  width: 100%;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--ctl-surf-2);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+.ctl-selector .sg-opt {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ctl-selector .sg-opt[aria-selected='true'] { color: var(--bg); background: var(--ctl-accent); }
+
+/* ---------------- matrice di pad ---------------- */
+.ctl-pad { padding: 7px; }
+.ctl-pad .pd {
+  display: grid;
+  grid-template-columns: repeat(var(--pd-cols, 4), 1fr);
+  gap: 3px;
+  width: 100%;
+  flex: 1;
+  min-height: 42px;
+}
+.ctl-pad .pd-cell {
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  background: var(--ctl-surf-2);
+  box-shadow: inset 0 1px 0 var(--ctl-hi);
+  cursor: pointer;
+  transition: background 90ms ease, box-shadow 90ms ease;
+}
+.ctl-pad .pd-cell:active { background: var(--ctl-accent); box-shadow: 0 0 9px color-mix(in srgb, var(--ctl-accent) 70%, transparent); }
+
+/* ---------------- anello (timer) ---------------- */
+.ctl-timer .rg {
+  position: relative;
+  width: clamp(38px, 9vmin, 52px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(var(--ctl-accent) calc(var(--v, 1) * 360deg), var(--ctl-surf-2) 0);
+}
+.ctl-timer .rg::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: var(--ctl-surf);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.ctl-timer .rg span {
+  position: relative;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- striscia colore ---------------- */
+.ctl-color .sp {
+  position: relative;
+  width: 100%;
+  height: 22px;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px var(--ctl-edge);
+  overflow: visible;
+}
+.ctl-color .sp-kelvin { background: linear-gradient(90deg, #ffb46b, #ffd9b0, #ffffff, #dce9ff, #a9c8ff); }
+.ctl-color .sp-rgb { background: linear-gradient(90deg, #ff4d4d, #ffd400, #3fbf7f, #4c8dff, #b06cff, #ff4d4d); }
+.ctl-color .sp-knob {
+  position: absolute;
+  top: -2px; bottom: -2px;
+  left: calc(var(--v, 0.5) * 100%);
+  width: 8px;
+  margin-left: -4px;
+  border-radius: 4px;
+  background: var(--text);
+  box-shadow: 0 0 0 2px var(--ctl-surf), 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------------- cartella ---------------- */
+.ctl-folder .fl { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 34px; }
+.ctl-folder .fl i { aspect-ratio: 1; border-radius: 3px; background: var(--ctl-surf-2); box-shadow: inset 0 1px 0 var(--ctl-hi); }
+.ctl-folder .fl i:first-child { background: color-mix(in srgb, var(--ctl-accent) 60%, var(--ctl-surf-2)); }
+
+/* ---------------- macro a passi ---------------- */
+.ctl-macro .mc { display: flex; gap: 4px; width: 100%; padding: 0 2px; }
+.ctl-macro .mc i { flex: 1; height: 4px; border-radius: 2px; background: var(--ctl-surf-2); transition: background 180ms ease; }
+.ctl-macro .mc i.done { background: var(--ctl-accent); }
+
+/* ---------------- quadrante ---------------- */
+.ctl-gauge .gg { position: relative; width: 100%; max-width: 84px; aspect-ratio: 2 / 1.12; overflow: hidden; }
+.ctl-gauge .gg-arc {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px 999px 0 0;
+  background: conic-gradient(from 270deg, var(--ok) 0deg, var(--warn) 120deg, var(--err) 180deg, transparent 180deg);
+  -webkit-mask: radial-gradient(circle at 50% 100%, transparent 55%, #000 57%);
+  mask: radial-gradient(circle at 50% 100%, transparent 55%, #000 57%);
+  opacity: 0.5;
+}
+.ctl-gauge .gg-nd {
+  position: absolute;
+  left: 50%; bottom: 0;
+  width: 2px; height: 78%;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text);
+  transform-origin: 50% 100%;
+  transform: rotate(calc(var(--v, 0) * 180deg - 90deg));
+  transition: transform 500ms cubic-bezier(0.3, 0.8, 0.3, 1);
+}
+.ctl-gauge .gg-nd::after { content: ''; position: absolute; left: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--text); }
+
+/* ---------------- livello (VU) ---------------- */
+.ctl-meter .mt { display: flex; align-items: flex-end; gap: 3px; width: 100%; flex: 1; min-height: 34px; }
+.ctl-meter .mt i {
+  flex: 1;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--err), var(--warn) 32%, var(--ok) 62%);
+  transform-origin: bottom;
+  transform: scaleY(var(--l, 0.05));
+  transition: transform 120ms linear;
+}
+
+/* ---------------- grafico ---------------- */
+.ctl-chart .sk { width: 100%; flex: 1; min-height: 32px; }
+.ctl-chart svg { width: 100%; height: 100%; display: block; }
+.ctl-chart .sk-line { fill: none; stroke: var(--ctl-accent); stroke-width: 1.8; stroke-linejoin: round; }
+.ctl-chart .sk-area { fill: color-mix(in srgb, var(--ctl-accent) 18%, transparent); stroke: none; }
+.ctl-chart .sk-dot { fill: var(--ctl-accent); }
+
+/* ---------------- display ---------------- */
+.ctl-display {
+  gap: 3px;
+  background: var(--ctl-surf-2);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 0 0 1px var(--ctl-edge);
+}
+.ctl-display .rd-big {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+  font-size: clamp(18px, 4.6vmin, 30px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ctl-accent);
+  font-variant-numeric: tabular-nums;
+}
+.ctl-display .rd-sub { font-size: 10px; letter-spacing: 0.04em; color: var(--text-dim); }
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-ctl, .ctl-gauge .gg-nd, .ctl-meter .mt i { transition: none; }
+}
+
+/* ==========================================================================
+   STILI - i mondi
+   Uno stile ridefinisce SOLO i token: colori, raggi, ombre, carattere. Non
+   tocca il markup ne' il comportamento, quindi non puo' rompere una funzione.
+   E' un'impostazione a parte da chiaro/scuro: quella e' la LUCE, questo e' la
+   FORMA.
+   ========================================================================== */
+
+/* --- Keycap: tastiera meccanica, capsule scolpite dentro un pozzetto --- */
+:root[data-style='keycap'] {
+  --bg: #14161a;
+  --bg-elev: #1b1e24;
+  --bg-btn: #262a31;
+  --border: #0a0c0f;
+  --text: #e7eaee;
+  --text-dim: #8b929c;
+  --accent: #ff8a3d;
+  --radius: 11px;
+  --ctl-surf-2: #0b0d10;
+  --ctl-hi: rgba(255, 255, 255, 0.085);
+  --ctl-shadow: 0 2px 0 var(--ctl-edge), 0 4px 8px -2px rgba(0, 0, 0, 0.55);
+}
+:root[data-style='keycap'] .grid {
+  background: #0b0d10;
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+:root[data-style='keycap'] .deck-btn,
+:root[data-style='keycap'] .deck-ctl {
+  background: linear-gradient(178deg, var(--bg-btn), color-mix(in srgb, var(--bg-btn) 78%, #000) 62%, color-mix(in srgb, var(--bg-btn) 62%, #000));
+}
+:root[data-style='keycap'] .deck-btn .label { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+
+/* --- Ceramica: superfici smaltate, angoli generosi, un ocra caldo --- */
+:root[data-style='ceramica'] {
+  --bg: #f2ede4;
+  --bg-elev: #ffffff;
+  --bg-btn: #ffffff;
+  --border: #d2cbc0;
+  --text: #2a2620;
+  --text-dim: #8a8175;
+  --accent: #c97b2e;
+  --ok: #6fa672;
+  --warn: #d9a22b;
+  --err: #c25041;
+  --radius: 18px;
+  --ctl-surf-2: #e7e2da;
+  --ctl-hi: rgba(255, 255, 255, 0.9);
+  --ctl-shadow: 0 1px 0 var(--ctl-edge), 0 6px 14px -9px rgba(90, 78, 60, 0.6);
+}
+
+/* --- Console: metallo scuro, spigoli vivi, verde acqua da strumentazione --- */
+:root[data-style='console'] {
+  --bg: #131619;
+  --bg-elev: #1b1e22;
+  --bg-btn: #2a2e34;
+  --border: #08090b;
+  --text: #e4e9ed;
+  --text-dim: #7b848e;
+  --accent: #4fd1c5;
+  --radius: 5px;
+  --ctl-surf-2: #15181c;
+  --ctl-shadow: 0 2px 0 var(--ctl-edge), 0 5px 12px -6px rgba(0, 0, 0, 0.8);
+  --gap: clamp(4px, 0.9vmin, 8px);
+}
+:root[data-style='console'] .deck-btn .label,
+:root[data-style='console'] .ctl-label { letter-spacing: 0.06em; }
+
+/* --- Quaderno: carta rigata, schede, un rosso da timbro --- */
+:root[data-style='quaderno'] {
+  --bg: #f6f1e6;
+  --bg-elev: #fffdf7;
+  --bg-btn: #fffdf7;
+  --border: rgba(35, 32, 27, 0.16);
+  --text: #23201b;
+  --text-dim: #7c7364;
+  --accent: #b23a28;
+  --ok: #4e8c5a;
+  --warn: #c8912c;
+  --err: #b23a28;
+  --radius: 3px;
+  --ctl-surf-2: #efe9dc;
+  --ctl-hi: rgba(255, 255, 255, 0.9);
+  --ctl-shadow: 0 1px 0 rgba(35, 32, 27, 0.14), 0 3px 8px -5px rgba(35, 32, 27, 0.35);
+}
+:root[data-style='quaderno'] body,
+:root[data-style='quaderno'] .app {
+  background-image: repeating-linear-gradient(180deg, transparent 0 27px, rgba(47, 93, 140, 0.06) 27px 28px);
+}
+:root[data-style='quaderno'] .deck-btn .label,
+:root[data-style='quaderno'] .ctl-label { text-transform: none; letter-spacing: 0; font-weight: 600; }
+
+/* --- Strumento: alluminio spazzolato, comandi scuri su fondo chiaro --- */
+:root[data-style='strumento'] {
+  --bg: #b4babf;
+  --bg-elev: #c3c8cc;
+  --bg-btn: #9aa0a6;
+  --border: #3a3e42;
+  --text: #16191c;
+  --text-dim: #4a4f54;
+  --accent: #1f5fbf;
+  --ok: #2e7d46;
+  --warn: #c88a0b;
+  --err: #b32b22;
+  --radius: 4px;
+  --ctl-surf-2: #6e747a;
+  --ctl-hi: rgba(255, 255, 255, 0.35);
+  --ctl-shadow: 0 1px 0 rgba(255, 255, 255, 0.28), 0 3px 6px -3px rgba(0, 0, 0, 0.55);
+}
+:root[data-style='strumento'] body {
+  background-image: repeating-linear-gradient(96deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 4px);
+}
+:root[data-style='strumento'] .ctl-display { color: #e4e9ed; --ctl-surf-2: #16191c; }
+:root[data-style='strumento'] .ctl-display .rd-big { color: #78cbff; }
+:root[data-style='strumento'] .ctl-display .rd-sub { color: #7b848e; }
+
+/* --- Camera oscura: nero caldo, una sola luce rossa --- */
+:root[data-style='oscura'] {
+  --bg: #0a0708;
+  --bg-elev: #14100f;
+  --bg-btn: #1a1517;
+  --border: #000000;
+  --text: #e6ddda;
+  --text-dim: #7a6c69;
+  --accent: #e23b3b;
+  --ok: #6fa672;
+  --warn: #d9a22b;
+  --err: #e23b3b;
+  --radius: 8px;
+  --ctl-surf-2: #0e0b0c;
+  --ctl-hi: rgba(255, 255, 255, 0.05);
+  --ctl-shadow: 0 2px 0 #000, 0 6px 16px -9px rgba(0, 0, 0, 0.9);
+}
+:root[data-style='oscura'] body { background-image: radial-gradient(120% 90% at 50% -10%, #2a1d1e, transparent 70%); }
