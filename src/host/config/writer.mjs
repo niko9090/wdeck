@@ -94,9 +94,14 @@ export function compactDeck(deck) {
           if (button.color) out.color = button.color;
           if (button.textColor) out.textColor = button.textColor;
           if (button.holdAction) out.holdAction = button.holdAction;
-          for (const key of ['min', 'max', 'step']) {
+          if (button.releaseAction) out.releaseAction = button.releaseAction;
+          for (const key of ['min', 'max', 'step', 'rows', 'cols', 'seconds', 'mode', 'orientation']) {
             if (button[key] !== undefined && button[key] !== null) out[key] = button[key];
           }
+          // Il cursore centrato e le opzioni del selettore: si scrivono solo se
+          // ci sono davvero, cosi' un deck di soli pulsanti resta pulito.
+          if (button.center) out.center = true;
+          if (Array.isArray(button.options) && button.options.length) out.options = [...button.options];
           return out;
         })
       }))

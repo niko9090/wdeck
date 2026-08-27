@@ -235,6 +235,12 @@ body {
      trascinamento degli slider): lasciarli al browser li trasformerebbe in
      scroll e uno swipe su due andrebbe perso. */
   touch-action: none;
+  /* Ripetuto qui e sui tile e non solo su body: la pressione prolungata su
+     un'etichetta faceva partire la selezione del testo (maniglie blu, tasto
+     "afferrato", hold perso). Va dichiarato sull'elemento che riceve il dito. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* transizione fra pagine: breve, solo per dare direzione al gesto */
@@ -267,6 +273,9 @@ body {
   border-radius: var(--radius);
   cursor: pointer;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   transition: transform 90ms ease, filter 120ms ease;
 }
 
@@ -387,6 +396,9 @@ body {
   overflow-y: auto;
 }
 .dyn-tile, .widget-tile {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -579,6 +591,9 @@ body {
   border-radius: var(--radius);
   cursor: ew-resize;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .slider-fill {

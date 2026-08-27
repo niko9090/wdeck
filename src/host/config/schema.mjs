@@ -17,7 +17,8 @@ export const LIMITS = Object.freeze({
   maxGroupLabel: 32,
   maxGroupsPerPage: 24,
   minTokenLength: 8,
-  maxButtonsPerPage: 96
+  maxButtonsPerPage: 96,
+  maxSelectorOptions: 8
 });
 
 export const DEFAULT_SETTINGS = Object.freeze({
@@ -54,8 +55,50 @@ export const DEFAULT_SETTINGS = Object.freeze({
   integrations: {}
 });
 
-/** Tipi di controllo che un elemento della griglia puo' assumere. */
-export const CONTROL_KINDS = ['button', 'slider'];
+/**
+ * Tipi di controllo che un elemento della griglia puo' assumere.
+ *
+ * Un deck non e' fatto di soli pulsanti: ci sono manopole che girano, rotelle
+ * che scorrono all'infinito, tavolette a due assi e quadranti che leggono
+ * soltanto. Il tipo decide COME si comanda; l'azione resta quella di sempre.
+ */
+export const CONTROL_KINDS = [
+  // si premono
+  'button', 'folder', 'macro', 'timer', 'pad', 'selector',
+  // si trascinano (valore assoluto)
+  'slider', 'xy', 'color',
+  // girano o scattano (scarto relativo)
+  'encoder', 'jog', 'stepper',
+  // leggono e basta
+  'gauge', 'meter', 'chart', 'display'
+];
+
+/**
+ * Comandi di SOLA LETTURA: mostrano lo stato che l'host gia' pubblica e non
+ * accettano pressioni. Un comando che non fa niente quando lo tocchi deve
+ * rifiutare la pressione, non eseguirla in silenzio.
+ */
+export const READONLY_KINDS = ['gauge', 'meter', 'chart', 'display'];
+
+/**
+ * Comandi che mandano uno SCARTO invece di un valore assoluto: una manopola
+ * non ha una posizione, ha degli scatti. L'host riceve `delta`, non `value`.
+ */
+export const DELTA_KINDS = ['encoder', 'jog', 'stepper'];
+
+/** Comandi che mandano una COPPIA di valori in un messaggio solo. */
+export const PAIR_KINDS = ['xy'];
+
+/**
+ * Larghezza predefinita in celle. Cursori, tavolette, matrici e grafici sono
+ * illeggibili in una cella sola: il valore vale sia in validazione sia a
+ * runtime, altrimenti un controllo passerebbe il controllo di sovrapposizione
+ * e poi sfonderebbe la griglia.
+ */
+export function defaultSpan(kind) {
+  if (kind === 'slider' || kind === 'xy' || kind === 'pad' || kind === 'chart') return 2;
+  return 1;
+}
 
 /** Sorgenti delle pagine dinamiche: i tile arrivano dall'host, non da `buttons`. */
 export const PAGE_SOURCES = ['windows', 'apps', 'widgets'];
@@ -96,6 +139,20 @@ function checkInt(ctx, path, value, { required = false, min = -Infinity, max = I
   }
   if (typeof value !== 'number' || !Number.isInteger(value)) {
     return ctx.err(path, `atteso intero, ricevuto ${Array.isArray(value) ? 'array' : typeof value}`);
+  }
+  if (value < min || value > max) return ctx.err(path, `valore fuori intervallo [${min}, ${max}]`);
+  return true;
+}
+
+/**
+ * Come checkInt ma per i numeri veri: una manopola del termostato va da 15 a 30
+ * a scatti di 0.5, e l'esposizione di una foto va da -5 a +5. Rifiutare i
+ * decimali e i negativi qui renderebbe inutilizzabili meta' dei comandi.
+ */
+function checkNum(ctx, path, value, { min = -1e6, max = 1e6 } = {}) {
+  if (value === undefined || value === null) return false;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return ctx.err(path, `atteso numero, ricevuto ${Array.isArray(value) ? 'array' : typeof value}`);
   }
   if (value < min || value > max) return ctx.err(path, `valore fuori intervallo [${min}, ${max}]`);
   return true;
@@ -397,18 +454,8 @@ function validateButton(ctx, path, button, page, seen, actionTypes, groupIds = n
   // il feedback senza modifiche.
   checkBool(ctx, `${path}.status`, button.status);
 
-  // Uno slider occupa piu' celle in orizzontale e ha un proprio intervallo.
   if (button.span !== undefined) checkInt(ctx, `${path}.span`, button.span, { min: 1, max: LIMITS.maxCols });
-  for (const key of ['min', 'max', 'step']) {
-    if (button[key] !== undefined) checkInt(ctx, `${path}.${key}`, button[key], { min: 0, max: 1000 });
-  }
-  if (button.kind === 'slider') {
-    const min = button.min ?? 0;
-    const max = button.max ?? 100;
-    if (typeof min === 'number' && typeof max === 'number' && min >= max) {
-      ctx.err(`${path}.max`, `"max" (${max}) deve essere maggiore di "min" (${min})`);
-    }
-  }
+  validateControlKind(ctx, path, button);
   if (button.color !== undefined) checkString(ctx, `${path}.color`, button.color, { pattern: HEX_COLOR_RE, label: 'colore hex' });
   if (button.textColor !== undefined) checkString(ctx, `${path}.textColor`, button.textColor, { pattern: HEX_COLOR_RE, label: 'colore hex' });
 
@@ -433,7 +480,7 @@ function validateButton(ctx, path, button, page, seen, actionTypes, groupIds = n
   // default che `normalizeDeck` applica a runtime. Usarne uno diverso qui farebbe
   // passare la validazione a uno slider da 1 cella che poi a runtime ne occupa 2,
   // sfondando la griglia e sfuggendo al controllo di sovrapposizione.
-  const spanPredefinito = button.kind === 'slider' ? 2 : 1;
+  const spanPredefinito = defaultSpan(button.kind ?? 'button');
   const span = Number.isInteger(button.span) && button.span > 0 ? button.span : spanPredefinito;
   if (typeof button.col === 'number' && typeof page.cols === 'number' && button.col + span > page.cols) {
     ctx.err(`${path}.span`, `il controllo largo ${span} celle da colonna ${button.col} esce dalla griglia (cols=${page.cols})`);
@@ -452,7 +499,80 @@ function validateButton(ctx, path, button, page, seen, actionTypes, groupIds = n
   if (button.action === undefined) ctx.err(`${path}.action`, 'campo obbligatorio mancante');
   else validateAction(ctx, `${path}.action`, button.action, actionTypes);
 
-  if (button.holdAction !== undefined) validateAction(ctx, `${path}.holdAction`, button.holdAction, actionTypes);
+  // `null` vale "nessuna azione": l'editor lo manda cosi' quando la si toglie,
+  // e normalizeDeck lo restituisce cosi' - rifiutarlo renderebbe non salvabile
+  // un deck appena letto dall'host.
+  if (button.holdAction != null) validateAction(ctx, `${path}.holdAction`, button.holdAction, actionTypes);
+  // Azione al rilascio: con questa il bottone diventa "momentaneo" (action alla
+  // pressione, releaseAction al rilascio) - e' il push-to-talk.
+  if (button.releaseAction != null) validateAction(ctx, `${path}.releaseAction`, button.releaseAction, actionTypes);
+}
+
+/**
+ * Controlli specifici del tipo di comando. Ogni tipo dichiara qui i campi che
+ * gli servono: senza questo un selettore senza opzioni o una matrice senza
+ * righe passerebbero la validazione e poi non si potrebbero disegnare.
+ */
+function validateControlKind(ctx, path, button) {
+  const kind = button.kind ?? 'button';
+
+  // Intervallo e passo: li usano cursori, manopole e passo-passo. Numeri veri,
+  // non interi: servono i decimali (0.5 gradi) e i negativi (esposizione).
+  for (const key of ['min', 'max', 'step']) {
+    if (button[key] !== undefined) checkNum(ctx, `${path}.${key}`, button[key]);
+  }
+  if (['slider', 'encoder', 'stepper'].includes(kind)) {
+    const min = button.min ?? 0;
+    const max = button.max ?? 100;
+    if (typeof min === 'number' && typeof max === 'number' && min >= max) {
+      ctx.err(`${path}.max`, `"max" (${max}) deve essere maggiore di "min" (${min})`);
+    }
+    if (button.step !== undefined && typeof button.step === 'number' && button.step <= 0) {
+      ctx.err(`${path}.step`, '"step" deve essere maggiore di zero');
+    }
+  }
+
+  // Il cursore puo' stare in verticale (volume) e puo' partire dal centro
+  // (bilanciamento): due gesti diversi, non due controlli diversi.
+  if (button.orientation !== undefined) {
+    if (!['h', 'v'].includes(button.orientation)) ctx.err(`${path}.orientation`, 'valore ammesso: h | v');
+  }
+  checkBool(ctx, `${path}.center`, button.center);
+
+  if (kind === 'selector') {
+    if (!Array.isArray(button.options) || button.options.length < 2) {
+      ctx.err(`${path}.options`, 'un selettore vuole almeno due opzioni');
+    } else if (button.options.length > LIMITS.maxSelectorOptions) {
+      ctx.err(`${path}.options`, `al massimo ${LIMITS.maxSelectorOptions} opzioni`);
+    } else {
+      button.options.forEach((o, i) => checkString(ctx, `${path}.options[${i}]`, o, { required: true, max: 24 }));
+    }
+  }
+
+  if (kind === 'pad') {
+    for (const key of ['rows', 'cols']) {
+      if (button[key] !== undefined) checkInt(ctx, `${path}.${key}`, button[key], { min: 1, max: 8 });
+    }
+  }
+
+  if (kind === 'timer') {
+    if (button.seconds !== undefined) checkInt(ctx, `${path}.seconds`, button.seconds, { min: 1, max: 86400 });
+  }
+
+  if (kind === 'color') {
+    if (button.mode !== undefined && !['kelvin', 'rgb'].includes(button.mode)) {
+      ctx.err(`${path}.mode`, 'valore ammesso: kelvin | rgb');
+    }
+  }
+
+  // Un comando di sola lettura con un'azione di hold o di rilascio e' un
+  // errore di configurazione silenzioso: non si preme, quindi non scattano mai.
+  if (READONLY_KINDS.includes(kind)) {
+    for (const key of ['holdAction', 'releaseAction']) {
+      if (button[key] != null) ctx.err(`${path}.${key}`, `un comando "${kind}" e' di sola lettura: non puo' avere azioni di pressione`);
+    }
+    if (button.confirm === true) ctx.err(`${path}.confirm`, `un comando "${kind}" e' di sola lettura: la conferma non serve`);
+  }
 }
 
 function validateNavigationTargets(ctx, deck) {
@@ -629,12 +749,21 @@ export function normalizeDeck(raw) {
         row: button.row,
         col: button.col,
         kind: button.kind ?? 'button',
-        span: button.span ?? (button.kind === 'slider' ? 2 : 1),
+        span: button.span ?? defaultSpan(button.kind ?? 'button'),
         confirm: button.confirm === true,
         status: button.status !== false,
-        ...(button.kind === 'slider'
+        // Ogni tipo porta con se' solo i campi che gli servono: cosi' il client
+        // non deve indovinare e il file non si riempie di campi inerti.
+        ...(['slider', 'encoder', 'stepper'].includes(button.kind)
           ? { min: button.min ?? 0, max: button.max ?? 100, step: button.step ?? 1 }
           : {}),
+        ...(button.kind === 'slider'
+          ? { orientation: button.orientation ?? 'h', center: button.center === true }
+          : {}),
+        ...(button.kind === 'selector' ? { options: [...(button.options ?? [])] } : {}),
+        ...(button.kind === 'pad' ? { rows: button.rows ?? 4, cols: button.cols ?? 4 } : {}),
+        ...(button.kind === 'timer' ? { seconds: button.seconds ?? 1500 } : {}),
+        ...(button.kind === 'color' ? { mode: button.mode ?? 'kelvin' } : {}),
         icon: button.icon ?? null,
         color: button.color ?? null,
         textColor: button.textColor ?? null,
@@ -642,6 +771,9 @@ export function normalizeDeck(raw) {
         action: { type: button.action.type, params: button.action.params ?? {} },
         holdAction: button.holdAction
           ? { type: button.holdAction.type, params: button.holdAction.params ?? {} }
+          : null,
+        releaseAction: button.releaseAction
+          ? { type: button.releaseAction.type, params: button.releaseAction.params ?? {} }
           : null
       }))
     }))

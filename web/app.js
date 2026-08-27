@@ -993,7 +993,7 @@ function renderLastAction(entry) {
  * aspettare la risposta dell'host per illuminare il tasto lo faceva sembrare
  * lento anche quando l'azione partiva in pochi millisecondi.
  */
-function pressButton(element, { hold = false, value } = {}) {
+function pressButton(element, { hold = false, release = false, value } = {}) {
   const buttonId = element.dataset.id;
   if (!buttonId) return;
   const requestId = `r${++state.requestSeq}`;
@@ -1005,6 +1005,7 @@ function pressButton(element, { hold = false, value } = {}) {
     profileId: state.profileId,
     pageId: state.pageId,
     hold,
+    release,
     ...(value !== undefined ? { value } : {}),
     dryRun: state.simulate,
     requestId
@@ -1333,6 +1334,7 @@ function bindIconPicker({ onPick }) {
 // poterne leggere i parametri correnti.
 let edMainCtl = null;
 let edHoldCtl = null;
+let edReleaseCtl = null;
 
 /**
  * Opzioni dinamiche per i campi che puntano al deck stesso: l'elenco dei
@@ -1663,7 +1665,8 @@ async function editButton(buttonId, cell, seed = null) {
       icon: seed?.icon ?? null,
       color: seed?.color ?? '#2d3b55',
       action: seed?.action ? JSON.parse(JSON.stringify(seed.action)) : { type: 'noop', params: {} },
-      ...(seed?.holdAction ? { holdAction: JSON.parse(JSON.stringify(seed.holdAction)) } : {})
+      ...(seed?.holdAction ? { holdAction: JSON.parse(JSON.stringify(seed.holdAction)) } : {}),
+      ...(seed?.releaseAction ? { releaseAction: JSON.parse(JSON.stringify(seed.releaseAction)) } : {})
     };
 
   const options = groups
@@ -1679,6 +1682,12 @@ async function editButton(buttonId, cell, seed = null) {
   const holdOptions = `<option value="">${escapeHtml(t('edit.holdNone'))}</option>`
     + groups.map((g) => `<optgroup label="${escapeHtml(g.label)}">`
       + g.actions.map((a) => `<option value="${a.type}"${a.type === draft.holdAction?.type ? ' selected' : ''}>${escapeHtml(a.title)}</option>`).join('')
+      + '</optgroup>').join('');
+
+  // Azione al rilascio: trasforma il bottone in "momentaneo" (push-to-talk).
+  const releaseOptions = `<option value="">${escapeHtml(t('edit.releaseNone'))}</option>`
+    + groups.map((g) => `<optgroup label="${escapeHtml(g.label)}">`
+      + g.actions.map((a) => `<option value="${a.type}"${a.type === draft.releaseAction?.type ? ' selected' : ''}>${escapeHtml(a.title)}</option>`).join('')
       + '</optgroup>').join('');
 
   openSheet({
@@ -1700,12 +1709,24 @@ async function editButton(buttonId, cell, seed = null) {
 
       <h3 class="sheet-section">${t('edit.hold')}</h3>
       <p class="sheet-hint">${t('edit.holdHint')}</p>
+      <p id="ed-hold-conflict" class="sheet-hint warn" hidden>${t('edit.holdIgnored')}</p>
       <label class="field"><span>${t('edit.action')}</span><select id="ed-hold-type" class="select wide">${holdOptions}</select></label>
       <div id="ed-hold-params-field">
         <div id="ed-hold-fields" class="ed-fields"></div>
         <button type="button" class="btn ghost small ed-adv-toggle" id="ed-hold-adv-toggle" aria-expanded="false">${t('edit.advanced')}</button>
         <div id="ed-hold-adv" hidden>
           <label class="field"><span>${t('edit.paramsJson')}</span><textarea id="ed-hold-params" rows="3" spellcheck="false">${escapeHtml(JSON.stringify(draft.holdAction?.params ?? {}, null, 2))}</textarea></label>
+        </div>
+      </div>
+
+      <h3 class="sheet-section">${t('edit.release')}</h3>
+      <p class="sheet-hint">${t('edit.releaseHint')}</p>
+      <label class="field"><span>${t('edit.action')}</span><select id="ed-release-type" class="select wide">${releaseOptions}</select></label>
+      <div id="ed-release-params-field">
+        <div id="ed-release-fields" class="ed-fields"></div>
+        <button type="button" class="btn ghost small ed-adv-toggle" id="ed-release-adv-toggle" aria-expanded="false">${t('edit.advanced')}</button>
+        <div id="ed-release-adv" hidden>
+          <label class="field"><span>${t('edit.paramsJson')}</span><textarea id="ed-release-params" rows="3" spellcheck="false">${escapeHtml(JSON.stringify(draft.releaseAction?.params ?? {}, null, 2))}</textarea></label>
         </div>
       </div>
 
@@ -1767,6 +1788,28 @@ async function editButton(buttonId, cell, seed = null) {
   holdSelect.addEventListener('change', aggiornaHold);
   aggiornaHold();
 
+  const releaseSelect = el('ed-release-type');
+  edReleaseCtl = wireActionEditor({
+    typeSelect: releaseSelect,
+    fieldsBox: el('ed-release-fields'),
+    advToggle: el('ed-release-adv-toggle'),
+    advBox: el('ed-release-adv'),
+    textarea: el('ed-release-params'),
+    allActions,
+    initialParams: draft.releaseAction?.params
+  });
+  const aggiornaRelease = () => {
+    const attiva = releaseSelect.value !== '';
+    el('ed-release-params-field').hidden = !attiva;
+    // Con un'azione al rilascio il bottone diventa momentaneo: la pressione
+    // prolungata non scatterebbe mai, quindi si dice chiaro invece di
+    // lasciare due impostazioni che si contraddicono in silenzio.
+    el('ed-hold-conflict').hidden = !(attiva && holdSelect.value !== '');
+  };
+  releaseSelect.addEventListener('change', aggiornaRelease);
+  holdSelect.addEventListener('change', aggiornaRelease);
+  aggiornaRelease();
+
   // "Prova": esegue l'azione in dry-run e mostra cosa farebbe, senza salvarla
   // ne' toccare il sistema. Utile a chi non sa cosa fa un'azione e per
   // controllare i parametri prima di salvare.
@@ -1815,6 +1858,20 @@ async function saveButtonDraft(draft, existing) {
     holdAction = { type: holdType, params: holdParams };
   }
 
+  const releaseType = el('ed-release-type').value;
+  let releaseAction = null;
+  if (releaseType !== '') {
+    let releaseParams;
+    try {
+      releaseParams = edReleaseCtl.readParams();
+    } catch (err) {
+      toast(t('edit.releaseParamsInvalid', { message: err.message }), 'err');
+      return;
+    }
+    if (!releaseParams || typeof releaseParams !== 'object' || Array.isArray(releaseParams)) releaseParams = {};
+    releaseAction = { type: releaseType, params: releaseParams };
+  }
+
   const kind = el('ed-kind').value;
   const next = {
     ...draft,
@@ -1828,6 +1885,7 @@ async function saveButtonDraft(draft, existing) {
     status: el('ed-status').checked,
     group: el('ed-group')?.value || null,
     holdAction,
+    releaseAction,
     action: { type: el('ed-type').value, params }
   };
   if (kind === 'slider') {
@@ -2987,6 +3045,17 @@ function bindGrid() {
       // segue il tocco quasi subito (e il bottone si "abbassa" gia' ora, come
       // riscontro), quindi la reattivita' resta buona. Con un'azione di hold si
       // fa partire quella dopo la soglia, come prima.
+      // Bottone MOMENTANEO: con un'azione al rilascio configurata il tasto
+      // cambia natura - l'azione normale parte subito alla pressione e quella
+      // di rilascio quando si alza il dito. E' il push-to-talk (smuta ora,
+      // rimuta dopo) e non ha senso farlo scattare al rilascio come gli altri.
+      if (spec?.releaseAction) {
+        gesture.momentary = true;
+        gesture.fired = true;
+        runPress(button, spec);
+        return;
+      }
+
       if (spec?.holdAction) {
         gesture.holdTimer = setTimeout(() => {
           gesture.fired = true;
@@ -3052,6 +3121,9 @@ function bindGrid() {
     if (gesture.kind === 'slider') {
       sendSliderValue(gesture.element, { final: true });
       state.draggingId = null;
+    } else if (gesture.kind === 'button' && gesture.momentary) {
+      gesture.element.classList.remove('pending');
+      runPress(gesture.element, gesture.spec, { release: true });
     } else if (gesture.kind === 'button' && !gesture.fired) {
       const spec = gesture.spec;
       gesture.element.classList.remove('pending');
@@ -3067,6 +3139,12 @@ function bindGrid() {
 
   ui.grid.addEventListener('pointerup', endGesture);
   ui.grid.addEventListener('pointercancel', () => {
+    // Se il gesto viene annullato dal sistema (chiamata in arrivo, gesto di
+    // sistema) un bottone momentaneo resterebbe "premuto" per sempre: il
+    // microfono aperto, la luce accesa. Il rilascio va mandato lo stesso.
+    if (gesture?.kind === 'button' && gesture.momentary) {
+      runPress(gesture.element, gesture.spec, { release: true });
+    }
     if (gesture?.element) gesture.element.classList.remove('pending', 'dragging');
     clearHold();
     clearDropCell();
@@ -3074,6 +3152,14 @@ function bindGrid() {
     gesture = null;
   });
   ui.grid.addEventListener('contextmenu', (event) => event.preventDefault());
+
+  // Tenendo premuto un tasto, il browser (soprattutto su touch) fa partire la
+  // selezione del testo dell'etichetta: compare la maniglia blu, il tasto
+  // sembra "afferrato" e il gesto di hold si perde. Sul deck non c'e' niente
+  // da selezionare, quindi la selezione si annulla in partenza. Serve sia
+  // questo sia `user-select: none` in CSS: da solo il CSS non basta su tutti
+  // i motori, e da solo questo non copre il doppio tap.
+  ui.grid.addEventListener('selectstart', (event) => event.preventDefault());
 
   // Uno slider con role="slider" e tabindex="0" deve rispondere alle frecce:
   // senza questo la tastiera non lo puo' regolare (WCAG 2.1.1) e le frecce

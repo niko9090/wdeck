@@ -186,6 +186,55 @@ test('holdAction: sopravvive al salvataggio su deck.json', () => {
   assert.deepEqual(compatto.profiles[0].pages[0].buttons[0].holdAction, { type: 'noop', params: { nota: 'x' } });
 });
 
+test("releaseAction: l’editor la offre, la salva e rende il tasto momentaneo", () => {
+  const app = read('web/app.js');
+  assert.ok(app.includes('ed-release-type'), "manca la scelta dell’azione al rilascio");
+  assert.ok(app.includes('ed-release-params'), "mancano i parametri dell’azione al rilascio");
+  assert.match(app, /releaseAction,/, 'il controllo salvato deve portarsi dietro releaseAction');
+  assert.ok(app.includes('gesture.momentary'), 'il gesto deve avere la modalita momentanea');
+  assert.ok(app.includes('{ release: true }'), 'al rilascio va inviato il flag release');
+  assert.ok(app.includes('edit.releaseParamsInvalid'), 'i parametri sbagliati devono essere segnalati');
+});
+
+test('releaseAction: sopravvive al salvataggio su deck.json', () => {
+  const deck = normalizeDeck(rawDeck());
+  deck.profiles[0].pages[0].buttons[0].releaseAction = { type: 'noop', params: { nota: 'x' } };
+  const compatto = compactDeck(deck);
+  assert.deepEqual(compatto.profiles[0].pages[0].buttons[0].releaseAction, { type: 'noop', params: { nota: 'x' } });
+});
+
+test('releaseAction: assente non lascia tracce nel file', () => {
+  const compatto = compactDeck(normalizeDeck(rawDeck()));
+  assert.equal('releaseAction' in compatto.profiles[0].pages[0].buttons[0], false);
+});
+
+test('releaseAction: viene validata come una qualunque azione', () => {
+  const deck = rawDeck();
+  deck.profiles[0].pages[0].buttons[0].releaseAction = { type: 'inesistente', params: {} };
+  const result = validateDeck(deck, { actionTypes: ['media', 'hotkey', 'text', 'launch', 'navigate', 'sequence', 'delay', 'noop'] });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.path.includes('releaseAction')), JSON.stringify(result.errors));
+});
+
+test('hold e releaseAction: null vale "nessuna azione", non un errore', () => {
+  // L’editor manda null quando l’azione viene tolta, e normalizeDeck la
+  // restituisce null: rifiutarlo renderebbe non salvabile un deck appena letto.
+  const deck = rawDeck();
+  deck.profiles[0].pages[0].buttons[0].holdAction = null;
+  deck.profiles[0].pages[0].buttons[0].releaseAction = null;
+  const result = validateDeck(deck, { actionTypes: ['media', 'hotkey', 'text', 'launch', 'navigate', 'sequence', 'delay', 'noop'] });
+  assert.equal(result.valid, true, JSON.stringify(result.errors));
+});
+
+test('selezione: la pressione prolungata non deve selezionare il testo', () => {
+  // Su touch il long press faceva partire la selezione dell’etichetta: maniglie
+  // blu, tasto "afferrato", hold perso. Servono sia il CSS sia selectstart.
+  const app = read('web/app.js');
+  const css = read('web/app.css');
+  assert.ok(app.includes("addEventListener('selectstart'"), 'la griglia deve annullare selectstart');
+  assert.match(css, /\.grid \{[^}]*user-select: none/s, 'la griglia deve avere user-select: none');
+});
+
 test('holdAction: assente non lascia tracce nel file', () => {
   const compatto = compactDeck(normalizeDeck(rawDeck()));
   assert.equal('holdAction' in compatto.profiles[0].pages[0].buttons[0], false);
