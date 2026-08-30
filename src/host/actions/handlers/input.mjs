@@ -92,30 +92,65 @@ export const mediaAction = {
   }
 };
 
+/**
+ * Traduce lo scatto di una manopola in una combinazione e in quante volte
+ * mandarla. Senza `delta` non cambia niente: resta l'hotkey di sempre.
+ *
+ * `keysBack` esiste perche' una manopola gira in due versi mentre una
+ * combinazione ne ha uno solo: e' la scorciatoia del verso "indietro"
+ * (ctrl+meno per ctrl+piu', ctrl+z per ctrl+y). Se non c'e', la manopola
+ * ripete la stessa combinazione in entrambi i versi.
+ */
+function resolveHotkey(params) {
+  const repeat = params?.repeat ?? 1;
+  if (params?.delta === undefined) return { keys: params?.keys, repeat };
+  const d = Number(params.delta);
+  const scatti = Math.min(20, Math.max(1, Math.round(Math.abs(d))));
+  const indietro = d < 0 && params.keysBack;
+  return { keys: indietro ? params.keysBack : params.keys, repeat: scatti };
+}
+
 export const hotkeyAction = {
   type: 'hotkey',
   title: 'Hotkey',
   description: 'Invia una combinazione di tasti, ad esempio "ctrl+shift+m" oppure "win+d". '
-    + 'Su macOS "win" corrisponde al tasto Comando, su Linux al tasto Super.',
+    + 'Su macOS "win" corrisponde al tasto Comando, su Linux al tasto Super. Su una manopola '
+    + 'ogni scatto e\' un invio: con "Tasti all\'indietro" i due versi mandano combinazioni '
+    + 'diverse (ctrl+piu\' girando in avanti, ctrl+meno tornando indietro).',
   platforms: [...SUPPORTED_PLATFORMS],
   category: 'input',
-  paramsHelp: { keys: 'es. "ctrl+alt+del", "win+l", "f5"', repeat: 'intero 1..20 (default 1)' },
+  paramsHelp: {
+    keys: 'es. "ctrl+alt+del", "win+l", "f5"',
+    keysBack: 'combinazione per il verso opposto della manopola (facoltativa)',
+    repeat: 'intero 1..20 (default 1)',
+    delta: 'scatti della manopola: quante volte inviare, il segno sceglie il verso'
+  },
   fields: [
     { key: 'keys', label: 'Tasti', type: 'hotkey', help: 'es. "ctrl+alt+del", "win+l", "f5"', placeholder: 'ctrl+shift+m', required: true },
+    { key: 'keysBack', label: 'Tasti all\'indietro', type: 'hotkey', help: 'usata quando la manopola gira dall\'altra parte', placeholder: 'ctrl+-' },
     { key: 'repeat', label: 'Ripetizioni', type: 'number', help: 'intero 1..20 (default 1)', min: 1, max: 20, step: 1, default: 1 }
   ],
   validate(params) {
     parseHotkey(params?.keys);
+    if (params?.keysBack !== undefined && params.keysBack !== null && params.keysBack !== '') {
+      parseHotkey(params.keysBack);
+    }
     checkRepeat(params?.repeat);
+    if (params?.delta !== undefined && !Number.isFinite(Number(params.delta))) {
+      throw new Error('parametro "delta" non valido: atteso un numero');
+    }
   },
-  describe: (params) => `hotkey "${params?.keys}"`,
+  describe(params) {
+    const { keys, repeat } = resolveHotkey(params);
+    return `hotkey "${keys}"${repeat > 1 ? ` x${repeat}` : ''}`;
+  },
   async run(params, ctx) {
-    const repeat = params.repeat ?? 1;
+    const { keys, repeat } = resolveHotkey(params);
     if (ctx.dryRun) {
-      const plan = planHotkey(params.keys, { repeat });
+      const plan = planHotkey(keys, { repeat });
       return { ok: true, simulated: true, detail: plan.description, script: plan.command, backend: plan.backend };
     }
-    const out = await sendHotkey(params.keys, { repeat });
+    const out = await sendHotkey(keys, { repeat });
     return { ok: true, ...out };
   }
 };
@@ -147,14 +182,44 @@ export const textAction = {
   }
 };
 
+/**
+ * Decide che gesto fare davvero, mettendo insieme la configurazione del tasto
+ * e cio' che il dito ha mandato in questo momento.
+ *
+ * L'ordine non e' arbitrario: la coppia x/y e il delta descrivono un GESTO
+ * appena compiuto (una tavoletta toccata, una manopola girata) e devono avere
+ * la precedenza sul `command` scritto una volta nell'editor. Chi ha appoggiato
+ * il dito su una tavoletta si aspetta che il puntatore vada li', non che parta
+ * il clic sinistro rimasto come valore predefinito.
+ */
+function resolveMouse(params) {
+  if (params?.x !== undefined && params?.y !== undefined) {
+    return { command: 'move', options: { x: Number(params.x), y: Number(params.y) } };
+  }
+  if (params?.delta !== undefined) {
+    const d = Number(params.delta);
+    // Una manopola non ha un verso scritto nell'editor: il segno dello scatto
+    // e' il verso. Uno scatto nullo non e' un errore, semplicemente non scorre.
+    return { command: d >= 0 ? 'scroll-up' : 'scroll-down', options: { notches: Math.abs(d) } };
+  }
+  return { command: params?.command, options: {} };
+}
+
 export const mouseAction = {
   type: 'mouse',
   title: 'Mouse',
-  description: 'Esegue un clic (sinistro, destro, centrale), un doppio clic o uno scorrimento della '
-    + 'rotellina alla posizione attuale del cursore. Per ora solo Windows.',
+  description: 'Esegue un clic (sinistro, destro, centrale), un doppio clic, uno scorrimento della '
+    + 'rotellina o uno spostamento del puntatore. Su una manopola lo scatto diventa scorrimento '
+    + '(il segno decide il verso); su una tavoletta il punto toccato diventa la posizione del '
+    + 'puntatore sullo schermo principale. Per ora solo Windows.',
   platforms: ['win32'],
   category: 'input',
-  paramsHelp: { command: MOUSE_COMMANDS.join(' | ') },
+  paramsHelp: {
+    command: MOUSE_COMMANDS.join(' | '),
+    delta: 'scatti di rotellina, segno = verso (arriva da manopole e rotelle)',
+    x: 'posizione orizzontale 0..100 (arriva dalle tavolette, insieme a y)',
+    y: 'posizione verticale 0..100 con lo zero in basso (insieme a x)'
+  },
   fields: [
     {
       key: 'command',
@@ -168,22 +233,46 @@ export const mouseAction = {
         { value: 'middle', label: 'Clic centrale' },
         { value: 'double', label: 'Doppio clic' },
         { value: 'scroll-up', label: 'Scorri su' },
-        { value: 'scroll-down', label: 'Scorri giu\'' }
+        { value: 'scroll-down', label: 'Scorri giu\'' },
+        { value: 'move', label: 'Sposta il puntatore' }
       ]
-    }
+    },
+    { key: 'x', label: 'Posizione X', type: 'number', help: 'solo per "sposta": 0..100 da sinistra', min: 0, max: 100, step: 1 },
+    { key: 'y', label: 'Posizione Y', type: 'number', help: 'solo per "sposta": 0..100 dal basso', min: 0, max: 100, step: 1 }
   ],
   validate(params) {
-    if (!MOUSE_COMMANDS.includes(params?.command)) {
+    const coppia = ['x', 'y'].filter((k) => params?.[k] !== undefined);
+    // Mezza coppia sposterebbe il puntatore su un asse solo, in un punto che il
+    // dito non ha mai toccato: meglio un errore che una posizione inventata.
+    if (coppia.length === 1) throw new Error('parametri "x" e "y" vanno insieme: ne manca uno');
+    for (const k of coppia) {
+      const v = Number(params[k]);
+      if (!Number.isFinite(v) || v < 0 || v > 100) throw new Error(`parametro "${k}" non valido: atteso numero 0..100`);
+    }
+    if (params?.delta !== undefined && !Number.isFinite(Number(params.delta))) {
+      throw new Error('parametro "delta" non valido: atteso un numero');
+    }
+    const { command } = resolveMouse(params);
+    if (!MOUSE_COMMANDS.includes(command)) {
       throw new Error(`parametro "command" non valido: atteso uno fra ${MOUSE_COMMANDS.join(', ')}`);
     }
+    if (command === 'move' && coppia.length !== 2) {
+      throw new Error('"sposta il puntatore" richiede i parametri "x" e "y" (0..100)');
+    }
   },
-  describe: (params) => `mouse: ${params?.command}`,
+  describe(params) {
+    const { command, options } = resolveMouse(params);
+    if (command === 'move') return `mouse: sposta a ${Math.round(options.x ?? params?.x ?? 0)}%, ${Math.round(options.y ?? params?.y ?? 0)}%`;
+    if (options.notches != null) return `mouse: ${command} x${Math.max(1, Math.round(options.notches))}`;
+    return `mouse: ${command}`;
+  },
   async run(params, ctx) {
+    const { command, options } = resolveMouse(params);
     if (ctx.dryRun) {
-      const plan = planMouse(params.command);
+      const plan = planMouse(command, options);
       return { ok: true, simulated: true, detail: plan.description, script: plan.command, backend: plan.backend };
     }
-    const out = await sendMouse(params.command);
+    const out = await sendMouse(command, options);
     return { ok: true, ...out };
   }
 };

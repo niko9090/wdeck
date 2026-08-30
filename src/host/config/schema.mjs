@@ -94,9 +94,16 @@ export const PAIR_KINDS = ['xy'];
  * illeggibili in una cella sola: il valore vale sia in validazione sia a
  * runtime, altrimenti un controllo passerebbe il controllo di sovrapposizione
  * e poi sfonderebbe la griglia.
+ *
+ * Il cursore fa eccezione: in VERTICALE la larghezza non gli serve, gli serve
+ * l'altezza (che la griglia gli da' gia'). Due celle lo renderebbero una lastra
+ * larga e bassa, e ruberebbero spazio al vicino per niente.
+ * @param {string} kind
+ * @param {string} [orientation] 'h' | 'v' — conta solo per `slider`
  */
-export function defaultSpan(kind) {
-  if (kind === 'slider' || kind === 'xy' || kind === 'pad' || kind === 'chart') return 2;
+export function defaultSpan(kind, orientation = 'h') {
+  if (kind === 'slider') return orientation === 'v' ? 1 : 2;
+  if (kind === 'xy' || kind === 'pad' || kind === 'chart') return 2;
   return 1;
 }
 
@@ -492,7 +499,7 @@ function validateButton(ctx, path, button, page, seen, actionTypes, groupIds = n
   // default che `normalizeDeck` applica a runtime. Usarne uno diverso qui farebbe
   // passare la validazione a uno slider da 1 cella che poi a runtime ne occupa 2,
   // sfondando la griglia e sfuggendo al controllo di sovrapposizione.
-  const spanPredefinito = defaultSpan(button.kind ?? 'button');
+  const spanPredefinito = defaultSpan(button.kind ?? 'button', button.orientation);
   const span = Number.isInteger(button.span) && button.span > 0 ? button.span : spanPredefinito;
   if (typeof button.col === 'number' && typeof page.cols === 'number' && button.col + span > page.cols) {
     ctx.err(`${path}.span`, `il controllo largo ${span} celle da colonna ${button.col} esce dalla griglia (cols=${page.cols})`);
@@ -761,7 +768,7 @@ export function normalizeDeck(raw) {
         row: button.row,
         col: button.col,
         kind: button.kind ?? 'button',
-        span: button.span ?? defaultSpan(button.kind ?? 'button'),
+        span: button.span ?? defaultSpan(button.kind ?? 'button', button.orientation),
         confirm: button.confirm === true,
         status: button.status !== false,
         // Ogni tipo porta con se' solo i campi che gli servono: cosi' il client

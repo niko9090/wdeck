@@ -3,6 +3,53 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [0.10.0] - 2026-08-27
+
+### Aggiunto
+
+- **Vocabolario dei comandi: 16 tipi di controllo.** Un tasto ora ha un `kind`.
+  Si premono `button` `folder` `macro` `timer` `pad` `selector`; si trascinano
+  `slider` `xy` `color`; girano `encoder` `jog` `stepper`; leggono e basta
+  `gauge` `meter` `chart` `display`. I tipi di sola lettura rifiutano le
+  pressioni e non possono avere azioni di hold, di rilascio o conferma.
+- **Due campi nuovi nel `press`** (REST e WebSocket): `delta` (scarto relativo,
+  anche negativo o decimale) e la coppia `x`/`y`, che viaggia sempre intera —
+  mezza coppia e' `bad_request`. Finiscono in `action.params`.
+- **Gli handler li usano davvero.** `volume`/`mic`/`brightness` seguono lo
+  scatto della manopola; `mouse` scorre la rotellina con `delta` (il segno da'
+  il verso, tetto 30 scatti) e con `x`/`y` porta il puntatore in quel punto
+  dello schermo principale; `hotkey` manda la combinazione una volta per scatto
+  e, con il nuovo `keysBack`, manda una combinazione diversa girando
+  all'indietro (zoom avanti/indietro con una sola manopola).
+- **Cursori verticali e centrati.** `orientation: "h" | "v"` e `center: true`.
+  Il verticale si comanda dal basso verso l'alto come un fader e vale una cella
+  sola; il centrato parte dalla meta' e cresce nei due versi, con una tacca
+  sullo zero.
+- **Sette stili per il deck** (`settings.ui.style`): default, keycap, ceramica,
+  console, quaderno, strumento, oscura. Sono una cosa diversa da `ui.theme`:
+  il tema e' la luce (chiaro/scuro/auto), lo stile e' la forma (superfici,
+  raggi, ombre, carattere). Si combinano, e uno stile ridefinisce solo i token
+  del CSS: non tocca il markup, quindi non puo' rompere una funzione.
+- **`min`/`max`/`step` sono numeri veri** (±1e6, decimali e negativi), non piu'
+  interi 0..1000: si puo' fare un termostato 15→30 a scatti di 0.5 o
+  l'esposizione di una foto da -5 a +5 EV.
+
+### Corretto
+
+- **Le scorciatoie con la punteggiatura non funzionavano.** La cattura dei tasti
+  nel client compone `ctrl+-` o `ctrl++`, ma l'host non aveva in tabella nessun
+  tasto di punteggiatura e li rifiutava con "tasto sconosciuto"; il `+` finale
+  spariva perfino fra i separatori. Aggiunti i tasti `VK_OEM_*` (piu', meno,
+  virgola, punto, barra, parentesi, apice, punto e virgola, accento) e tutto il
+  tastierino numerico, con gli alias sui caratteri veri. Era anche l'unica cosa
+  che impediva di legare lo zoom a una manopola.
+
+### Note
+
+- I comandi nuovi sono stati verificati dal vivo lato host (protocollo, gesti,
+  rifiuti) e con la suite di test; l'aspetto nel browser va guardato sul proprio
+  telefono dopo l'aggiornamento.
+
 ## [0.9.0] - 2026-08-22
 
 ### Aggiunto

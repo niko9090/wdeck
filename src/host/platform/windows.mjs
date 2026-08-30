@@ -150,45 +150,79 @@ export function buildKeyOps(modifierCodes, keyCode, { repeat = 1 } = {}) {
 
 /**
  * Codifica le operazioni per il protocollo (una riga) del key server:
- * `K:<vk>:<flags>` per un tasto, `M:<flags>:<data>` per il mouse, `S:<ms>` per una
- * pausa, in esadecimale e separate da `;`. Solo numeri: nessuno script arbitrario.
- * @param {Array<{vk?: number, flags?: number, sleep?: number, mouse?: number, data?: number}>} ops
+ * `K:<vk>:<flags>` per un tasto, `M:<flags>:<data>:<dx>:<dy>` per il mouse,
+ * `S:<ms>` per una pausa, in esadecimale e separate da `;`.
+ * Solo numeri: nessuno script arbitrario passa di qui.
+ *
+ * Le due coordinate del mouse ci sono SEMPRE (0 quando non servono): un campo
+ * opzionale a meta' riga costringerebbe il lato PowerShell a contare i pezzi,
+ * e un conteggio sbagliato la' dentro sposta il puntatore invece di cliccare.
+ * @param {Array<{vk?: number, flags?: number, sleep?: number, mouse?: number, data?: number, dx?: number, dy?: number}>} ops
  * @returns {string}
  */
 export function encodeKeyOps(ops) {
+  const u32 = (n) => ((n ?? 0) >>> 0).toString(16);
   return ops.map((op) => {
     if (op.sleep != null) return `S:${(op.sleep & 0xffff).toString(16)}`;
-    if (op.mouse != null) return `M:${(op.mouse & 0xffff).toString(16)}:${((op.data ?? 0) >>> 0).toString(16)}`;
+    if (op.mouse != null) return `M:${(op.mouse & 0xffff).toString(16)}:${u32(op.data)}:${u32(op.dx)}:${u32(op.dy)}`;
     return `K:${(op.vk & 0xff).toString(16)}:${(op.flags & 0xffff).toString(16)}`;
   }).join(';');
 }
 
 /** Flag di mouse_event usati dai comandi del mouse. */
 const MOUSE = {
+  move: 0x0001,
   leftDown: 0x0002, leftUp: 0x0004,
   rightDown: 0x0008, rightUp: 0x0010,
   middleDown: 0x0020, middleUp: 0x0040,
-  wheel: 0x0800
+  wheel: 0x0800,
+  absolute: 0x8000
 };
 const WHEEL_DELTA = 120;
 
+/**
+ * Massimo di scatti in un colpo solo. Una manopola girata di scatto puo'
+ * mandare un delta grosso: senza tetto una torsione distratta scorrerebbe
+ * mezzo documento.
+ */
+const MAX_NOTCHES = 30;
+
+/** L'intervallo in cui Windows si aspetta le coordinate assolute del mouse. */
+const ABS_MAX = 65535;
+
 /** I comandi del mouse esposti dall'azione `mouse`. */
-export const MOUSE_COMMANDS = ['left', 'right', 'middle', 'double', 'scroll-up', 'scroll-down'];
+export const MOUSE_COMMANDS = ['left', 'right', 'middle', 'double', 'scroll-up', 'scroll-down', 'move'];
 
 /**
  * Operazioni del mouse per il key server. Un click e' giu'+su; il doppio e' due
  * click; lo scroll usa la rotellina con delta positivo (su) o negativo (giu').
+ *
+ * `move` porta il puntatore in un punto dello schermo PRINCIPALE espresso in
+ * percentuale, con l'origine in basso a sinistra come nel resto del protocollo
+ * (la tavoletta manda x/y con la y che cresce verso l'alto). Windows invece
+ * conta le righe dall'alto: la y va rovesciata qui, una volta sola.
  * @param {string} command
- * @returns {Array<{mouse: number, data?: number}>}
+ * @param {{notches?: number, x?: number, y?: number}} [options]
+ * @returns {Array<{mouse: number, data?: number, dx?: number, dy?: number}>}
  */
-export function buildMouseOps(command) {
+export function buildMouseOps(command, options = {}) {
+  const scroll = (verso) => {
+    const scatti = Math.min(MAX_NOTCHES, Math.max(1, Math.round(Math.abs(options.notches ?? 1))));
+    return [{ mouse: MOUSE.wheel, data: (verso * WHEEL_DELTA * scatti) >>> 0 }];
+  };
+  const percento = (v) => Math.min(100, Math.max(0, Number(v) || 0));
   switch (command) {
     case 'left': return [{ mouse: MOUSE.leftDown }, { mouse: MOUSE.leftUp }];
     case 'right': return [{ mouse: MOUSE.rightDown }, { mouse: MOUSE.rightUp }];
     case 'middle': return [{ mouse: MOUSE.middleDown }, { mouse: MOUSE.middleUp }];
     case 'double': return [{ mouse: MOUSE.leftDown }, { mouse: MOUSE.leftUp }, { mouse: MOUSE.leftDown }, { mouse: MOUSE.leftUp }];
-    case 'scroll-up': return [{ mouse: MOUSE.wheel, data: WHEEL_DELTA }];
-    case 'scroll-down': return [{ mouse: MOUSE.wheel, data: (-WHEEL_DELTA) >>> 0 }];
+    case 'scroll-up': return scroll(1);
+    case 'scroll-down': return scroll(-1);
+    case 'move': return [{
+      mouse: MOUSE.move | MOUSE.absolute,
+      dx: Math.round((percento(options.x) / 100) * ABS_MAX),
+      dy: Math.round(((100 - percento(options.y)) / 100) * ABS_MAX)
+    }];
     default: throw new Error(`comando mouse non valido: "${command}"`);
   }
 }
@@ -197,10 +231,11 @@ export function buildMouseOps(command) {
  * Script PowerShell a colpo singolo per il mouse (ripiego quando il key server
  * non c'e'). Funzione pura, mostrata anche in dry-run.
  * @param {string} command
+ * @param {{notches?: number, x?: number, y?: number}} [options]
  * @returns {string}
  */
-export function buildMouseScript(command) {
-  const ops = buildMouseOps(command);
+export function buildMouseScript(command, options = {}) {
+  const ops = buildMouseOps(command, options);
   const lines = [
     '$sig = @\'',
     '[DllImport("user32.dll", SetLastError=true)]',
@@ -208,7 +243,7 @@ export function buildMouseScript(command) {
     '\'@',
     "$m = Add-Type -MemberDefinition $sig -Name 'WdeckMouse' -Namespace 'Wdeck' -PassThru"
   ];
-  for (const op of ops) lines.push(`$m::mouse_event(${hex(op.mouse)},0,0,${((op.data ?? 0) >>> 0)},[UIntPtr]::Zero)`);
+  for (const op of ops) lines.push(`$m::mouse_event(${hex(op.mouse)},${((op.dx ?? 0) >>> 0)},${((op.dy ?? 0) >>> 0)},${((op.data ?? 0) >>> 0)},[UIntPtr]::Zero)`);
   return lines.join('\n');
 }
 

@@ -22,7 +22,9 @@ import { encodePowerShell, isWindows, powershellPath } from './windows.mjs';
 /**
  * Script sempre uguale caricato nel processo: definisce keybd_event una volta,
  * poi cicla leggendo "<id> <op;op;...>" e risponde "<id> OK" o "<id> ERR ...".
- * Ogni op e' "K:<vk>:<flags>" o "S:<ms>" (esadecimale).
+ * Ogni op e' "K:<vk>:<flags>", "M:<flags>:<data>:<dx>:<dy>" o "S:<ms>"
+ * (esadecimale). Le due coordinate del mouse arrivano sempre, 0 quando non
+ * servono: cosi' la riga ha una forma sola e non c'e' niente da indovinare.
  */
 const BOOTSTRAP = [
   '$ErrorActionPreference = "Stop"',
@@ -48,7 +50,7 @@ const BOOTSTRAP = [
   '      if ($op.Length -eq 0) { continue }',
   '      $p = $op.Split(":")',
   '      if ($p[0] -eq "S") { Start-Sleep -Milliseconds ([Convert]::ToInt32($p[1], 16)) }',
-  '      elseif ($p[0] -eq "M") { $k::mouse_event([uint32]([Convert]::ToUInt32($p[1], 16)), 0, 0, [uint32]([Convert]::ToUInt32($p[2], 16)), [UIntPtr]::Zero) }',
+  '      elseif ($p[0] -eq "M") { $k::mouse_event([uint32]([Convert]::ToUInt32($p[1], 16)), [uint32]([Convert]::ToUInt32($p[3], 16)), [uint32]([Convert]::ToUInt32($p[4], 16)), [uint32]([Convert]::ToUInt32($p[2], 16)), [UIntPtr]::Zero) }',
   '      else { $k::keybd_event([byte]([Convert]::ToInt32($p[1], 16)), 0, [uint32]([Convert]::ToInt32($p[2], 16)), [UIntPtr]::Zero) }',
   '    }',
   '    $out.WriteLine("$id OK"); $out.Flush()',

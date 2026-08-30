@@ -115,15 +115,66 @@ test('windows: buildMouseOps genera giu/su per un clic, delta per lo scroll', ()
   assert.equal(down[0].data >>> 0, (-120) >>> 0); // delta negativo come uint32
 });
 
-test('windows: encodeKeyOps codifica il mouse come M:<flags>:<data>', () => {
-  assert.equal(encodeKeyOps(buildMouseOps('left')), 'M:2:0;M:4:0');
-  assert.equal(encodeKeyOps(buildMouseOps('scroll-up')), 'M:800:78'); // 0x78 = 120
-  assert.match(encodeKeyOps(buildMouseOps('scroll-down')), /^M:800:ffffff88$/);
+test('windows: encodeKeyOps codifica il mouse come M:<flags>:<data>:<dx>:<dy>', () => {
+  assert.equal(encodeKeyOps(buildMouseOps('left')), 'M:2:0:0:0;M:4:0:0:0');
+  assert.equal(encodeKeyOps(buildMouseOps('scroll-up')), 'M:800:78:0:0'); // 0x78 = 120
+  assert.match(encodeKeyOps(buildMouseOps('scroll-down')), /^M:800:ffffff88:0:0$/);
+});
+
+test('windows: la rotellina moltiplica gli scatti e si ferma al tetto', () => {
+  assert.equal(buildMouseOps('scroll-up', { notches: 3 })[0].data, 360);
+  assert.equal(buildMouseOps('scroll-down', { notches: 3 })[0].data >>> 0, (-360) >>> 0);
+  // Meno di uno scatto resta uno scatto: una manopola sfiorata deve muovere.
+  assert.equal(buildMouseOps('scroll-up', { notches: 0.2 })[0].data, 120);
+  // Tetto a 30: una torsione distratta non scorre mezzo documento.
+  assert.equal(buildMouseOps('scroll-up', { notches: 999 })[0].data, 120 * 30);
+});
+
+test('windows: move porta il puntatore in coordinate assolute, con la y rovesciata', () => {
+  const [op] = buildMouseOps('move', { x: 0, y: 100 }); // in alto a sinistra
+  assert.equal(op.mouse, 0x8001); // MOVE | ABSOLUTE
+  assert.equal(op.dx, 0);
+  assert.equal(op.dy, 0);
+  const [centro] = buildMouseOps('move', { x: 50, y: 50 });
+  assert.equal(centro.dx, Math.round(65535 / 2));
+  assert.equal(centro.dy, Math.round(65535 / 2));
+  const [basso] = buildMouseOps('move', { x: 100, y: 0 });
+  assert.equal(basso.dx, 65535);
+  assert.equal(basso.dy, 65535);
+  // Fuori scala si taglia invece di sfondare: il puntatore resta sullo schermo.
+  assert.equal(buildMouseOps('move', { x: 500, y: -9 })[0].dx, 65535);
+});
+
+test('windows: buildMouseScript passa dx e dy a mouse_event', () => {
+  const script = buildMouseScript('move', { x: 50, y: 50 });
+  assert.match(script, /mouse_event\(0x8001,32768,32768,0,/);
 });
 
 test('windows: buildMouseScript rifiuta un comando ignoto e accetta quelli noti', () => {
   for (const c of MOUSE_COMMANDS) assert.ok(buildMouseScript(c).includes('mouse_event'), c);
   assert.throws(() => buildMouseOps('boh'));
+});
+
+test('keys: la punteggiatura e\u2019 un tasto come gli altri (ctrl+piu\u2019 = zoom)', () => {
+  // La cattura dei tasti nel client manda `event.key` cosi' com'e': senza
+  // questi alias "ctrl+-" arrivava all'host e veniva rifiutato, e legare lo
+  // zoom a una manopola era semplicemente impossibile.
+  assert.equal(parseHotkey('ctrl+-').key, 'minus');
+  assert.equal(parseHotkey('ctrl+minus').keyCode, 0xbd);
+  assert.equal(parseHotkey('ctrl+.').key, 'period');
+  assert.equal(parseHotkey('ctrl+/').key, 'slash');
+  assert.equal(parseHotkey('ctrl+[').key, 'lbracket');
+  assert.equal(parseHotkey('ctrl+numpadadd').keyCode, 0x6b);
+});
+
+test('keys: il "piu\u2019" finale e\u2019 un tasto, non un separatore avanzato', () => {
+  // "ctrl++" e' quello che compone la cattura premendo ctrl e il tasto piu'.
+  // Spezzando la stringa sul "+" il tasto sparirebbe fra i pezzi vuoti.
+  assert.equal(parseHotkey('ctrl++').key, 'plus');
+  assert.deepEqual(parseHotkey('ctrl++').modifiers, ['ctrl']);
+  assert.equal(parseHotkey('ctrl+shift++').key, 'plus');
+  assert.equal(parseHotkey('+').key, 'plus');
+  assert.equal(parseHotkey('ctrl+plus').keyCode, parseHotkey('ctrl++').keyCode);
 });
 
 test('windows: buildKeyScript rilascia i modificatori in ordine inverso', () => {

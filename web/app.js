@@ -891,24 +891,52 @@ function buttonHtml(button) {
     + '</button>';
 }
 
+/**
+ * Geometria della barra piena, per tutte e quattro le combinazioni di
+ * orientamento e origine. Vive in una funzione sola perche' il markup iniziale
+ * e l'aggiornamento durante il trascinamento devono disegnare la STESSA cosa:
+ * due formule separate divergono al primo ritocco e il cursore "salta" di
+ * qualche pixel appena lo si tocca.
+ *
+ * Non centrato: la barra parte dal fondo (sinistra, o basso in verticale).
+ * Centrato: parte dalla meta' e cresce nei due versi — e' il modo giusto di
+ * mostrare un bilanciamento o una correzione, dove lo zero sta in mezzo e il
+ * segno conta quanto il valore.
+ * @returns {string} le proprieta' CSS da mettere sul .slider-fill
+ */
+function sliderFillStyle(value, { min, max, vertical, center }) {
+  const ratio = max === min ? 0 : Math.max(0, Math.min(1, (value - min) / (max - min)));
+  const pos = ratio * 100;
+  const origine = center ? 50 : 0;
+  const inizio = Math.min(origine, pos);
+  const lunghezza = Math.abs(pos - origine);
+  return vertical
+    ? `top:auto;bottom:${inizio}%;left:0;right:0;height:${lunghezza}%;width:auto`
+    : `left:${inizio}%;right:auto;top:0;bottom:0;width:${lunghezza}%;height:auto`;
+}
+
 function sliderHtml(button) {
   const min = button.min ?? 0;
   const max = button.max ?? 100;
+  const vertical = button.orientation === 'v';
+  const center = button.center === true;
   const value = state.levels.get(button.id) ?? Math.round((min + max) / 2);
-  const percent = Math.round(((value - min) / (max - min)) * 100);
   const accent = cssColor(button.color);
   const style = [
     accent ? `--slider-accent:${accent}` : '',
-    `grid-column:span ${Number(button.span) || 2}`,
+    `grid-column:span ${Number(button.span) || kindDefaultSpan('slider', button.orientation)}`,
     groupColorVar(button)
   ].filter(Boolean).join(';');
-  return `<div class="deck-slider" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}"${groupData(button)} data-min="${min}" data-max="${max}" data-step="${button.step ?? 1}" style="${style}"`
-    + ` role="slider" tabindex="0" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}" aria-label="${escapeHtml(button.label || button.id)}">`
-    + `<div class="slider-fill" style="width:${percent}%"></div>`
+  const classi = ['deck-slider', vertical ? 'vert' : '', center ? 'centered' : ''].filter(Boolean).join(' ');
+  return `<div class="${classi}" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}"${groupData(button)} data-min="${min}" data-max="${max}" data-step="${button.step ?? 1}"`
+    + ` data-orientation="${vertical ? 'v' : 'h'}"${center ? ' data-center="1"' : ''} style="${style}"`
+    + ` role="slider" tabindex="0" aria-orientation="${vertical ? 'vertical' : 'horizontal'}" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}" aria-label="${escapeHtml(button.label || button.id)}">`
+    + `<div class="slider-fill" style="${sliderFillStyle(value, { min, max, vertical, center })}"></div>`
+    + (center ? '<div class="slider-zero"></div>' : '')
     + '<div class="slider-content">'
     + controlIcon(button)
     + `<span class="slider-label">${escapeHtml(button.label)}</span>`
-    + `<span class="slider-value">${value}</span>`
+    + `<span class="slider-value">${arrotonda(value, button.step ?? 1)}</span>`
     + '</div>'
     + removeBadge()
     + '</div>';
@@ -1018,9 +1046,10 @@ function readKindFields(kind) {
   return out;
 }
 
-/** Larghezza predefinita in celle: la stessa che usa l'host. */
-function kindDefaultSpan(kind) {
-  return ['slider', 'xy', 'pad', 'chart'].includes(kind) ? 2 : 1;
+/** Larghezza predefinita in celle: la stessa che usa l'host (`defaultSpan`). */
+function kindDefaultSpan(kind, orientation = 'h') {
+  if (kind === 'slider') return orientation === 'v' ? 1 : 2;
+  return ['xy', 'pad', 'chart'].includes(kind) ? 2 : 1;
 }
 
 /** Instrada un controllo al suo markup. */
@@ -1380,10 +1409,24 @@ function updateSliderVisual(element, value) {
   if (!element.classList.contains('deck-slider')) return;
   const min = Number(element.dataset.min);
   const max = Number(element.dataset.max);
-  const percent = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
-  element.querySelector('.slider-fill').style.width = `${percent}%`;
-  element.querySelector('.slider-value').textContent = Math.round(value);
-  element.setAttribute('aria-valuenow', String(Math.round(value)));
+  element.querySelector('.slider-fill').style.cssText = sliderFillStyle(value, {
+    min,
+    max,
+    vertical: element.dataset.orientation === 'v',
+    center: element.dataset.center === '1'
+  });
+  element.querySelector('.slider-value').textContent = arrotonda(value, Number(element.dataset.step) || 1);
+  element.setAttribute('aria-valuenow', String(value));
+}
+
+/**
+ * Mostra tanti decimali quanti ne ha il passo. Da quando min/max/step sono
+ * numeri veri (un termostato 15..30 a scatti di 0.5) arrotondare all'intero
+ * mostrerebbe "21" per tre scatti di fila.
+ */
+function arrotonda(value, step) {
+  const decimali = String(step).includes('.') ? String(step).split('.')[1].length : 0;
+  return Number(value).toFixed(Math.min(3, decimali));
 }
 
 /** Chiede conferma per le azioni marcate `confirm` in deck.json. */
@@ -2249,7 +2292,7 @@ async function saveButtonDraft(draft, existing) {
   for (const campo of ['min', 'max', 'step', 'orientation', 'center', 'options', 'rows', 'cols', 'seconds', 'mode']) {
     if (!(campo in perTipo)) delete next[campo];
   }
-  if (!draft.span) next.span = Math.max(kindDefaultSpan(kind), next.span);
+  if (!draft.span) next.span = Math.max(kindDefaultSpan(kind, perTipo.orientation), next.span);
 
   const currentId = currentPage()?.id;
   const deck = cloneDeck();
@@ -3393,7 +3436,7 @@ function bindGrid() {
       slider.setPointerCapture?.(event.pointerId);
       state.draggingId = slider.dataset.id;
       gesture = { kind: 'slider', element: slider, startX: event.clientX, startY: event.clientY, lastSent: 0 };
-      applySliderFromPointer(slider, event.clientX);
+      applySliderFromPointer(slider, event.clientX, event.clientY);
       return;
     }
 
@@ -3487,7 +3530,7 @@ function bindGrid() {
     }
 
     if (gesture.kind === 'slider') {
-      applySliderFromPointer(gesture.element, event.clientX);
+      applySliderFromPointer(gesture.element, event.clientX, event.clientY);
       return;
     }
 
@@ -3641,7 +3684,7 @@ function bindGrid() {
     }
     event.preventDefault();
     event.stopPropagation();
-    next = Math.max(min, Math.min(max, next));
+    next = clampNum(next, min, max);
     if (next === current) return;
     state.levels.set(slider.dataset.id, next);
     updateSliderVisual(slider, next);
@@ -3863,19 +3906,34 @@ function toggleTimer(element, spec) {
   refreshCtl(element);
 }
 
-/** Converte la posizione orizzontale del dito nel valore dello slider. */
-function applySliderFromPointer(slider, clientX) {
+/**
+ * Converte la posizione del dito nel valore del cursore.
+ *
+ * In verticale si misura DAL BASSO: alzare il dito alza il valore, come su un
+ * fader vero. Misurarlo dall'alto (come fanno le coordinate dello schermo)
+ * darebbe un cursore che scende quando lo si tira su.
+ */
+function applySliderFromPointer(slider, clientX, clientY) {
   const rect = slider.getBoundingClientRect();
   const min = Number(slider.dataset.min);
   const max = Number(slider.dataset.max);
   const step = Number(slider.dataset.step) || 1;
-  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const ratio = slider.dataset.orientation === 'v'
+    ? Math.max(0, Math.min(1, (rect.bottom - clientY) / rect.height))
+    : Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
   const raw = min + ratio * (max - min);
-  const value = Math.round(raw / step) * step;
+  // Il passo va contato DA min, non da zero: con min=15 e step=0.5 partire da
+  // zero produrrebbe una scala sfasata rispetto agli estremi.
+  const value = clampNum(min + Math.round((raw - min) / step) * step, min, max);
 
   updateSliderVisual(slider, value);
   state.levels.set(slider.dataset.id, value);
   sendSliderValue(slider);
+}
+
+/** Limita un numero all'intervallo, togliendo la sporcizia della virgola mobile. */
+function clampNum(value, min, max) {
+  return Math.max(min, Math.min(max, Math.round(value * 1e6) / 1e6));
 }
 
 /**

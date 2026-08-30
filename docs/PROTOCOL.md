@@ -418,6 +418,19 @@ coppia: se ne arriva uno solo la richiesta e' rifiutata.
 Un tocco sulla manopola **senza rotazione** e' una pressione normale (`press`
 senza `delta`): e' la pressione dell'albero, la seconda azione della manopola.
 
+**Chi li consuma.** Il gesto ha la precedenza su cio' che e' scritto nell'editor:
+se arriva `x`/`y` o `delta`, l'handler usa quello e ignora il parametro fisso.
+
+| Azione | Con `delta` | Con `x` + `y` |
+|---|---|---|
+| `volume`, `mic`, `brightness` | alza/abbassa di tanti punti percentuali | - |
+| `mouse` | scorre la rotellina di tanti scatti, il segno da' il verso (tetto 30) | porta il puntatore in quel punto dello schermo principale |
+| `hotkey` | manda la combinazione tante volte (tetto 20); girando indietro manda `keysBack`, se c'e' | - |
+
+Nella coppia la `y` cresce verso l'**alto**, come sulla tavoletta sotto il dito:
+Windows conta le righe al contrario e il ribaltamento avviene una volta sola,
+dentro `buildMouseOps`.
+
 ### Comandi di sola lettura
 
 `gauge`, `meter`, `chart` e `display` mostrano lo stato che l'host gia' pubblica

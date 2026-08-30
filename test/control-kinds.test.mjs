@@ -63,6 +63,17 @@ test('span: cursori, tavolette, matrici e grafici valgono due celle', () => {
   for (const k of ['button', 'encoder', 'jog', 'display']) assert.equal(defaultSpan(k), 1, k);
 });
 
+test('span: il cursore verticale vale una cella sola', () => {
+  // In verticale la larghezza non serve: serve l'altezza, che la griglia da'
+  // gia'. Due celle lo renderebbero una lastra larga e bassa.
+  assert.equal(defaultSpan('slider', 'v'), 1);
+  assert.equal(defaultSpan('slider', 'h'), 2);
+  assert.equal(defaultSpan('slider'), 2, 'senza orientamento resta orizzontale');
+  const deck = conControllo({ kind: 'slider', orientation: 'v' });
+  assert.equal(esito(deck).valid, true, errori(deck));
+  assert.equal(normalizeDeck(deck).profiles[0].pages[0].buttons[0].span, 1);
+});
+
 test('span: la larghezza predefinita e\u2019 la stessa in validazione e a runtime', () => {
   // Se i due valori divergessero, un controllo passerebbe il controllo di
   // sovrapposizione e poi sfonderebbe la griglia a runtime.
@@ -195,6 +206,25 @@ test('client: l\u2019elenco dei tipi di sola lettura e\u2019 lo stesso dell\u201
   assert.deepEqual(nelClient, READONLY_KINDS, 'host e client devono essere d\u2019accordo su cosa non si preme');
 });
 
+test('client: la larghezza predefinita e’ la stessa dell’host, verticale compreso', () => {
+  // Se le due funzioni divergono, l'editor salva uno span che l'host non si
+  // aspetta: il controllo passa la validazione e poi sfonda la griglia.
+  const app = leggi('web/app.js');
+  const sorgente = app.match(/function kindDefaultSpan\([\s\S]*?\n\}/);
+  assert.ok(sorgente, 'il client deve dichiarare kindDefaultSpan');
+  // eslint-disable-next-line no-new-func -- si esegue la funzione del client cosi' com'e'
+  const clientSpan = new Function(`${sorgente[0]}\nreturn kindDefaultSpan;`)();
+  for (const kind of CONTROL_KINDS) {
+    for (const orientation of ['h', 'v', undefined]) {
+      assert.equal(
+        clientSpan(kind, orientation ?? 'h'),
+        defaultSpan(kind, orientation),
+        `${kind} (${orientation ?? 'senza orientamento'})`
+      );
+    }
+  }
+});
+
 // ------------------------------------------------------------------ stili
 
 test('stile: e\u2019 un\u2019impostazione separata dal chiaro/scuro', () => {
@@ -212,6 +242,24 @@ test('stile: ogni stile dichiarato ha davvero i suoi token nel CSS', () => {
   for (const stile of UI_STYLES) {
     if (stile === 'default') continue;
     assert.ok(css.includes(`[data-style='${stile}']`), `lo stile "${stile}" non ha token nel CSS`);
+  }
+});
+
+test('stile: ogni stile porta il proprio carattere', () => {
+  // Il carattere e' un token come i colori. Sono pile di caratteri di SISTEMA:
+  // il deck si apre da una rete locale che puo' non avere internet, e un
+  // carattere che non arriva e' una pagina che salta all'occhio.
+  const css = leggi('web/app.css');
+  assert.match(css, /^\s*--font:/m, 'manca il carattere predefinito sul :root');
+  for (const stile of UI_STYLES) {
+    if (stile === 'default') continue;
+    const blocco = css.split(`[data-style='${stile}'] {`)[1]?.split('}')[0] ?? '';
+    assert.match(blocco, /--font:/, `lo stile "${stile}" non dichiara il proprio carattere`);
+  }
+  // Nessun @font-face: se un giorno se ne imbarca uno, va anche messo nella
+  // cache del service worker, altrimenti la prima apertura offline lo perde.
+  if (css.includes('@font-face')) {
+    assert.match(leggi('web/sw.js'), /fonts\//, 'un carattere imbarcato va anche nella cache di sw.js');
   }
 });
 
