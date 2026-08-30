@@ -14,7 +14,8 @@ export const WHATSNEW = {
     'Nuovo: la tavoletta a due assi puo\' muovere il puntatore del PC, come un trackpad che copre tutto lo schermo.',
     'Nuovo: i cursori possono stare in verticale, come i fader di un mixer, e partire dal centro quando quello che regoli ha uno zero in mezzo (bilanciamento, correzioni).',
     'Nuovo: sette stili per il deck (Impostazioni → Stile): keycap, ceramica, console, quaderno, strumento, camera oscura. Sono separati da chiaro/scuro: uno e\' la forma, l\'altro la luce.',
-    'Corretto: le scorciatoie con la punteggiatura (Ctrl+, Ctrl+-, Ctrl+.) venivano registrate ma poi rifiutate dal PC. Ora funzionano, tastierino numerico compreso.'
+    'Corretto: le scorciatoie con la punteggiatura (Ctrl+, Ctrl+-, Ctrl+.) venivano registrate ma poi rifiutate dal PC. Ora funzionano, tastierino numerico compreso.',
+    'Corretto: passare da una pagina all\'altra scorrendo il dito ora funziona anche partendo da sopra un cursore verticale, senza spostarlo per sbaglio.'
   ],
   '0.9.0': [
     'Nuovo: pagine dinamiche. Dal menu della pagina scegli "Tipo di pagina" per avere una pagina "Finestre aperte" (task switcher: tocca per portare davanti), "App installate" (tocca per avviare) o "Widget" (orologio e stato del PC).',

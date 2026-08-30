@@ -43,6 +43,16 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
   virgola, punto, barra, parentesi, apice, punto e virgola, accento) e tutto il
   tastierino numerico, con gli alias sui caratteri veri. Era anche l'unica cosa
   che impediva di legare lo zoom a una manopola.
+- **Un cursore verticale intrappolava il dito.** Lo swipe fra pagine iniziato
+  sopra di lui non cambiava pagina: il gesto del cursore si prendeva tutto,
+  anche i trascinamenti orizzontali, che per un fader verticale non vogliono
+  dire niente. Ora oltre i 12 px di lato il gesto torna a essere uno swipe e il
+  cursore riprende il valore che aveva. Il cursore ORIZZONTALE continua a
+  tenerseli: li' trascinare di lato e' la sua regolazione, non c'e' modo di
+  distinguere i due gesti.
+- **Il valore del cursore non parte piu' al primo tocco** ma al primo movimento
+  vero (o al rilascio, se e' stato solo un tocco): appoggiare il dito su un
+  cursore per sfogliare le pagine non deve cambiare il volume del PC.
 
 ### Note
 

@@ -271,3 +271,47 @@ test('stile: ogni stile ha un nome nelle due lingue', () => {
     assert.equal(quante, 2, `lo stile "${stile}" deve avere un nome in italiano e in inglese`);
   }
 });
+
+// -------------------------------------------------- lo swipe sopra un cursore
+
+test('cursore: solo quello verticale cede il gesto allo swipe fra pagine', () => {
+  // Un cursore verticale che si prende anche i trascinamenti orizzontali
+  // intrappola il dito: sfogliare le pagine diventa impossibile appena il deck
+  // ne contiene uno. Quello orizzontale invece deve tenerseli, e' il suo gesto.
+  const app = leggi('web/app.js');
+  const sorgente = app.match(/function sliderBecomesSwipe\([\s\S]*?\n\}/);
+  assert.ok(sorgente, 'il client deve dichiarare sliderBecomesSwipe');
+  // eslint-disable-next-line no-new-func -- si esegue la funzione del client cosi' com'e'
+  const diventaSwipe = new Function(`${sorgente[0]}\nreturn sliderBecomesSwipe;`)();
+
+  // Verticale: di lato e' uno swipe, in su e in giu' resta una regolazione.
+  assert.equal(diventaSwipe(true, 40, 3), true, 'verticale, trascinato di lato');
+  assert.equal(diventaSwipe(true, -40, 3), true, 'verticale, di lato all’indietro');
+  assert.equal(diventaSwipe(true, 3, 40), false, 'verticale, tirato in su');
+  assert.equal(diventaSwipe(true, 30, 45), false, 'verticale, piu’ in alto che di lato');
+  // La soglia: il tremolio del dito non deve far scappare la pagina.
+  assert.equal(diventaSwipe(true, 12, 0), false, 'dodici pixel non bastano');
+  assert.equal(diventaSwipe(true, 13, 0), true, 'oltre la soglia');
+  // Orizzontale: non cede mai.
+  for (const [dx, dy] of [[40, 3], [-40, 3], [3, 40], [200, 0]]) {
+    assert.equal(diventaSwipe(false, dx, dy), false, `orizzontale ${dx},${dy}`);
+  }
+});
+
+test('cursore: alla pressione il valore si disegna ma non si spedisce', () => {
+  // Se partisse subito, un dito appoggiato su un cursore verticale per
+  // sfogliare le pagine avrebbe gia' cambiato il volume del PC prima ancora di
+  // essersi mosso — e la rinuncia al gesto non potrebbe piu' rimediare.
+  const app = leggi('web/app.js');
+  assert.match(
+    app,
+    /applySliderFromPointer\(slider, event\.clientX, event\.clientY, \{ send: false \}\)/,
+    'il pointerdown sul cursore deve disegnare senza spedire'
+  );
+  assert.match(app, /function abandonSlider\(/, 'serve la rinuncia che rimette il valore com’era');
+  assert.match(
+    app,
+    /function applySliderFromPointer\(slider, clientX, clientY, \{ send = true \} = \{\}\)/,
+    'applySliderFromPointer deve accettare send'
+  );
+});

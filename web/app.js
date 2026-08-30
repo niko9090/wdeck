@@ -3435,8 +3435,26 @@ function bindGrid() {
     if (slider) {
       slider.setPointerCapture?.(event.pointerId);
       state.draggingId = slider.dataset.id;
-      gesture = { kind: 'slider', element: slider, startX: event.clientX, startY: event.clientY, lastSent: 0 };
-      applySliderFromPointer(slider, event.clientX, event.clientY);
+      gesture = {
+        kind: 'slider',
+        element: slider,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        lastSent: 0,
+        // Un cursore VERTICALE si regola in verticale: un trascinamento
+        // orizzontale sopra di lui e' uno swipe fra pagine, non una
+        // regolazione. Per poterlo restituire allo swipe serve ricordare da
+        // quale valore si era partiti.
+        vertical: slider.dataset.orientation === 'v',
+        startValue: state.levels.get(slider.dataset.id)
+          ?? Number(slider.getAttribute('aria-valuenow'))
+      };
+      // Il valore si vede subito (il riscontro sotto al dito dev'essere
+      // immediato) ma NON si manda ancora: se il gesto si rivela uno swipe, il
+      // PC non deve aver gia' cambiato il volume. Parte al primo movimento
+      // vero, o al rilascio se e' stato solo un tocco.
+      applySliderFromPointer(slider, event.clientX, event.clientY, { send: false });
       return;
     }
 
@@ -3530,6 +3548,15 @@ function bindGrid() {
     }
 
     if (gesture.kind === 'slider') {
+      // Cursore verticale: oltre i 12 px in orizzontale il gesto cambia natura
+      // e diventa uno swipe fra pagine. Il valore sfiorato alla pressione va
+      // RIMESSO com'era, altrimenti sfogliare le pagine sposterebbe di nascosto
+      // il cursore da cui e' partito il dito.
+      if (sliderBecomesSwipe(gesture.vertical, dx, dy)) {
+        abandonSlider(gesture);
+        gesture.kind = 'swipe';
+        return;
+      }
       applySliderFromPointer(gesture.element, event.clientX, event.clientY);
       return;
     }
@@ -3913,7 +3940,41 @@ function toggleTimer(element, spec) {
  * fader vero. Misurarlo dall'alto (come fanno le coordinate dello schermo)
  * darebbe un cursore che scende quando lo si tira su.
  */
-function applySliderFromPointer(slider, clientX, clientY) {
+/**
+ * Un trascinamento iniziato su un cursore e' in realta' uno swipe fra pagine?
+ *
+ * Solo il cursore VERTICALE puo' cedere il gesto. Quello orizzontale si regola
+ * proprio trascinando di lato: e' esattamente il movimento dello swipe, e non
+ * c'e' modo di distinguerli. Li' vince il cursore — il dito e' partito da
+ * sopra di lui, e chi tocca un cursore vuole regolarlo.
+ */
+function sliderBecomesSwipe(vertical, dx, dy) {
+  if (!vertical) return false;
+  return Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy);
+}
+
+/**
+ * Rinuncia al gesto sul cursore e lo rimette com'era.
+ *
+ * Serve quando un trascinamento iniziato su un cursore verticale si rivela uno
+ * swipe fra pagine: il valore era gia' stato disegnato sotto al dito, ma non e'
+ * mai stato spedito (vedi `send: false` alla pressione), quindi basta ridisegnarlo
+ * per non lasciare traccia del gesto sbagliato.
+ */
+function abandonSlider(gesture) {
+  const slider = gesture.element;
+  if (Number.isFinite(gesture.startValue)) {
+    state.levels.set(slider.dataset.id, gesture.startValue);
+    updateSliderVisual(slider, gesture.startValue);
+  }
+  // Senza rilasciare la cattura il cursore resta destinatario di ogni movimento
+  // successivo: gli eventi arrivano lo stesso alla griglia (risalgono), ma il
+  // dito resterebbe "attaccato" a un comando che non sta piu' comandando.
+  if (gesture.pointerId !== undefined) slider.releasePointerCapture?.(gesture.pointerId);
+  state.draggingId = null;
+}
+
+function applySliderFromPointer(slider, clientX, clientY, { send = true } = {}) {
   const rect = slider.getBoundingClientRect();
   const min = Number(slider.dataset.min);
   const max = Number(slider.dataset.max);
@@ -3928,7 +3989,7 @@ function applySliderFromPointer(slider, clientX, clientY) {
 
   updateSliderVisual(slider, value);
   state.levels.set(slider.dataset.id, value);
-  sendSliderValue(slider);
+  if (send) sendSliderValue(slider);
 }
 
 /** Limita un numero all'intervallo, togliendo la sporcizia della virgola mobile. */
