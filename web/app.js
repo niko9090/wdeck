@@ -87,6 +87,17 @@ const state = {
   statuses: {},
   /** cursore attualmente sotto il dito: non va riallineato dall'host */
   draggingId: null,
+  /**
+   * Cursori appena mollati: id -> istante fino al quale l'host NON puo'
+   * riallinearli.
+   *
+   * L'host legge il livello vero del PC a intervalli. Alzando il volume da 20 a
+   * 100 e togliendo il dito, la lettura partita PRIMA del cambiamento arriva
+   * dopo il rilascio e riporta il cursore a 80: sembra che il gesto sia andato
+   * storto e si ricomincia da capo. Per un attimo dopo il rilascio comanda
+   * quello che ha chiesto l'utente, poi si torna ad ascoltare il PC.
+   */
+  levelHold: new Map(),
   update: null,
   /** versione dell'host in esecuzione, mostrata nella barra in alto */
   version: null,
@@ -513,8 +524,16 @@ function applyState(hostState) {
  */
 function applyTheme(uiConfig) {
   if (!uiConfig) return;
-  if (uiConfig.accent) document.documentElement.style.setProperty('--accent', uiConfig.accent);
   const root = document.documentElement;
+
+  // Lo stile viene prima dell'accento: uno stile porta il proprio accento nei
+  // token, e un accento scelto a mano deve poterlo comunque scavalcare.
+  root.dataset.style = uiConfig.style && uiConfig.style !== 'default' ? uiConfig.style : '';
+  if (!root.dataset.style) root.removeAttribute('data-style');
+
+  if (uiConfig.accent) root.style.setProperty('--accent', uiConfig.accent);
+  else root.style.removeProperty('--accent');
+
   root.classList.toggle('theme-auto', uiConfig.theme === 'auto');
   root.classList.toggle('theme-light', uiConfig.theme === 'light');
 
@@ -686,7 +705,7 @@ function renderGrid() {
       }
       // Le celle successive a quella iniziale sono gia' coperte dallo span.
       if (button.col !== col) continue;
-      parts.push(button.kind === 'slider' ? sliderHtml(button) : buttonHtml(button));
+      parts.push(controlHtml(button));
     }
   }
   ui.grid.innerHTML = parts.join('');
@@ -883,27 +902,363 @@ function buttonHtml(button) {
     + '</button>';
 }
 
+/**
+ * Geometria della barra piena, per tutte e quattro le combinazioni di
+ * orientamento e origine. Vive in una funzione sola perche' il markup iniziale
+ * e l'aggiornamento durante il trascinamento devono disegnare la STESSA cosa:
+ * due formule separate divergono al primo ritocco e il cursore "salta" di
+ * qualche pixel appena lo si tocca.
+ *
+ * Non centrato: la barra parte dal fondo (sinistra, o basso in verticale).
+ * Centrato: parte dalla meta' e cresce nei due versi — e' il modo giusto di
+ * mostrare un bilanciamento o una correzione, dove lo zero sta in mezzo e il
+ * segno conta quanto il valore.
+ * @returns {string} le proprieta' CSS da mettere sul .slider-fill
+ */
+function sliderFillStyle(value, { min, max, vertical, center }) {
+  const ratio = max === min ? 0 : Math.max(0, Math.min(1, (value - min) / (max - min)));
+  const pos = ratio * 100;
+  const origine = center ? 50 : 0;
+  const inizio = Math.min(origine, pos);
+  const lunghezza = Math.abs(pos - origine);
+  return vertical
+    ? `top:auto;bottom:${inizio}%;left:0;right:0;height:${lunghezza}%;width:auto`
+    : `left:${inizio}%;right:auto;top:0;bottom:0;width:${lunghezza}%;height:auto`;
+}
+
 function sliderHtml(button) {
   const min = button.min ?? 0;
   const max = button.max ?? 100;
+  const vertical = button.orientation === 'v';
+  const center = button.center === true;
   const value = state.levels.get(button.id) ?? Math.round((min + max) / 2);
-  const percent = Math.round(((value - min) / (max - min)) * 100);
   const accent = cssColor(button.color);
   const style = [
     accent ? `--slider-accent:${accent}` : '',
-    `grid-column:span ${Number(button.span) || 2}`,
+    `grid-column:span ${Number(button.span) || kindDefaultSpan('slider', button.orientation)}`,
     groupColorVar(button)
   ].filter(Boolean).join(';');
-  return `<div class="deck-slider" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}"${groupData(button)} data-min="${min}" data-max="${max}" data-step="${button.step ?? 1}" style="${style}"`
-    + ` role="slider" tabindex="0" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}" aria-label="${escapeHtml(button.label || button.id)}">`
-    + `<div class="slider-fill" style="width:${percent}%"></div>`
+  const classi = ['deck-slider', vertical ? 'vert' : '', center ? 'centered' : ''].filter(Boolean).join(' ');
+  return `<div class="${classi}" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}"${groupData(button)} data-min="${min}" data-max="${max}" data-step="${button.step ?? 1}"`
+    + ` data-orientation="${vertical ? 'v' : 'h'}"${center ? ' data-center="1"' : ''} style="${style}"`
+    + ` role="slider" tabindex="0" aria-orientation="${vertical ? 'vertical' : 'horizontal'}" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}" aria-label="${escapeHtml(button.label || button.id)}">`
+    + `<div class="slider-fill" style="${sliderFillStyle(value, { min, max, vertical, center })}"></div>`
+    + (center ? '<div class="slider-zero"></div>' : '')
     + '<div class="slider-content">'
     + controlIcon(button)
     + `<span class="slider-label">${escapeHtml(button.label)}</span>`
-    + `<span class="slider-value">${value}</span>`
+    + `<span class="slider-value">${arrotonda(value, button.step ?? 1)}</span>`
     + '</div>'
     + removeBadge()
     + '</div>';
+}
+
+/* ------------------------------------------------------------------ comandi
+
+   Un deck non e' fatto di soli pulsanti: ci sono manopole che girano, rotelle
+   che scorrono, tavolette a due assi e quadranti che leggono soltanto.
+
+   Ogni tipo e' un pezzo di markup e un comportamento; l'aspetto arriva sempre
+   dai token del tema (--ctl-surf, --ctl-edge, --ctl-accent...), mai da colori
+   scritti qui. Cosi' un tema nuovo non tocca una riga di comportamento.       */
+
+/** Comandi che mostrano lo stato dell'host e non accettano pressioni. */
+const READONLY_KINDS = ['gauge', 'meter', 'chart', 'display'];
+
+/**
+ * I tipi di comando offerti dall'editor, raggruppati per COME si comandano.
+ * L'ordine e' quello che serve a chi sceglie: prima i piu' comuni.
+ */
+const KIND_GROUPS = [
+  { key: 'press', kinds: ['button', 'folder', 'macro', 'timer', 'pad', 'selector'] },
+  { key: 'drag', kinds: ['slider', 'xy', 'color'] },
+  { key: 'turn', kinds: ['encoder', 'jog', 'stepper'] },
+  { key: 'read', kinds: READONLY_KINDS }
+];
+
+function kindOptions(scelto) {
+  return KIND_GROUPS.map((g) =>
+    `<optgroup label="${escapeHtml(t(`edit.kindGroup.${g.key}`))}">`
+    + g.kinds.map((k) =>
+      `<option value="${k}"${k === scelto ? ' selected' : ''}>${escapeHtml(t(`edit.kindName.${k}`))}</option>`).join('')
+    + '</optgroup>').join('');
+}
+
+/** Campi che solo alcuni tipi hanno: intervallo, opzioni, righe, secondi... */
+function kindFieldsHtml(kind, draft) {
+  const num = (id, label, value, extra = '') =>
+    `<label class="field"><span>${escapeHtml(label)}</span><input id="${id}" type="number" ${extra} value="${value}" /></label>`;
+  const righe = [];
+
+  if (['slider', 'encoder', 'stepper', 'gauge', 'meter'].includes(kind)) {
+    righe.push('<div class="field-row">'
+      + num('ed-min', t('edit.min'), draft.min ?? 0, 'step="any"')
+      + num('ed-max', t('edit.max'), draft.max ?? 100, 'step="any"')
+      + (['gauge', 'meter'].includes(kind) ? '' : num('ed-step', t('edit.step'), draft.step ?? 1, 'step="any" min="0"'))
+      + '</div>');
+  }
+  if (kind === 'slider') {
+    righe.push(`<div class="field-row">
+      <label class="field"><span>${t('edit.orientation')}</span><select id="ed-orientation" class="select">
+        <option value="h"${(draft.orientation ?? 'h') === 'h' ? ' selected' : ''}>${t('edit.orientationH')}</option>
+        <option value="v"${draft.orientation === 'v' ? ' selected' : ''}>${t('edit.orientationV')}</option>
+      </select></label>
+      <label class="field checkbox"><input id="ed-center" type="checkbox"${draft.center ? ' checked' : ''} /><span>${t('edit.center')}</span></label>
+    </div>`);
+  }
+  if (kind === 'selector') {
+    righe.push(`<label class="field"><span>${t('edit.options')}</span>`
+      + `<input id="ed-options" type="text" value="${escapeHtml((draft.options ?? []).join(', '))}" placeholder="Auto, Manuale, Fermo" /></label>`);
+  }
+  if (kind === 'pad') {
+    righe.push('<div class="field-row">'
+      + num('ed-rows', t('edit.padRows'), draft.rows ?? 4, 'min="1" max="8"')
+      + num('ed-cols', t('edit.padCols'), draft.cols ?? 4, 'min="1" max="8"')
+      + '</div>');
+  }
+  if (kind === 'timer') {
+    righe.push(num('ed-seconds', t('edit.seconds'), draft.seconds ?? 1500, 'min="1" max="86400"'));
+  }
+  if (kind === 'color') {
+    righe.push(`<label class="field"><span>${t('edit.colorMode')}</span><select id="ed-mode" class="select">
+      <option value="kelvin"${(draft.mode ?? 'kelvin') === 'kelvin' ? ' selected' : ''}>${t('edit.colorKelvin')}</option>
+      <option value="rgb"${draft.mode === 'rgb' ? ' selected' : ''}>${t('edit.colorRgb')}</option>
+    </select></label>`);
+  }
+  return righe.join('');
+}
+
+/** Legge dal form i campi del tipo scelto. */
+function readKindFields(kind) {
+  const numero = (id, fallback) => {
+    const v = Number(el(id)?.value);
+    return Number.isFinite(v) ? v : fallback;
+  };
+  const out = {};
+  if (['slider', 'encoder', 'stepper', 'gauge', 'meter'].includes(kind)) {
+    out.min = numero('ed-min', 0);
+    out.max = numero('ed-max', 100);
+    if (!['gauge', 'meter'].includes(kind)) out.step = Math.max(0.001, numero('ed-step', 1));
+  }
+  if (kind === 'slider') {
+    out.orientation = el('ed-orientation')?.value === 'v' ? 'v' : 'h';
+    out.center = el('ed-center')?.checked === true;
+  }
+  if (kind === 'selector') {
+    out.options = String(el('ed-options')?.value ?? '')
+      .split(',').map((o) => o.trim()).filter(Boolean).slice(0, 8);
+  }
+  if (kind === 'pad') {
+    out.rows = Math.min(8, Math.max(1, Math.round(numero('ed-rows', 4))));
+    out.cols = Math.min(8, Math.max(1, Math.round(numero('ed-cols', 4))));
+  }
+  if (kind === 'timer') out.seconds = Math.min(86400, Math.max(1, Math.round(numero('ed-seconds', 1500))));
+  if (kind === 'color') out.mode = el('ed-mode')?.value === 'rgb' ? 'rgb' : 'kelvin';
+  return out;
+}
+
+/** Larghezza predefinita in celle: la stessa che usa l'host (`defaultSpan`). */
+function kindDefaultSpan(kind, orientation = 'h') {
+  if (kind === 'slider') return orientation === 'v' ? 1 : 2;
+  return ['xy', 'pad', 'chart'].includes(kind) ? 2 : 1;
+}
+
+/** Instrada un controllo al suo markup. */
+function controlHtml(button) {
+  const kind = button.kind ?? 'button';
+  if (kind === 'slider') return sliderHtml(button);
+  if (kind === 'button') return buttonHtml(button);
+  return ctlHtml(button, kind);
+}
+
+/** Valore corrente di un controllo: quello reale se c'e', altrimenti il centro. */
+function ctlValue(button) {
+  const min = button.min ?? 0;
+  const max = button.max ?? 100;
+  const stored = state.levels.get(button.id);
+  return typeof stored === 'number' ? stored : Math.round((min + max) / 2);
+}
+
+/** Frazione 0..1 di un valore dentro il suo intervallo. */
+function ctlFraction(button, value) {
+  const min = button.min ?? 0;
+  const max = button.max ?? 100;
+  if (max <= min) return 0;
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
+}
+
+/** mm:ss da un numero di secondi. */
+function mmss(secondi) {
+  const s = Math.max(0, Math.round(secondi));
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+function ctlHtml(button, kind) {
+  const accent = cssColor(button.color);
+  const fg = cssColor(button.textColor);
+  const style = [
+    accent ? `--ctl-accent:${accent}` : '',
+    fg ? `color:${fg}` : '',
+    button.span > 1 ? `grid-column:span ${Number(button.span) || 1}` : '',
+    groupColorVar(button)
+  ].filter(Boolean).join(';');
+
+  const readonly = READONLY_KINDS.includes(kind);
+
+  return `<div class="deck-ctl ctl-${kind}" data-id="${escapeHtml(button.id)}" data-kind="${kind}"`
+    + ` data-row="${button.row}" data-col="${button.col}"${groupData(button)} style="${style}"`
+    // Un comando che si preme e' un bottone anche per chi usa la tastiera o un
+    // lettore di schermo; uno di sola lettura e' un'immagine di stato.
+    + (readonly
+      ? ` role="img" aria-label="${escapeHtml(button.label || button.id)}"`
+      : ` role="button" tabindex="0" aria-label="${escapeHtml(button.label || button.id)}"`)
+    + ` title="${escapeHtml(button.label || button.id)}">`
+    + ctlInner(button, kind)
+    + '</div>';
+}
+
+/** Contenuto di un controllo: si ridisegna da solo quando il valore cambia. */
+function ctlInner(button, kind) {
+  const label = state.deck.ui?.showLabels === false ? '' : `<span class="ctl-label">${escapeHtml(button.label)}</span>`;
+  return ctlBody(button, kind, label)
+    + (button.confirm ? '<span class="confirm-tag" title="chiede conferma">!</span>' : '')
+    + removeBadge();
+}
+
+/**
+ * Ridisegna il solo contenuto di un controllo.
+ *
+ * Ricostruire tutta la griglia a ogni scatto di manopola azzererebbe le
+ * animazioni e farebbe sfarfallare il resto della pagina; qui cambia soltanto
+ * l'interno del comando toccato.
+ */
+function refreshCtl(element) {
+  const spec = currentPage()?.buttons.find((b) => b.id === element.dataset.id);
+  if (!spec) return;
+  element.innerHTML = ctlInner(spec, element.dataset.kind);
+}
+
+function ctlBody(button, kind, label) {
+  const value = ctlValue(button);
+  const frazione = ctlFraction(button, value);
+  const stato = state.statuses?.[button.id];
+
+  switch (kind) {
+    // --- girano e mandano scatti -------------------------------------------
+    case 'encoder':
+      return '<span class="enc-wrap">'
+        + `<span class="enc-ring" style="--v:${frazione}"></span>`
+        + `<span class="enc"><span class="enc-mark" style="transform:rotate(${frazione * 300 - 150}deg)"></span></span>`
+        + '</span>' + label
+        + `<span class="ctl-value">${escapeHtml(String(value))}</span>`;
+
+    case 'jog':
+      // Una rotella non ha ne' inizio ne' fine: nessun valore da mostrare.
+      return '<span class="jog"></span>' + label;
+
+    case 'stepper':
+      return '<span class="st-row">'
+        + '<button class="st-btn" type="button" data-step-dir="-1" tabindex="-1" aria-label="-">&minus;</button>'
+        + `<span class="st-val">${escapeHtml(String(value))}</span>`
+        + '<button class="st-btn" type="button" data-step-dir="1" tabindex="-1" aria-label="+">+</button>'
+        + '</span>' + label;
+
+    // --- si trascinano ------------------------------------------------------
+    case 'xy':
+      return '<span class="xy">'
+        + '<span class="xy-h"></span><span class="xy-v"></span><span class="xy-puck"></span>'
+        + '</span>' + label;
+
+    case 'color':
+      return label + `<span class="sp sp-${escapeHtml(button.mode ?? 'kelvin')}"><span class="sp-knob"></span></span>`;
+
+    // --- si premono ---------------------------------------------------------
+    case 'selector': {
+      const scelto = stato?.text ?? ctlPick(button.id) ?? (button.options ?? [])[0];
+      return '<span class="sg">'
+        + (button.options ?? []).map((o) =>
+          `<button class="sg-opt" type="button" tabindex="-1" data-opt="${escapeHtml(o)}"`
+          + ` aria-selected="${o === scelto}">${escapeHtml(o)}</button>`).join('')
+        + '</span>' + label;
+    }
+
+    case 'pad': {
+      const rows = button.rows ?? 4;
+      const cols = button.cols ?? 4;
+      const celle = [];
+      for (let r = 0; r < rows; r += 1) {
+        for (let c = 0; c < cols; c += 1) {
+          celle.push(`<button class="pd-cell" type="button" tabindex="-1" data-cell="${r},${c}" aria-label="${r + 1}-${c + 1}"></button>`);
+        }
+      }
+      return `<span class="pd" style="--pd-cols:${cols}">${celle.join('')}</span>` + label;
+    }
+
+    case 'timer': {
+      const totale = button.seconds ?? 1500;
+      const rimasti = ctlTimer(button.id)?.left ?? totale;
+      return `<span class="rg" style="--v:${totale ? rimasti / totale : 0}"><span>${mmss(rimasti)}</span></span>` + label;
+    }
+
+    case 'folder':
+      return '<span class="fl"><i></i><i></i><i></i><i></i></span>' + label;
+
+    case 'macro': {
+      const passi = Math.max(2, Math.min(8, button.action?.params?.steps?.length ?? 4));
+      return controlIcon(button) + label + `<span class="mc">${'<i></i>'.repeat(passi)}</span>`;
+    }
+
+    // --- leggono e basta ----------------------------------------------------
+    case 'gauge': {
+      const livello = typeof stato?.level === 'number' ? ctlFraction(button, stato.level) : 0;
+      const testo = stato?.text ?? (typeof stato?.level === 'number' ? String(stato.level) : '--');
+      return `<span class="gg"><span class="gg-arc"></span><span class="gg-nd" style="--v:${livello}"></span></span>`
+        + label + `<span class="ctl-value">${escapeHtml(testo)}</span>`;
+    }
+
+    case 'meter': {
+      const livello = typeof stato?.level === 'number' ? ctlFraction(button, stato.level) : 0;
+      return `<span class="mt"><i style="--l:${livello}"></i><i style="--l:${livello * 0.86}"></i></span>` + label;
+    }
+
+    case 'chart':
+      return `<span class="sk">${sparkSvg(stato?.series)}</span>` + label;
+
+    case 'display':
+      return `<span class="rd-big">${escapeHtml(stato?.text ?? '--')}</span>`
+        + `<span class="rd-sub">${escapeHtml(button.label ?? '')}</span>`;
+
+    default:
+      return controlIcon(button) + label;
+  }
+}
+
+/** Opzione scelta di un selettore, finche' l'host non dice la sua. */
+const ctlPicks = new Map();
+function ctlPick(id) { return ctlPicks.get(id); }
+
+/** Stato locale dei timer: {left, running, tick}. */
+const ctlTimers = new Map();
+function ctlTimer(id) { return ctlTimers.get(id); }
+
+/**
+ * Grafico da una serie di numeri mandata dall'host. Senza serie disegna una
+ * linea piatta: un grafico vuoto deve sembrare "nessun dato", non rotto.
+ */
+function sparkSvg(series) {
+  const dati = Array.isArray(series) ? series.filter((n) => typeof n === 'number' && Number.isFinite(n)) : [];
+  if (dati.length < 2) return '<svg viewBox="0 0 100 40" preserveAspectRatio="none"><path class="sk-line" d="M0 20 L100 20"></path></svg>';
+  const max = Math.max(...dati);
+  const min = Math.min(...dati, 0);
+  const scala = max - min || 1;
+  const punti = dati.map((n, i) => [(i / (dati.length - 1)) * 100, 38 - ((n - min) / scala) * 34]);
+  const d = punti.map((pt, i) => `${i ? 'L' : 'M'}${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`).join(' ');
+  const ultimo = punti[punti.length - 1];
+  return '<svg viewBox="0 0 100 40" preserveAspectRatio="none">'
+    + `<path class="sk-area" d="${d} L100 40 L0 40 Z"></path>`
+    + `<path class="sk-line" d="${d}"></path>`
+    + `<circle class="sk-dot" cx="${ultimo[0].toFixed(1)}" cy="${ultimo[1].toFixed(1)}" r="2"></circle>`
+    + '</svg>';
 }
 
 /**
@@ -952,14 +1307,47 @@ function applyStatusTo(element, entry) {
   if (!entry || entry.error || typeof entry.on !== 'boolean') delete element.dataset.on;
   else element.dataset.on = entry.on ? '1' : '0';
 
+  // Un quadrante, un livello, un grafico o un display SONO lo stato: quando
+  // arriva un dato nuovo il loro contenuto va rifatto, non solo decorato.
+  if (READONLY_KINDS.includes(element.dataset.kind)) {
+    refreshCtl(element);
+    return;
+  }
+
   setStateTag(element, entry?.error ? '!' : (entry?.text ?? ''));
 
-  // Il livello reale allinea il cursore, tranne mentre il dito lo sta muovendo:
-  // vedersi scappare via il cursore sotto le dita e' peggio di un valore vecchio.
-  if (typeof entry?.level === 'number' && state.draggingId !== element.dataset.id) {
+  // Il livello reale allinea il cursore, tranne mentre il dito lo sta muovendo
+  // e per un attimo dopo che lo ha mollato: vedersi scappare via il cursore
+  // sotto le dita — o subito dopo averlo lasciato — e' peggio di un valore
+  // vecchio di mezzo secondo.
+  if (typeof entry?.level === 'number' && !levelIsHeld(element.dataset.id)) {
     state.levels.set(element.dataset.id, entry.level);
     updateSliderVisual(element, entry.level);
   }
+}
+
+/** Da quanti ms dopo il rilascio l'host puo' tornare a comandare il cursore. */
+const LEVEL_HOLD_MS = 1500;
+
+/**
+ * Il livello di questo comando e' "difeso" dall'utente in questo momento?
+ *
+ * Vale mentre il dito e' sopra e per `LEVEL_HOLD_MS` dopo averlo tolto: e' il
+ * tempo che serve all'host per fare il giro (mandare il comando al PC, vedere
+ * l'effetto, rileggere il livello) e smettere di raccontare il passato.
+ */
+function levelIsHeld(id) {
+  if (state.draggingId === id) return true;
+  const fino = state.levelHold.get(id);
+  if (fino === undefined) return false;
+  if (Date.now() < fino) return true;
+  state.levelHold.delete(id);
+  return false;
+}
+
+/** Difende il livello di un comando dalle letture in ritardo dell'host. */
+function holdLevel(id) {
+  if (id) state.levelHold.set(id, Date.now() + LEVEL_HOLD_MS);
 }
 
 /** Etichetta breve dello stato ("muto", "LIVE", nome della scena in onda). */
@@ -993,7 +1381,7 @@ function renderLastAction(entry) {
  * aspettare la risposta dell'host per illuminare il tasto lo faceva sembrare
  * lento anche quando l'azione partiva in pochi millisecondi.
  */
-function pressButton(element, { hold = false, value } = {}) {
+function pressButton(element, { hold = false, release = false, value, delta, x, y } = {}) {
   const buttonId = element.dataset.id;
   if (!buttonId) return;
   const requestId = `r${++state.requestSeq}`;
@@ -1005,7 +1393,12 @@ function pressButton(element, { hold = false, value } = {}) {
     profileId: state.profileId,
     pageId: state.pageId,
     hold,
+    release,
     ...(value !== undefined ? { value } : {}),
+    // Una manopola manda uno scarto, la tavoletta una coppia: vedi
+    // docs/PROTOCOL.md, "Valore, scarto, coppia".
+    ...(delta !== undefined ? { delta } : {}),
+    ...(x !== undefined && y !== undefined ? { x, y } : {}),
     dryRun: state.simulate,
     requestId
   });
@@ -1053,10 +1446,24 @@ function updateSliderVisual(element, value) {
   if (!element.classList.contains('deck-slider')) return;
   const min = Number(element.dataset.min);
   const max = Number(element.dataset.max);
-  const percent = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
-  element.querySelector('.slider-fill').style.width = `${percent}%`;
-  element.querySelector('.slider-value').textContent = Math.round(value);
-  element.setAttribute('aria-valuenow', String(Math.round(value)));
+  element.querySelector('.slider-fill').style.cssText = sliderFillStyle(value, {
+    min,
+    max,
+    vertical: element.dataset.orientation === 'v',
+    center: element.dataset.center === '1'
+  });
+  element.querySelector('.slider-value').textContent = arrotonda(value, Number(element.dataset.step) || 1);
+  element.setAttribute('aria-valuenow', String(value));
+}
+
+/**
+ * Mostra tanti decimali quanti ne ha il passo. Da quando min/max/step sono
+ * numeri veri (un termostato 15..30 a scatti di 0.5) arrotondare all'intero
+ * mostrerebbe "21" per tre scatti di fila.
+ */
+function arrotonda(value, step) {
+  const decimali = String(step).includes('.') ? String(step).split('.')[1].length : 0;
+  return Number(value).toFixed(Math.min(3, decimali));
 }
 
 /** Chiede conferma per le azioni marcate `confirm` in deck.json. */
@@ -1333,6 +1740,7 @@ function bindIconPicker({ onPick }) {
 // poterne leggere i parametri correnti.
 let edMainCtl = null;
 let edHoldCtl = null;
+let edReleaseCtl = null;
 
 /**
  * Opzioni dinamiche per i campi che puntano al deck stesso: l'elenco dei
@@ -1663,7 +2071,8 @@ async function editButton(buttonId, cell, seed = null) {
       icon: seed?.icon ?? null,
       color: seed?.color ?? '#2d3b55',
       action: seed?.action ? JSON.parse(JSON.stringify(seed.action)) : { type: 'noop', params: {} },
-      ...(seed?.holdAction ? { holdAction: JSON.parse(JSON.stringify(seed.holdAction)) } : {})
+      ...(seed?.holdAction ? { holdAction: JSON.parse(JSON.stringify(seed.holdAction)) } : {}),
+      ...(seed?.releaseAction ? { releaseAction: JSON.parse(JSON.stringify(seed.releaseAction)) } : {})
     };
 
   const options = groups
@@ -1679,6 +2088,12 @@ async function editButton(buttonId, cell, seed = null) {
   const holdOptions = `<option value="">${escapeHtml(t('edit.holdNone'))}</option>`
     + groups.map((g) => `<optgroup label="${escapeHtml(g.label)}">`
       + g.actions.map((a) => `<option value="${a.type}"${a.type === draft.holdAction?.type ? ' selected' : ''}>${escapeHtml(a.title)}</option>`).join('')
+      + '</optgroup>').join('');
+
+  // Azione al rilascio: trasforma il bottone in "momentaneo" (push-to-talk).
+  const releaseOptions = `<option value="">${escapeHtml(t('edit.releaseNone'))}</option>`
+    + groups.map((g) => `<optgroup label="${escapeHtml(g.label)}">`
+      + g.actions.map((a) => `<option value="${a.type}"${a.type === draft.releaseAction?.type ? ' selected' : ''}>${escapeHtml(a.title)}</option>`).join('')
       + '</optgroup>').join('');
 
   openSheet({
@@ -1700,6 +2115,7 @@ async function editButton(buttonId, cell, seed = null) {
 
       <h3 class="sheet-section">${t('edit.hold')}</h3>
       <p class="sheet-hint">${t('edit.holdHint')}</p>
+      <p id="ed-hold-conflict" class="sheet-hint warn" hidden>${t('edit.holdIgnored')}</p>
       <label class="field"><span>${t('edit.action')}</span><select id="ed-hold-type" class="select wide">${holdOptions}</select></label>
       <div id="ed-hold-params-field">
         <div id="ed-hold-fields" class="ed-fields"></div>
@@ -1709,15 +2125,25 @@ async function editButton(buttonId, cell, seed = null) {
         </div>
       </div>
 
+      <h3 class="sheet-section">${t('edit.release')}</h3>
+      <p class="sheet-hint">${t('edit.releaseHint')}</p>
+      <label class="field"><span>${t('edit.action')}</span><select id="ed-release-type" class="select wide">${releaseOptions}</select></label>
+      <div id="ed-release-params-field">
+        <div id="ed-release-fields" class="ed-fields"></div>
+        <button type="button" class="btn ghost small ed-adv-toggle" id="ed-release-adv-toggle" aria-expanded="false">${t('edit.advanced')}</button>
+        <div id="ed-release-adv" hidden>
+          <label class="field"><span>${t('edit.paramsJson')}</span><textarea id="ed-release-params" rows="3" spellcheck="false">${escapeHtml(JSON.stringify(draft.releaseAction?.params ?? {}, null, 2))}</textarea></label>
+        </div>
+      </div>
+
       <div class="field-row">
-        <label class="field"><span>${t('edit.kind')}</span><select id="ed-kind" class="select">
-          <option value="button"${draft.kind !== 'slider' ? ' selected' : ''}>${t('edit.kindButton')}</option>
-          <option value="slider"${draft.kind === 'slider' ? ' selected' : ''}>${t('edit.kindSlider')}</option>
-        </select></label>
+        <label class="field"><span>${t('edit.kind')}</span><select id="ed-kind" class="select wide">${kindOptions(draft.kind ?? 'button')}</select></label>
         <label class="field"><span>${t('edit.color')}</span><input id="ed-color" type="color" value="${draft.color ?? '#2d3b55'}" /></label>
         <label class="field"><span>${t('edit.textColor')}</span><input id="ed-text-color" type="color" value="${draft.textColor ?? '#ffffff'}" /></label>
         <label class="field"><span>${t('edit.width')}</span><input id="ed-span" type="number" min="1" max="12" value="${draft.span ?? 1}" /></label>
       </div>
+      <div id="ed-kind-fields" class="ed-fields"></div>
+      <p id="ed-kind-hint" class="sheet-hint"></p>
       <label class="field checkbox"><input id="ed-confirm" type="checkbox"${draft.confirm ? ' checked' : ''} /><span>${t('edit.confirm')}</span></label>
       <label class="field checkbox"><input id="ed-status" type="checkbox"${draft.status === false ? '' : ' checked'} /><span>${t('edit.showStatus')}</span></label>
       <label class="field"><span>${t('edit.group')}</span><select id="ed-group" class="select wide">
@@ -1767,6 +2193,28 @@ async function editButton(buttonId, cell, seed = null) {
   holdSelect.addEventListener('change', aggiornaHold);
   aggiornaHold();
 
+  const releaseSelect = el('ed-release-type');
+  edReleaseCtl = wireActionEditor({
+    typeSelect: releaseSelect,
+    fieldsBox: el('ed-release-fields'),
+    advToggle: el('ed-release-adv-toggle'),
+    advBox: el('ed-release-adv'),
+    textarea: el('ed-release-params'),
+    allActions,
+    initialParams: draft.releaseAction?.params
+  });
+  const aggiornaRelease = () => {
+    const attiva = releaseSelect.value !== '';
+    el('ed-release-params-field').hidden = !attiva;
+    // Con un'azione al rilascio il bottone diventa momentaneo: la pressione
+    // prolungata non scatterebbe mai, quindi si dice chiaro invece di
+    // lasciare due impostazioni che si contraddicono in silenzio.
+    el('ed-hold-conflict').hidden = !(attiva && holdSelect.value !== '');
+  };
+  releaseSelect.addEventListener('change', aggiornaRelease);
+  holdSelect.addEventListener('change', aggiornaRelease);
+  aggiornaRelease();
+
   // "Prova": esegue l'azione in dry-run e mostra cosa farebbe, senza salvarla
   // ne' toccare il sistema. Utile a chi non sa cosa fa un'azione e per
   // controllare i parametri prima di salvare.
@@ -1787,6 +2235,27 @@ async function editButton(buttonId, cell, seed = null) {
   };
   typeSelect.addEventListener('change', describe);
   describe();
+
+  // Il tipo di comando decide quali campi hanno senso: cambiarlo ridisegna
+  // solo quel pezzo di form, senza perdere il resto di cio' che si stava
+  // scrivendo.
+  const kindSelect = el('ed-kind');
+  const aggiornaKind = () => {
+    const kind = kindSelect.value;
+    el('ed-kind-fields').innerHTML = kindFieldsHtml(kind, draft);
+    el('ed-kind-hint').textContent = t(`edit.kindHint.${kind}`);
+    // Un comando di sola lettura non si preme: le azioni di pressione
+    // prolungata e di rilascio non scatterebbero mai.
+    const readonly = READONLY_KINDS.includes(kind);
+    for (const id of ['ed-hold-type', 'ed-release-type', 'ed-confirm']) {
+      const campo = el(id);
+      if (!campo) continue;
+      campo.disabled = readonly;
+      campo.closest('.field')?.classList.toggle('disabled', readonly);
+    }
+  };
+  kindSelect.addEventListener('change', aggiornaKind);
+  aggiornaKind();
 }
 
 async function saveButtonDraft(draft, existing) {
@@ -1815,7 +2284,27 @@ async function saveButtonDraft(draft, existing) {
     holdAction = { type: holdType, params: holdParams };
   }
 
+  const releaseType = el('ed-release-type').value;
+  let releaseAction = null;
+  if (releaseType !== '') {
+    let releaseParams;
+    try {
+      releaseParams = edReleaseCtl.readParams();
+    } catch (err) {
+      toast(t('edit.releaseParamsInvalid', { message: err.message }), 'err');
+      return;
+    }
+    if (!releaseParams || typeof releaseParams !== 'object' || Array.isArray(releaseParams)) releaseParams = {};
+    releaseAction = { type: releaseType, params: releaseParams };
+  }
+
   const kind = el('ed-kind').value;
+  const perTipo = readKindFields(kind);
+  const readonly = READONLY_KINDS.includes(kind);
+  if (kind === 'selector' && perTipo.options.length < 2) {
+    toast(t('edit.optionsTooFew'), 'err');
+    return;
+  }
   const next = {
     ...draft,
     label: el('ed-label').value.trim(),
@@ -1824,18 +2313,23 @@ async function saveButtonDraft(draft, existing) {
     color: el('ed-color').value,
     textColor: el('ed-text-color').value,
     span: Math.max(1, Number(el('ed-span').value) || 1),
-    confirm: el('ed-confirm').checked,
     status: el('ed-status').checked,
     group: el('ed-group')?.value || null,
-    holdAction,
+    // Un comando di sola lettura non puo' avere azioni di pressione: l'host le
+    // rifiuterebbe, e un'impostazione inerte e' peggio di un errore.
+    holdAction: readonly ? null : holdAction,
+    releaseAction: readonly ? null : releaseAction,
+    confirm: readonly ? false : el('ed-confirm').checked,
     action: { type: el('ed-type').value, params }
   };
-  if (kind === 'slider') {
-    next.min = draft.min ?? 0;
-    next.max = draft.max ?? 100;
-    next.step = draft.step ?? 1;
-    if (!draft.span) next.span = Math.max(2, next.span);
+  Object.assign(next, perTipo);
+
+  // I campi degli altri tipi vanno via: un pulsante non deve portarsi dietro
+  // l'intervallo di un cursore.
+  for (const campo of ['min', 'max', 'step', 'orientation', 'center', 'options', 'rows', 'cols', 'seconds', 'mode']) {
+    if (!(campo in perTipo)) delete next[campo];
   }
+  if (!draft.span) next.span = Math.max(kindDefaultSpan(kind, perTipo.orientation), next.span);
 
   const currentId = currentPage()?.id;
   const deck = cloneDeck();
@@ -2248,6 +2742,7 @@ async function openSettings() {
   const settings = res.data?.settings ?? {};
 
   const temaAttuale = state.deck?.ui?.theme ?? 'dark';
+  const stileAttuale = state.deck?.ui?.style ?? 'default';
   const linguaAttuale = state.deck?.ui?.language ?? 'auto';
   const opzione = (value, selected, label) => `<option value="${value}"${value === selected ? ' selected' : ''}>${label}</option>`;
 
@@ -2273,6 +2768,16 @@ async function openSettings() {
           ${opzione('en', linguaAttuale, 'English')}
         </select></label>
       </div>
+      <label class="field"><span>${t('settings.style')}</span><select id="set-style" class="select wide">
+        ${opzione('default', stileAttuale, t('settings.styleDefault'))}
+        ${opzione('keycap', stileAttuale, t('settings.styleKeycap'))}
+        ${opzione('ceramica', stileAttuale, t('settings.styleCeramica'))}
+        ${opzione('console', stileAttuale, t('settings.styleConsole'))}
+        ${opzione('quaderno', stileAttuale, t('settings.styleQuaderno'))}
+        ${opzione('strumento', stileAttuale, t('settings.styleStrumento'))}
+        ${opzione('oscura', stileAttuale, t('settings.styleOscura'))}
+      </select></label>
+      <p class="sheet-hint">${t('settings.styleHint')}</p>
 
       <h3 class="sheet-section">${t('settings.computers')}</h3>
       <div class="host-list">${state.hosts.map((h) => `
@@ -2404,8 +2909,10 @@ async function saveSettings() {
 
   const ui = {};
   const tema = el('set-theme').value;
+  const stile = el('set-style')?.value ?? 'default';
   const lingua = el('set-language').value;
   if (tema !== (state.deck?.ui?.theme ?? 'dark')) ui.theme = tema;
+  if (stile !== (state.deck?.ui?.style ?? 'default')) ui.style = stile;
   if (lingua !== (state.deck?.ui?.language ?? 'auto')) ui.language = lingua;
   if (Object.keys(ui).length > 0) patch.ui = ui;
 
@@ -2938,11 +3445,12 @@ function bindGrid() {
     }
 
     const slider = event.target.closest('.deck-slider');
+    const ctl = event.target.closest('.deck-ctl');
     const button = event.target.closest('.deck-btn:not(.empty):not(.dyn-tile):not(.widget-tile)');
     const empty = event.target.closest('.deck-btn.empty');
 
     if (state.editing) {
-      const control = button ?? slider;
+      const control = button ?? slider ?? ctl;
       // La "x" sul tile elimina il comando: gesto a parte, non apre l'editor
       // ne' fa partire un trascinamento.
       if (control && event.target.closest('.tile-remove')) {
@@ -2964,8 +3472,63 @@ function bindGrid() {
     if (slider) {
       slider.setPointerCapture?.(event.pointerId);
       state.draggingId = slider.dataset.id;
-      gesture = { kind: 'slider', element: slider, startX: event.clientX, startY: event.clientY, lastSent: 0 };
-      applySliderFromPointer(slider, event.clientX);
+      // Via la transizione finche' il dito e' sopra: 90 ms di ammorbidimento su
+      // ogni movimento fanno sembrare il cursore incollato indietro rispetto al
+      // dito, e in un trascinamento veloce non lo raggiunge mai.
+      slider.classList.add('live');
+      gesture = {
+        kind: 'slider',
+        element: slider,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        lastSent: 0,
+        // Un cursore VERTICALE si regola in verticale: un trascinamento
+        // orizzontale sopra di lui e' uno swipe fra pagine, non una
+        // regolazione. Per poterlo restituire allo swipe serve ricordare da
+        // quale valore si era partiti.
+        vertical: slider.dataset.orientation === 'v',
+        startValue: state.levels.get(slider.dataset.id)
+          ?? Number(slider.getAttribute('aria-valuenow'))
+      };
+      // Il valore si vede subito (il riscontro sotto al dito dev'essere
+      // immediato) ma NON si manda ancora: se il gesto si rivela uno swipe, il
+      // PC non deve aver gia' cambiato il volume. Parte al primo movimento
+      // vero, o al rilascio se e' stato solo un tocco.
+      applySliderFromPointer(slider, event.clientX, event.clientY, { send: false });
+      return;
+    }
+
+    // Manopole, rotelle, tavolette, matrici, selettori: ognuno ha il suo gesto,
+    // ma tutti passano di qui perche' lo swipe fra pagine deve continuare a
+    // funzionare anche sopra di loro.
+    if (ctl) {
+      const kind = ctl.dataset.kind;
+      // I comandi di sola lettura non si premono: lasciano passare lo swipe.
+      if (READONLY_KINDS.includes(kind)) {
+        gesture = { kind: 'swipe', startX: event.clientX, startY: event.clientY };
+        return;
+      }
+      const spec = currentPage().buttons.find((b) => b.id === ctl.dataset.id);
+      ctl.setPointerCapture?.(event.pointerId);
+      gesture = {
+        kind: 'ctl',
+        ctlKind: kind,
+        element: ctl,
+        spec,
+        // Il sotto-elemento toccato: "+"/"-", un'opzione, una cella della matrice.
+        sub: event.target.closest('[data-step-dir],[data-opt],[data-cell]'),
+        startX: event.clientX,
+        startY: event.clientY,
+        angle: null,
+        moved: false
+      };
+      if (kind === 'xy' || kind === 'color') {
+        state.draggingId = ctl.dataset.id;
+        applyCtlDrag(gesture, event);
+      } else {
+        ctl.classList.add('pending');
+      }
       return;
     }
 
@@ -2987,6 +3550,17 @@ function bindGrid() {
       // segue il tocco quasi subito (e il bottone si "abbassa" gia' ora, come
       // riscontro), quindi la reattivita' resta buona. Con un'azione di hold si
       // fa partire quella dopo la soglia, come prima.
+      // Bottone MOMENTANEO: con un'azione al rilascio configurata il tasto
+      // cambia natura - l'azione normale parte subito alla pressione e quella
+      // di rilascio quando si alza il dito. E' il push-to-talk (smuta ora,
+      // rimuta dopo) e non ha senso farlo scattare al rilascio come gli altri.
+      if (spec?.releaseAction) {
+        gesture.momentary = true;
+        gesture.fired = true;
+        runPress(button, spec);
+        return;
+      }
+
       if (spec?.holdAction) {
         gesture.holdTimer = setTimeout(() => {
           gesture.fired = true;
@@ -3015,7 +3589,31 @@ function bindGrid() {
     }
 
     if (gesture.kind === 'slider') {
-      applySliderFromPointer(gesture.element, event.clientX);
+      // Cursore verticale: oltre i 12 px in orizzontale il gesto cambia natura
+      // e diventa uno swipe fra pagine. Il valore sfiorato alla pressione va
+      // RIMESSO com'era, altrimenti sfogliare le pagine sposterebbe di nascosto
+      // il cursore da cui e' partito il dito.
+      if (sliderBecomesSwipe(gesture.vertical, dx, dy)) {
+        abandonSlider(gesture);
+        gesture.kind = 'swipe';
+        return;
+      }
+      applySliderFromPointer(gesture.element, event.clientX, event.clientY);
+      return;
+    }
+
+    if (gesture.kind === 'ctl') {
+      const k = gesture.ctlKind;
+      // Manopola e rotella leggono l'ANGOLO del dito attorno al centro: e' il
+      // solo modo per cui girare in tondo e trascinare di lato fanno lo stesso.
+      if (k === 'encoder' || k === 'jog') { rotateCtl(gesture, event); return; }
+      if (k === 'xy' || k === 'color') { gesture.moved = true; applyCtlDrag(gesture, event); return; }
+      // Gli altri sono pressioni: oltre i 12 px in orizzontale il gesto e' uno
+      // swipe fra pagine, non un tocco.
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+        gesture.element.classList.remove('pending');
+        gesture.kind = 'swipe';
+      }
       return;
     }
     // Oltre i 12 px in orizzontale il gesto e' uno swipe, non una pressione:
@@ -3049,9 +3647,23 @@ function bindGrid() {
       return;
     }
 
+    if (gesture.kind === 'ctl') {
+      finishCtlGesture(gesture);
+      state.draggingId = null;
+      gesture = null;
+      return;
+    }
+
     if (gesture.kind === 'slider') {
       sendSliderValue(gesture.element, { final: true });
+      gesture.element.classList.remove('live');
+      // Il dito si e' alzato ma il PC non ha ancora finito: fino a che non ha
+      // fatto il giro, il cursore resta dove l'utente l'ha messo.
+      holdLevel(gesture.element.dataset.id);
       state.draggingId = null;
+    } else if (gesture.kind === 'button' && gesture.momentary) {
+      gesture.element.classList.remove('pending');
+      runPress(gesture.element, gesture.spec, { release: true });
     } else if (gesture.kind === 'button' && !gesture.fired) {
       const spec = gesture.spec;
       gesture.element.classList.remove('pending');
@@ -3067,13 +3679,61 @@ function bindGrid() {
 
   ui.grid.addEventListener('pointerup', endGesture);
   ui.grid.addEventListener('pointercancel', () => {
-    if (gesture?.element) gesture.element.classList.remove('pending', 'dragging');
+    // Se il gesto viene annullato dal sistema (chiamata in arrivo, gesto di
+    // sistema) un bottone momentaneo resterebbe "premuto" per sempre: il
+    // microfono aperto, la luce accesa. Il rilascio va mandato lo stesso.
+    if (gesture?.kind === 'button' && gesture.momentary) {
+      runPress(gesture.element, gesture.spec, { release: true });
+    }
+    if (gesture?.element) gesture.element.classList.remove('pending', 'dragging', 'live');
     clearHold();
     clearDropCell();
     state.draggingId = null;
     gesture = null;
   });
   ui.grid.addEventListener('contextmenu', (event) => event.preventDefault());
+
+  // Tenendo premuto un tasto, il browser (soprattutto su touch) fa partire la
+  // selezione del testo dell'etichetta: compare la maniglia blu, il tasto
+  // sembra "afferrato" e il gesto di hold si perde. Sul deck non c'e' niente
+  // da selezionare, quindi la selezione si annulla in partenza. Serve sia
+  // questo sia `user-select: none` in CSS: da solo il CSS non basta su tutti
+  // i motori, e da solo questo non copre il doppio tap.
+  ui.grid.addEventListener('selectstart', (event) => event.preventDefault());
+
+  // Tastiera sui comandi: Invio e barra spaziatrice premono, le frecce girano
+  // manopole e passo-passo. Senza, meta' dei comandi sarebbe raggiungibile col
+  // Tab ma inservibile.
+  ui.grid.addEventListener('keydown', (event) => {
+    const ctl = event.target.closest?.('.deck-ctl');
+    if (!ctl || state.editing) return;
+    const kind = ctl.dataset.kind;
+    if (READONLY_KINDS.includes(kind)) return;
+    const spec = currentPage()?.buttons.find((b) => b.id === ctl.dataset.id);
+    if (!spec) return;
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (kind === 'timer') toggleTimer(ctl, spec);
+      else runPress(ctl, spec);
+      return;
+    }
+
+    const verso = event.key === 'ArrowRight' || event.key === 'ArrowUp' ? 1
+      : event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1 : 0;
+    if (!verso) return;
+    if (kind === 'encoder' || kind === 'stepper') {
+      event.preventDefault();
+      const passo = spec.step ?? 1;
+      const prossimo = Math.min(spec.max ?? 100, Math.max(spec.min ?? 0, ctlValue(spec) + verso * passo));
+      state.levels.set(spec.id, prossimo);
+      refreshCtl(ctl);
+      pressButton(ctl, { delta: verso * passo });
+    } else if (kind === 'jog') {
+      event.preventDefault();
+      pressButton(ctl, { delta: verso });
+    }
+  });
 
   // Uno slider con role="slider" e tabindex="0" deve rispondere alle frecce:
   // senza questo la tastiera non lo puo' regolare (WCAG 2.1.1) e le frecce
@@ -3096,11 +3756,12 @@ function bindGrid() {
     }
     event.preventDefault();
     event.stopPropagation();
-    next = Math.max(min, Math.min(max, next));
+    next = clampNum(next, min, max);
     if (next === current) return;
     state.levels.set(slider.dataset.id, next);
     updateSliderVisual(slider, next);
     sendSliderValue(slider, { final: true });
+    holdLevel(slider.dataset.id);
   });
 
   // Lo swipe funziona anche partendo dai bordi della pagina, non solo dalla griglia.
@@ -3126,19 +3787,262 @@ async function runPress(element, spec, options = {}) {
   pressButton(element, options);
 }
 
-/** Converte la posizione orizzontale del dito nel valore dello slider. */
-function applySliderFromPointer(slider, clientX) {
+/* --------------------------------------------------------- gesti dei comandi
+
+   Tre famiglie: quelli che GIRANO (manopola, rotella) leggono l'angolo del dito
+   e mandano scatti; quelli che si TRASCINANO (tavoletta, striscia colore)
+   mandano posizioni; quelli che si PREMONO (passo-passo, selettore, matrice,
+   timer, cartella, macro) scattano al rilascio come i pulsanti.              */
+
+/** Angolo in gradi del dito rispetto al centro dell'elemento. */
+function angleFromCenter(element, event) {
+  const rect = element.getBoundingClientRect();
+  return Math.atan2(event.clientY - (rect.top + rect.height / 2),
+    event.clientX - (rect.left + rect.width / 2)) * 180 / Math.PI;
+}
+
+/** Manopola e rotella: dall'angolo agli scatti. */
+function rotateCtl(gesture, event) {
+  const perno = gesture.element.querySelector('.enc, .jog') ?? gesture.element;
+  const a = angleFromCenter(perno, event);
+  if (gesture.angle === null) { gesture.angle = a; return; }
+
+  let d = a - gesture.angle;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  // Sotto la soglia non succede nulla: senza, il minimo tremolio del dito
+  // sparerebbe decine di messaggi al secondo verso l'host.
+  if (Math.abs(d) < 8) return;
+  gesture.angle = a;
+  gesture.moved = true;
+
+  const spec = gesture.spec;
+  const verso = d > 0 ? 1 : -1;
+
+  if (gesture.ctlKind === 'jog') {
+    // Una rotella non ha un valore: manda solo scatti, all'infinito.
+    pressButton(gesture.element, { delta: verso });
+    gesture.element.querySelector('.jog')?.style.setProperty('--rot', `${(gesture.rot = (gesture.rot ?? 0) + d)}deg`);
+    return;
+  }
+
+  const passo = spec?.step ?? 1;
+  const min = spec?.min ?? 0;
+  const max = spec?.max ?? 100;
+  const attuale = ctlValue(spec);
+  const prossimo = Math.min(max, Math.max(min, Math.round((attuale + verso * passo) / passo) * passo));
+  if (prossimo === attuale) return;
+  state.levels.set(spec.id, prossimo);
+  refreshCtl(gesture.element);
+  pressButton(gesture.element, { delta: verso * passo });
+}
+
+/** Tavoletta e striscia colore: dalla posizione del dito ai valori. */
+function applyCtlDrag(gesture, event) {
+  const element = gesture.element;
+  const now = Date.now();
+
+  if (gesture.ctlKind === 'xy') {
+    const area = element.querySelector('.xy');
+    if (!area) return;
+    const rect = area.getBoundingClientRect();
+    const fx = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const fy = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+    area.style.setProperty('--x', fx);
+    area.style.setProperty('--y', fy);
+    gesture.pending = { x: Math.round(fx * 100), y: Math.round((1 - fy) * 100) };
+  } else {
+    const barra = element.querySelector('.sp');
+    if (!barra) return;
+    const rect = barra.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    barra.style.setProperty('--v', f);
+    const min = gesture.spec?.min ?? 0;
+    const max = gesture.spec?.max ?? 100;
+    gesture.pending = { value: Math.round(min + f * (max - min)) };
+  }
+
+  // Stessa regola dello slider: al piu' un messaggio ogni 120 ms mentre il dito
+  // si muove, e uno definitivo al rilascio.
+  if (now - (gesture.lastSent ?? 0) < 120) return;
+  gesture.lastSent = now;
+  pressButton(element, gesture.pending);
+}
+
+/** Chiude il gesto di un comando: ognuno conclude a modo suo. */
+function finishCtlGesture(gesture) {
+  const element = gesture.element;
+  const spec = gesture.spec;
+  element.classList.remove('pending');
+
+  switch (gesture.ctlKind) {
+    case 'xy':
+    case 'color':
+      // Il valore definitivo parte sempre, anche se l'ultimo era stato scartato
+      // dal limitatore: altrimenti il PC resterebbe a un passo dalla posizione.
+      if (gesture.pending) pressButton(element, gesture.pending);
+      holdLevel(element.dataset.id);
+      return;
+
+    case 'jog':
+      return;
+
+    case 'encoder':
+      // Un tocco senza rotazione e' la pressione dell'albero: la seconda azione
+      // della manopola.
+      if (!gesture.moved) runPress(element, spec);
+      return;
+
+    case 'stepper': {
+      const dir = Number(gesture.sub?.dataset.stepDir);
+      if (!dir) return;
+      const passo = spec?.step ?? 1;
+      const min = spec?.min ?? 0;
+      const max = spec?.max ?? 100;
+      const prossimo = Math.min(max, Math.max(min, ctlValue(spec) + dir * passo));
+      state.levels.set(spec.id, prossimo);
+      refreshCtl(element);
+      pressButton(element, { delta: dir * passo });
+      return;
+    }
+
+    case 'selector': {
+      const scelta = gesture.sub?.dataset.opt;
+      if (scelta === undefined) return;
+      ctlPicks.set(spec.id, scelta);
+      refreshCtl(element);
+      // Il selettore manda l'INDICE dell'opzione come valore: e' l'unico dato
+      // che serve all'host e passa dal campo che esiste gia'.
+      pressButton(element, { value: (spec.options ?? []).indexOf(scelta) });
+      return;
+    }
+
+    case 'pad': {
+      const cella = gesture.sub?.dataset.cell;
+      if (!cella) return;
+      const [riga, colonna] = cella.split(',').map(Number);
+      // La cella e' un indirizzo a due numeri: e' esattamente la coppia della
+      // tavoletta, quindi non serve un campo nuovo.
+      pressButton(element, { x: colonna, y: riga });
+      return;
+    }
+
+    case 'timer': {
+      if (gesture.moved) return;
+      toggleTimer(element, spec);
+      return;
+    }
+
+    default:
+      // Cartella e macro: pressione normale, con la conferma se richiesta.
+      if (!gesture.moved) runPress(element, spec);
+  }
+}
+
+/**
+ * Avvia o ferma un conto alla rovescia.
+ *
+ * Il tempo scorre nel client (l'host non ha bisogno di saperlo secondo per
+ * secondo) e l'azione parte una volta sola, quando arriva a zero.
+ */
+function toggleTimer(element, spec) {
+  const id = spec.id;
+  const totale = spec.seconds ?? 1500;
+  const corrente = ctlTimers.get(id);
+
+  if (corrente?.tick) {
+    clearInterval(corrente.tick);
+    ctlTimers.set(id, { left: corrente.left, tick: null });
+    refreshCtl(element);
+    return;
+  }
+
+  let rimasti = corrente?.left ?? totale;
+  if (rimasti <= 0) rimasti = totale;
+  const tick = setInterval(() => {
+    const voce = ctlTimers.get(id);
+    if (!voce) return;
+    voce.left -= 1;
+    // Il tile puo' essere stato ridisegnato: si ricerca ogni volta.
+    const vivo = ui.grid.querySelector(`.deck-ctl[data-id="${CSS.escape(id)}"]`);
+    if (!vivo) { clearInterval(tick); ctlTimers.delete(id); return; }
+    if (voce.left <= 0) {
+      clearInterval(tick);
+      ctlTimers.set(id, { left: 0, tick: null });
+      refreshCtl(vivo);
+      runPress(vivo, spec);
+      return;
+    }
+    refreshCtl(vivo);
+  }, 1000);
+
+  ctlTimers.set(id, { left: rimasti, tick });
+  refreshCtl(element);
+}
+
+/**
+ * Converte la posizione del dito nel valore del cursore.
+ *
+ * In verticale si misura DAL BASSO: alzare il dito alza il valore, come su un
+ * fader vero. Misurarlo dall'alto (come fanno le coordinate dello schermo)
+ * darebbe un cursore che scende quando lo si tira su.
+ */
+/**
+ * Un trascinamento iniziato su un cursore e' in realta' uno swipe fra pagine?
+ *
+ * Solo il cursore VERTICALE puo' cedere il gesto. Quello orizzontale si regola
+ * proprio trascinando di lato: e' esattamente il movimento dello swipe, e non
+ * c'e' modo di distinguerli. Li' vince il cursore — il dito e' partito da
+ * sopra di lui, e chi tocca un cursore vuole regolarlo.
+ */
+function sliderBecomesSwipe(vertical, dx, dy) {
+  if (!vertical) return false;
+  return Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy);
+}
+
+/**
+ * Rinuncia al gesto sul cursore e lo rimette com'era.
+ *
+ * Serve quando un trascinamento iniziato su un cursore verticale si rivela uno
+ * swipe fra pagine: il valore era gia' stato disegnato sotto al dito, ma non e'
+ * mai stato spedito (vedi `send: false` alla pressione), quindi basta ridisegnarlo
+ * per non lasciare traccia del gesto sbagliato.
+ */
+function abandonSlider(gesture) {
+  const slider = gesture.element;
+  if (Number.isFinite(gesture.startValue)) {
+    state.levels.set(slider.dataset.id, gesture.startValue);
+    updateSliderVisual(slider, gesture.startValue);
+  }
+  // Senza rilasciare la cattura il cursore resta destinatario di ogni movimento
+  // successivo: gli eventi arrivano lo stesso alla griglia (risalgono), ma il
+  // dito resterebbe "attaccato" a un comando che non sta piu' comandando.
+  if (gesture.pointerId !== undefined) slider.releasePointerCapture?.(gesture.pointerId);
+  slider.classList.remove('live');
+  state.draggingId = null;
+}
+
+function applySliderFromPointer(slider, clientX, clientY, { send = true } = {}) {
   const rect = slider.getBoundingClientRect();
   const min = Number(slider.dataset.min);
   const max = Number(slider.dataset.max);
   const step = Number(slider.dataset.step) || 1;
-  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const ratio = slider.dataset.orientation === 'v'
+    ? Math.max(0, Math.min(1, (rect.bottom - clientY) / rect.height))
+    : Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
   const raw = min + ratio * (max - min);
-  const value = Math.round(raw / step) * step;
+  // Il passo va contato DA min, non da zero: con min=15 e step=0.5 partire da
+  // zero produrrebbe una scala sfasata rispetto agli estremi.
+  const value = clampNum(min + Math.round((raw - min) / step) * step, min, max);
 
   updateSliderVisual(slider, value);
   state.levels.set(slider.dataset.id, value);
-  sendSliderValue(slider);
+  if (send) sendSliderValue(slider);
+}
+
+/** Limita un numero all'intervallo, togliendo la sporcizia della virgola mobile. */
+function clampNum(value, min, max) {
+  return Math.max(min, Math.min(max, Math.round(value * 1e6) / 1e6));
 }
 
 /**

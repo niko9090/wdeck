@@ -333,9 +333,9 @@ di far finta di aver funzionato.
 | tipo | piattaforme | descrizione |
 |---|---|---|
 | `media` | win32, darwin, linux | comandi multimediali (play/pausa, next, prev, volume, muto) |
-| `hotkey` | win32, darwin, linux | combinazione di tasti, es. `ctrl+shift+m`, `win+l` |
+| `hotkey` | win32, darwin, linux | combinazione di tasti, es. `ctrl+shift+m`, `win+l`, `ctrl++`; su una manopola `keysBack` da' la combinazione del verso opposto |
 | `text` | win32, darwin, linux | digita testo nella finestra attiva |
-| `mouse` | win32 | clic (sinistro/destro/centrale), doppio clic, rotellina, alla posizione del cursore |
+| `mouse` | win32 | clic (sinistro/destro/centrale), doppio clic, rotellina, spostamento del puntatore; su manopola scorre, su tavoletta sposta |
 | `sound` | win32 | riproduce un file audio (soundboard): wav, mp3, m4a, ogg, flac |
 | `launch` | tutte | avvia un programma (whitelist) |
 | `script` | tutte | esegue `.ps1`/`.bat`/`.cmd`/`.py`/`.mjs`/`.sh` (whitelist) |

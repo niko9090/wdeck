@@ -8,6 +8,16 @@
  */
 
 export const WHATSNEW = {
+  '0.10.0': [
+    'Nuovo: i tasti non sono piu\' solo tasti. Nell\'editor, sotto "Tipo", trovi manopole, rotelle, cursori, tavolette a due assi, matrici, selettori, timer e quadranti di sola lettura.',
+    'Nuovo: gira una manopola sul volume o sulla luminosita\' e il livello segue lo scatto; puntala sul mouse e scorre la rotellina; su una scorciatoia la manda a ripetizione (e con "Tasti all\'indietro" i due versi fanno cose diverse, come zoom avanti e indietro).',
+    'Nuovo: la tavoletta a due assi puo\' muovere il puntatore del PC, come un trackpad che copre tutto lo schermo.',
+    'Nuovo: i cursori possono stare in verticale, come i fader di un mixer, e partire dal centro quando quello che regoli ha uno zero in mezzo (bilanciamento, correzioni).',
+    'Nuovo: sette stili per il deck (Impostazioni → Stile): keycap, ceramica, console, quaderno, strumento, camera oscura. Sono separati da chiaro/scuro: uno e\' la forma, l\'altro la luce.',
+    'Corretto: le scorciatoie con la punteggiatura (Ctrl+, Ctrl+-, Ctrl+.) venivano registrate ma poi rifiutate dal PC. Ora funzionano, tastierino numerico compreso.',
+    'Corretto: passare da una pagina all\'altra scorrendo il dito ora funziona anche partendo da sopra un cursore verticale, senza spostarlo per sbaglio.',
+    'Corretto: i cursori seguono il dito subito, senza piu\' il ritardo che li faceva sembrare lenti, e non tornano piu\' indietro da soli un attimo dopo averli mollati.'
+  ],
   '0.9.0': [
     'Nuovo: pagine dinamiche. Dal menu della pagina scegli "Tipo di pagina" per avere una pagina "Finestre aperte" (task switcher: tocca per portare davanti), "App installate" (tocca per avviare) o "Widget" (orologio e stato del PC).',
     'Nuovo: dal menu vicino all\'orologio puoi aggiungere tuoi script (.ps1/.bat/.exe…); poi te li ritrovi tra i suggerimenti nell\'editor, da mettere su un pulsante o uno slider.'

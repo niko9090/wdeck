@@ -572,6 +572,10 @@ export function createApiRouter(host) {
         profileId: body.profileId,
         pageId: body.pageId,
         hold: body.hold === true,
+        release: body.release === true,
+        delta: body.delta,
+        x: body.x,
+        y: body.y,
         value: body.value,
         // il client puo' solo rendere l'esecuzione piu' prudente, mai meno
         dryRun: state.dryRun || body.dryRun === true,

@@ -31,6 +31,37 @@ export const VK = Object.freeze({
   apps: 0x5d,
   numlock: 0x90,
   scrolllock: 0x91,
+  // punteggiatura (VK_OEM_*). Senza questi non si puo' legare "ctrl+piu'" allo
+  // zoom, che e' proprio il gesto per cui esistono le manopole; e la cattura
+  // dei tasti nel client li produce gia' cosi', un carattere alla volta.
+  plus: 0xbb,
+  comma: 0xbc,
+  minus: 0xbd,
+  period: 0xbe,
+  slash: 0xbf,
+  backtick: 0xc0,
+  lbracket: 0xdb,
+  backslash: 0xdc,
+  rbracket: 0xdd,
+  quote: 0xde,
+  semicolon: 0xba,
+  // tastierino numerico: alcuni programmi distinguono il "piu'" del tastierino
+  // da quello della fila dei numeri (Photoshop, i CAD, molti giochi).
+  numpad0: 0x60,
+  numpad1: 0x61,
+  numpad2: 0x62,
+  numpad3: 0x63,
+  numpad4: 0x64,
+  numpad5: 0x65,
+  numpad6: 0x66,
+  numpad7: 0x67,
+  numpad8: 0x68,
+  numpad9: 0x69,
+  numpadmul: 0x6a,
+  numpadadd: 0x6b,
+  numpadsub: 0x6d,
+  numpaddec: 0x6e,
+  numpaddiv: 0x6f,
   // multimedia
   volumemute: 0xad,
   volumedown: 0xae,
@@ -63,7 +94,38 @@ export const KEY_ALIASES = Object.freeze({
   arrowleft: 'left',
   arrowright: 'right',
   spacebar: 'space',
-  prtsc: 'printscreen'
+  prtsc: 'printscreen',
+  // I caratteri veri e propri: sono quelli che arrivano dalla cattura dei tasti
+  // nel client, che manda `event.key` cosi' com'e' ("ctrl+-", non "ctrl+minus").
+  '=': 'plus',
+  '+': 'plus',
+  add: 'plus',
+  equal: 'plus',
+  '-': 'minus',
+  '_': 'minus',
+  subtract: 'minus',
+  dash: 'minus',
+  hyphen: 'minus',
+  ',': 'comma',
+  '<': 'comma',
+  '.': 'period',
+  '>': 'period',
+  dot: 'period',
+  '/': 'slash',
+  '?': 'slash',
+  '`': 'backtick',
+  '~': 'backtick',
+  grave: 'backtick',
+  '[': 'lbracket',
+  '{': 'lbracket',
+  ']': 'rbracket',
+  '}': 'rbracket',
+  '\\': 'backslash',
+  '|': 'backslash',
+  "'": 'quote',
+  '"': 'quote',
+  ';': 'semicolon',
+  ':': 'semicolon'
 });
 
 /** Nomi dei tasti considerati modificatori. */
@@ -112,7 +174,13 @@ export function parseHotkey(spec) {
   if (typeof spec !== 'string' || spec.trim() === '') {
     throw new Error('hotkey vuota: attesa una stringa tipo "ctrl+shift+m"');
   }
-  const parts = spec.split('+').map((p) => p.trim().toLowerCase()).filter(Boolean);
+  // Il "+" e' insieme il separatore e un tasto: "ctrl++" vuol dire ctrl e piu'.
+  // Il piu' finale va tradotto PRIMA di spezzare la stringa, altrimenti sparisce
+  // fra i pezzi vuoti e resta una combinazione senza tasto. Succede davvero: la
+  // cattura dei tasti nel client compone esattamente cosi'.
+  const grezza = String(spec).trim();
+  const normalizzata = grezza === '+' ? 'plus' : grezza.replace(/\+\+$/, '+plus');
+  const parts = normalizzata.split('+').map((p) => p.trim().toLowerCase()).filter(Boolean);
   if (parts.length === 0) throw new Error(`hotkey non valida: "${spec}"`);
 
   const modifiers = [];

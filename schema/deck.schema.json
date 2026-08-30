@@ -111,7 +111,26 @@
         "textColor": { "$ref": "#/$defs/hexColor" },
         "group": { "$ref": "#/$defs/slug", "description": "id di un gruppo definito nella stessa pagina" },
         "action": { "$ref": "#/$defs/action" },
-        "holdAction": { "$ref": "#/$defs/action" }
+        "holdAction": { "$ref": "#/$defs/action" },
+        "releaseAction": { "$ref": "#/$defs/action", "description": "azione al rilascio: rende il bottone momentaneo (action alla pressione, releaseAction al rilascio)" },
+        "kind": {
+          "type": "string",
+          "enum": ["button", "folder", "macro", "timer", "pad", "selector", "slider", "xy", "color", "encoder", "jog", "stepper", "gauge", "meter", "chart", "display"],
+          "description": "come si comanda. gauge/meter/chart/display sono di sola lettura e rifiutano le pressioni"
+        },
+        "span": { "type": "integer", "minimum": 1, "maximum": 12, "description": "celle occupate in orizzontale; assente vale 2 per slider/xy/pad/chart, 1 per il resto" },
+        "confirm": { "type": "boolean" },
+        "status": { "type": "boolean", "description": "assente vale true: legge lo stato reale dall'host" },
+        "min": { "type": "number", "description": "slider, encoder, stepper" },
+        "max": { "type": "number", "description": "slider, encoder, stepper" },
+        "step": { "type": "number", "exclusiveMinimum": 0, "description": "slider, encoder, stepper; ammette i decimali (0.5 gradi)" },
+        "orientation": { "type": "string", "enum": ["h", "v"], "description": "solo slider" },
+        "center": { "type": "boolean", "description": "solo slider: parte dal centro (bilanciamento)" },
+        "options": { "type": "array", "minItems": 2, "maxItems": 8, "items": { "type": "string", "maxLength": 24 }, "description": "solo selector" },
+        "rows": { "type": "integer", "minimum": 1, "maximum": 8, "description": "solo pad" },
+        "cols": { "type": "integer", "minimum": 1, "maximum": 8, "description": "solo pad" },
+        "seconds": { "type": "integer", "minimum": 1, "maximum": 86400, "description": "solo timer" },
+        "mode": { "type": "string", "enum": ["kelvin", "rgb"], "description": "solo color" }
       }
     },
     "action": {

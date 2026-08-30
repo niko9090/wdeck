@@ -285,6 +285,117 @@ test('dispatcher: hold usa holdAction quando presente', async () => {
   assert.equal(lungo.type, 'noop');
 });
 
+test('dispatcher: release usa releaseAction quando presente', async () => {
+  const deck = makeDeck();
+  deck.profiles[0].pages[0].buttons[0].releaseAction = { type: 'noop', params: {} };
+  const { dispatcher } = makeDispatcher({ deck });
+
+  // Alla pressione parte l'azione normale...
+  const giu = await dispatcher.press({ buttonId: 'play' });
+  assert.equal(giu.type, 'media');
+
+  // ...e al rilascio quella dedicata: e' il push-to-talk.
+  const su = await dispatcher.press({ buttonId: 'play', release: true });
+  assert.equal(su.type, 'noop');
+});
+
+test('dispatcher: senza releaseAction il rilascio esegue quella normale', async () => {
+  const deck = makeDeck();
+  const { dispatcher } = makeDispatcher({ deck });
+  const su = await dispatcher.press({ buttonId: 'play', release: true });
+  assert.equal(su.type, 'media');
+});
+
+/**
+ * Un handler-spia: registra i parametri con cui e' stato chiamato. Serve
+ * perche' il risultato di press() non espone i parametri, e cio' che conta e'
+ * proprio COSA arriva all'handler.
+ */
+function conSpia(kind) {
+  const visti = [];
+  const registry = createDefaultRegistry({
+    extra: [{
+      type: 'spia',
+      title: 'Spia',
+      description: 'handler di test',
+      async run(params) { visti.push(params); return { ok: true, detail: 'vista' }; }
+    }]
+  });
+  const deck = makeDeck();
+  const b = deck.profiles[0].pages[0].buttons[0];
+  b.kind = kind;
+  b.action = { type: 'spia', params: {} };
+  const { dispatcher } = makeDispatcher({ deck, registry });
+  return { dispatcher, id: b.id, visti };
+}
+
+test('dispatcher: una manopola manda uno SCARTO, non un valore', async () => {
+  const { dispatcher, id, visti } = conSpia('encoder');
+
+  const r = await dispatcher.press({ buttonId: id, delta: -0.5, dryRun: false });
+  assert.equal(r.ok, true);
+  // Lo scarto arriva all'handler come parametro dell'azione: gli handler non
+  // devono sapere nulla di come e' fatto il comando che l'ha generato.
+  assert.equal(visti.length, 1);
+  assert.equal(visti[0].delta, -0.5);
+  assert.equal('value' in visti[0], false);
+});
+
+test('dispatcher: uno scarto non numerico e’ una richiesta sbagliata', async () => {
+  const deck = makeDeck();
+  deck.profiles[0].pages[0].buttons[0].kind = 'encoder';
+  const { dispatcher } = makeDispatcher({ deck });
+  const r = await dispatcher.press({ buttonId: deck.profiles[0].pages[0].buttons[0].id, delta: 'tanto' });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'bad_request');
+});
+
+test('dispatcher: la tavoletta manda x e y insieme', async () => {
+  const { dispatcher, id, visti } = conSpia('xy');
+
+  const r = await dispatcher.press({ buttonId: id, x: 30, y: 70, dryRun: false });
+  assert.equal(r.ok, true);
+  assert.equal(visti[0].x, 30);
+  assert.equal(visti[0].y, 70);
+});
+
+test('dispatcher: mezza coppia viene rifiutata', async () => {
+  // Mandare solo x descriverebbe uno stato intermedio che il dito non ha mai
+  // attraversato: meglio un errore che un colore sbagliato.
+  const deck = makeDeck();
+  const b = deck.profiles[0].pages[0].buttons[0];
+  b.kind = 'xy';
+  const { dispatcher } = makeDispatcher({ deck });
+  const r = await dispatcher.press({ buttonId: b.id, x: 30 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'bad_request');
+});
+
+test('dispatcher: un comando di sola lettura rifiuta la pressione', async () => {
+  const deck = makeDeck();
+  const b = deck.profiles[0].pages[0].buttons[0];
+  b.kind = 'gauge';
+  const { dispatcher, state } = makeDispatcher({ deck });
+
+  const r = await dispatcher.press({ buttonId: b.id });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'bad_request');
+  assert.match(r.error.message, /sola lettura/);
+  // e soprattutto: l'azione non e' stata eseguita
+  assert.equal(state.pressCount ?? 0, 0);
+});
+
+test('dispatcher: hold vince su release se sono impostate entrambe', async () => {
+  // Il client non manda mai i due flag insieme, ma l'API REST puo': la
+  // precedenza va decisa qui, non dall'ordine degli if.
+  const deck = makeDeck();
+  deck.profiles[0].pages[0].buttons[0].holdAction = { type: 'noop', params: { chi: 'hold' } };
+  deck.profiles[0].pages[0].buttons[0].releaseAction = { type: 'notifica', params: {} };
+  const { dispatcher } = makeDispatcher({ deck });
+  const r = await dispatcher.press({ buttonId: 'play', hold: true, release: true });
+  assert.equal(r.type, 'noop');
+});
+
 test('dispatcher: la re-entry in execute e\' limitata da un tetto di profondita\'', async () => {
   // Un handler che rientra all'infinito in ctx.execute deve fermarsi al tetto
   // centrale del dispatcher invece di esaurire lo stack.

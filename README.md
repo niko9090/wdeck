@@ -342,7 +342,7 @@ Struttura: **deck -> profili -> pagine -> bottoni -> azione**.
       "allowedExtensions": [".exe", ".ps1", ".bat"],
       "allowExec": ["C:\\Windows\\System32\\notepad.exe", "scripts/examples/*"]
     },
-    "ui": { "theme": "dark", "accent": "#4c8dff", "showLabels": true, "language": "auto" }
+    "ui": { "theme": "dark", "style": "default", "accent": "#4c8dff", "showLabels": true, "language": "auto" }
   },
   "profiles": [
     {
@@ -417,7 +417,7 @@ Cosa serve installare:
 |---|---|
 | Media e audio | `media`, `volume`, `mic`, `spotify`, `sound` |
 | Tastiera e testo | `hotkey`, `text` |
-| Mouse | `mouse` |
+| Mouse | `mouse` (clic, rotellina, sposta il puntatore) |
 | Finestre e desktop | `focus`, `desktop`, `window` |
 | Sistema e alimentazione | `brightness`, `power` |
 | Programmi e giochi | `launch`, `game` |
@@ -486,6 +486,22 @@ anche per le letture.
 `settings.ui.theme` accetta `dark`, `light` e `auto` (segue il sistema);
 `settings.ui.language` accetta `it`, `en` e `auto` (segue il browser).
 Entrambi si cambiano anche da *Impostazioni -> Aspetto*, senza toccare il file.
+
+`settings.ui.style` e' un'altra cosa: il tema e' la **luce**, lo stile e' la
+**forma** - superfici, angoli, ombre, densita'. I due si combinano. Valori:
+
+| Stile | Cos'e' |
+|---|---|
+| `default` | quello di sempre |
+| `keycap` | tastiera meccanica: tasti scolpiti dentro un pozzetto incassato |
+| `ceramica` | smalto chiaro, angoli morbidi, ocra caldo |
+| `console` | metallo scuro, denso, spigoli vivi |
+| `quaderno` | carta rigata, rosso da timbro |
+| `strumento` | alluminio chiaro da quadro elettrico |
+| `oscura` | camera oscura: nero caldo, una sola luce rossa |
+
+Uno stile ridefinisce **solo i token** del foglio di stile: non tocca il markup
+ne' il comportamento, quindi non puo' rompere una funzione.
 
 ### Pressione prolungata
 

@@ -268,7 +268,7 @@ sono rimossi da `publicDeck()`.
     "version": 1,
     "name": "Wdeck",
     "defaultProfile": "default",
-    "ui": { "theme": "dark", "accent": "#4c8dff", "showLabels": true },
+    "ui": { "theme": "dark", "style": "default", "accent": "#4c8dff", "showLabels": true },
     "profiles": [
       {
         "id": "default",
@@ -289,7 +289,8 @@ sono rimossi da `publicDeck()`.
                 "color": "#1f6feb",
                 "textColor": null,
                 "action": { "type": "media", "params": { "key": "playpause" } },
-                "holdAction": null
+                "holdAction": null,
+                "releaseAction": null
               }
             ]
           }
@@ -383,12 +384,59 @@ risposta ha la stessa forma di `POST /api/press` (`{ ok, result }` con
 ### `POST /api/press`
 
 ```json
-{ "buttonId": "media-playpause", "profileId": "default", "pageId": "main", "hold": false, "dryRun": false }
+{ "buttonId": "media-playpause", "profileId": "default", "pageId": "main", "hold": false, "release": false, "dryRun": false }
 ```
 
 Solo `buttonId` e' obbligatorio. `profileId`/`pageId` restringono la ricerca
 (utile se si vuole essere certi del contesto). `hold: true` usa `holdAction`
-quando definita.
+quando definita; `release: true` usa `releaseAction` quando definita. Se
+arrivano entrambi vince `hold`.
+
+Un bottone con `releaseAction` e' **momentaneo**: il client manda la pressione
+appena il dito tocca (azione normale) e il rilascio quando lo alza. E' il
+push-to-talk - smuta ora, rimuta al rilascio. Con `releaseAction` impostata la
+pressione prolungata non scatta mai.
+
+### Valore, scarto, coppia
+
+Come si comanda dipende dal `kind` del controllo, e cambia **quale campo** il
+client mette nella richiesta. L'handler li ritrova dentro `action.params`.
+
+| Campo | Chi lo manda | Significato |
+|---|---|---|
+| *(nessuno)* | `button`, `folder`, `macro`, `timer`, `pad`, `selector` | pressione secca |
+| `value` | `slider`, `color` | valore **assoluto**, dentro `min`..`max` |
+| `delta` | `encoder`, `jog`, `stepper` | **scarto** relativo, positivo o negativo |
+| `x` + `y` | `xy` | coppia di valori in un messaggio solo |
+
+Una manopola non ha una posizione: manda scatti (`delta: +0.5`). Una rotella
+non ha nemmeno un intervallo: manda solo scatti, all'infinito. La tavoletta
+manda `x` e `y` **insieme** - due messaggi separati descriverebbero uno stato
+intermedio che il dito non ha mai attraversato. `x` e `y` vanno sempre in
+coppia: se ne arriva uno solo la richiesta e' rifiutata.
+
+Un tocco sulla manopola **senza rotazione** e' una pressione normale (`press`
+senza `delta`): e' la pressione dell'albero, la seconda azione della manopola.
+
+**Chi li consuma.** Il gesto ha la precedenza su cio' che e' scritto nell'editor:
+se arriva `x`/`y` o `delta`, l'handler usa quello e ignora il parametro fisso.
+
+| Azione | Con `delta` | Con `x` + `y` |
+|---|---|---|
+| `volume`, `mic`, `brightness` | alza/abbassa di tanti punti percentuali | - |
+| `mouse` | scorre la rotellina di tanti scatti, il segno da' il verso (tetto 30) | porta il puntatore in quel punto dello schermo principale |
+| `hotkey` | manda la combinazione tante volte (tetto 20); girando indietro manda `keysBack`, se c'e' | - |
+
+Nella coppia la `y` cresce verso l'**alto**, come sulla tavoletta sotto il dito:
+Windows conta le righe al contrario e il ribaltamento avviene una volta sola,
+dentro `buildMouseOps`.
+
+### Comandi di sola lettura
+
+`gauge`, `meter`, `chart` e `display` mostrano lo stato che l'host gia' pubblica
+(lo stesso meccanismo di `reportsState`) e **rifiutano le pressioni** con
+`bad_request`. Non possono avere `holdAction`, `releaseAction` o `confirm`: non
+scatterebbero mai, e un'impostazione che non fa niente e' peggio di un errore.
 
 > **Regola di sicurezza**: `dryRun` puo' solo rendere l'esecuzione *piu'*
 > prudente. Se l'host e' in dry-run, nessun client puo' disattivarlo.
@@ -688,7 +736,7 @@ viene chiusa con codice `1008`.
 | `type` | campi | note |
 |---|---|---|
 | `auth` | `token` | obbligatorio se il token non e' nell'URL |
-| `press` | `buttonId`, `profileId?`, `pageId?`, `hold?`, `dryRun?`, `requestId?` | risponde con `ack` |
+| `press` | `buttonId`, `profileId?`, `pageId?`, `hold?`, `release?`, `value?`, `delta?`, `x?`, `y?`, `dryRun?`, `requestId?` | risponde con `ack` |
 | `navigate` | `profile?`, `page?`, `requestId?` | risponde con `ack` |
 | `reload` | `requestId?` | ricarica `deck.json` |
 | `ping` | `requestId?` | risponde con `pong` |

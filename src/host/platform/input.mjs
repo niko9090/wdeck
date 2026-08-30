@@ -174,43 +174,55 @@ export async function sendMediaKey(key, { repeat = 1 } = {}) {
 /** Descrizioni leggibili dei comandi del mouse. */
 const MOUSE_LABELS = {
   left: 'clic sinistro', right: 'clic destro', middle: 'clic centrale',
-  double: 'doppio clic', 'scroll-up': 'scorri su', 'scroll-down': 'scorri giu\''
+  double: 'doppio clic', 'scroll-up': 'scorri su', 'scroll-down': 'scorri giu\'',
+  move: 'sposta il puntatore'
 };
+
+/** Etichetta leggibile, con gli scatti o il punto quando ci sono. */
+function describeMouse(command, { notches, x, y } = {}) {
+  const base = MOUSE_LABELS[command] ?? command;
+  if (command === 'move') return `mouse: ${base} a ${Math.round(x ?? 0)}%, ${Math.round(y ?? 0)}%`;
+  if (notches != null && Math.abs(notches) > 1) return `mouse: ${base} x${Math.round(Math.abs(notches))}`;
+  return `mouse: ${base}`;
+}
 
 /**
  * Descrive un comando del mouse senza eseguirlo.
  * @param {string} command
- * @param {{platform?: string}} [options]
+ * @param {{platform?: string, notches?: number, x?: number, y?: number}} [options]
  */
-export function planMouse(command, { platform = process.platform } = {}) {
+export function planMouse(command, { platform = process.platform, ...rest } = {}) {
   const backend = requireBackend(platform);
+  const description = describeMouse(command, rest);
   if (backend === 'windows') {
-    return { backend, description: `mouse: ${MOUSE_LABELS[command] ?? command}`, command: buildMouseScript(command) };
+    return { backend, description, command: buildMouseScript(command, rest) };
   }
-  return { backend, description: `mouse: ${MOUSE_LABELS[command] ?? command}`, command: null };
+  return { backend, description, command: null };
 }
 
 /**
- * Esegue un comando del mouse (clic, doppio clic, rotellina) alla posizione
- * corrente del cursore. Per ora solo Windows.
+ * Esegue un comando del mouse (clic, doppio clic, rotellina, spostamento).
+ * Per ora solo Windows.
  * @param {string} command
+ * @param {{notches?: number, x?: number, y?: number}} [options]
  */
-export async function sendMouse(command) {
+export async function sendMouse(command, options = {}) {
   const backend = requireBackend();
   if (backend !== 'windows') {
     throw new Error('l\'azione mouse e\' disponibile solo su Windows');
   }
+  const detail = describeMouse(command, options);
   if (keyServerEnabled()) {
     try {
-      await sendKeyOps(encodeKeyOps(buildMouseOps(command)));
-      return { detail: `mouse: ${MOUSE_LABELS[command] ?? command}` };
+      await sendKeyOps(encodeKeyOps(buildMouseOps(command, options)));
+      return { detail };
     } catch {
       // il processo persistente non e' disponibile: si prosegue col colpo singolo
     }
   }
-  const res = await runPowerShell(buildMouseScript(command), { timeoutMs: 8000 });
+  const res = await runPowerShell(buildMouseScript(command, options), { timeoutMs: 8000 });
   if (res.code !== 0) throw new Error(`PowerShell ha restituito ${res.code}: ${res.stderr || 'errore sconosciuto'}`);
-  return { detail: `mouse: ${MOUSE_LABELS[command] ?? command}` };
+  return { detail };
 }
 
 export { MOUSE_COMMANDS };

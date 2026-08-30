@@ -4,6 +4,7 @@
  */
 
 import { ERROR_CODES } from '../../../shared/protocol.mjs';
+import { READONLY_KINDS } from '../config/schema.mjs';
 
 /**
  * Cerca un bottone nel deck.
@@ -186,7 +187,25 @@ export function createDispatcher({ registry, state, getDeck, baseDir, logger = c
       };
     }
 
-    let action = req.hold && found.button.holdAction ? found.button.holdAction : found.button.action;
+    // Tre azioni possibili sullo stesso bottone: hold (dopo la soglia),
+    // release (al rilascio, per i bottoni momentanei) e quella normale.
+    // Un quadrante, un livello, un grafico o un display non si premono: mostrano
+    // lo stato che l'host gia' pubblica. Eseguire l'azione qui sarebbe un
+    // effetto invisibile e inatteso, quindi si rifiuta con un motivo chiaro.
+    if (READONLY_KINDS.includes(found.button.kind)) {
+      return {
+        ok: false,
+        buttonId,
+        error: {
+          code: ERROR_CODES.badRequest,
+          message: `il comando "${buttonId}" e' di sola lettura (${found.button.kind}): non accetta pressioni`
+        }
+      };
+    }
+
+    let action = found.button.action;
+    if (req.hold && found.button.holdAction) action = found.button.holdAction;
+    else if (req.release && found.button.releaseAction) action = found.button.releaseAction;
 
     // Uno slider manda il valore trascinato: diventa un parametro dell'azione,
     // cosi' gli handler non devono sapere nulla del trasporto.
@@ -200,6 +219,36 @@ export function createDispatcher({ registry, state, getDeck, baseDir, logger = c
         };
       }
       action = { ...action, params: { ...(action.params ?? {}), value } };
+    }
+
+    // Una manopola o una rotella non hanno una posizione: mandano uno SCARTO.
+    // L'handler riceve `delta` e decide se sommarlo a uno stato suo o
+    // trasformarlo in un comando ripetuto.
+    if (req.delta !== undefined) {
+      const delta = Number(req.delta);
+      if (!Number.isFinite(delta)) {
+        return {
+          ok: false,
+          buttonId,
+          error: { code: ERROR_CODES.badRequest, message: `campo "delta" non numerico: ${req.delta}` }
+        };
+      }
+      action = { ...action, params: { ...(action.params ?? {}), delta } };
+    }
+
+    // La tavoletta a due assi manda la coppia in un messaggio solo: due
+    // messaggi separati darebbero uno stato intermedio che non e' mai esistito.
+    if (req.x !== undefined || req.y !== undefined) {
+      const x = Number(req.x);
+      const y = Number(req.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return {
+          ok: false,
+          buttonId,
+          error: { code: ERROR_CODES.badRequest, message: 'la tavoletta vuole "x" e "y" numerici insieme' }
+        };
+      }
+      action = { ...action, params: { ...(action.params ?? {}), x, y } };
     }
 
     const outcome = await execute(action, {
