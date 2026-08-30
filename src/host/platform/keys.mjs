@@ -34,7 +34,11 @@ export const VK = Object.freeze({
   // punteggiatura (VK_OEM_*). Senza questi non si puo' legare "ctrl+piu'" allo
   // zoom, che e' proprio il gesto per cui esistono le manopole; e la cattura
   // dei tasti nel client li produce gia' cosi', un carattere alla volta.
-  plus: 0xbb,
+  //
+  // `equal` e' il TASTO fisico "=/+" (VK_OEM_PLUS): premuto da solo scrive "=",
+  // e solo con Shift scrive "+". Per questo NON e' il "piu'": vedi `plus` piu'
+  // sotto, fra i tasti del tastierino.
+  equal: 0xbb,
   comma: 0xbc,
   minus: 0xbd,
   period: 0xbe,
@@ -59,6 +63,11 @@ export const VK = Object.freeze({
   numpad9: 0x69,
   numpadmul: 0x6a,
   numpadadd: 0x6b,
+  // "piu'" vuol dire il CARATTERE +, e l'unico tasto che lo scrive da solo su
+  // qualunque disposizione di tastiera e' quello del tastierino. Mandare invece
+  // il tasto "=/+" senza Shift scrive "=", ed e' il motivo per cui "ctrl++"
+  // rimpiccioliva ma non ingrandiva: lo zoom avanti non riceveva nessun piu'.
+  plus: 0x6b,
   numpadsub: 0x6d,
   numpaddec: 0x6e,
   numpaddiv: 0x6f,
@@ -97,10 +106,12 @@ export const KEY_ALIASES = Object.freeze({
   prtsc: 'printscreen',
   // I caratteri veri e propri: sono quelli che arrivano dalla cattura dei tasti
   // nel client, che manda `event.key` cosi' com'e' ("ctrl+-", non "ctrl+minus").
-  '=': 'plus',
+  '=': 'equal',
+  oem_plus: 'equal',
   '+': 'plus',
   add: 'plus',
-  equal: 'plus',
+  numplus: 'numpadadd',
+  numpadplus: 'numpadadd',
   '-': 'minus',
   '_': 'minus',
   subtract: 'minus',

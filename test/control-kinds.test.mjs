@@ -394,3 +394,146 @@ test('aggiornamento: non si propone una versione gia’ in esecuzione', () => {
   assert.equal(vale(stat(false, '0.11.0', '0.10.0')), false, 'senza available non si propone nulla');
   assert.equal(vale({ available: true, current: '0.10.0' }), false, 'senza la versione proposta non si propone nulla');
 });
+
+
+// -------------------------------- il client vecchio rimasto in cache (Ctrl+R)
+
+/**
+ * Monta `checkClientFreshness`/`freshnessRun` del client con tutto cio' che
+ * toccano sostituito da finte, compresi l'orologio (per provare il freno fra
+ * due controlli) e la risposta di /api/health (che cambia quando l'host si
+ * aggiorna). Restituisce la funzione e il diario di quello che e' successo.
+ */
+function bancoFreschezza({ mine, editing = false, gia = null }) {
+  const app = leggi('web/app.js');
+  const wrapper = app.match(/async function checkClientFreshness\([\s\S]*?\n\}/);
+  const corpo = app.match(/async function freshnessRun\([\s\S]*?\n\}\n/);
+  assert.ok(wrapper, 'il client deve dichiarare checkClientFreshness');
+  assert.ok(corpo, 'il client deve dichiarare freshnessRun');
+
+  const diario = { ricariche: 0, toast: [], cacheTolte: 0, disiscrizioni: 0, health: 0 };
+  const sessione = new Map();
+  if (gia) sessione.set('wdeck.stale', gia);
+  const state = { version: null, update: null, editing };
+  const banco = {
+    diario, sessione, state,
+    orologio: 1_700_000_000_000,
+    /** risposta di /api/health: la si cambia per simulare l'host aggiornato */
+    salute: { ok: true, data: { buildId: mine, version: '0.10.0' } }
+  };
+
+  const ambiente = {
+    state,
+    Date: { now: () => banco.orologio },
+    document: { querySelector: () => ({ content: mine }) },
+    ENDPOINTS: { health: '/api/health' },
+    api: async () => { diario.health += 1; return banco.salute; },
+    renderVersion: () => {},
+    showUpdate: () => {},
+    checkUpdate: () => {},
+    maybeWhatsNew: () => {},
+    toast: (testo) => diario.toast.push(testo),
+    t: (chiave) => chiave,
+    sessionStorage: {
+      getItem: (k) => (sessione.has(k) ? sessione.get(k) : null),
+      setItem: (k, v) => sessione.set(k, v),
+      removeItem: (k) => sessione.delete(k)
+    },
+    window: { caches: true },
+    caches: {
+      keys: async () => ['wdeck-shell-vecchia'],
+      delete: async () => { diario.cacheTolte += 1; return true; }
+    },
+    navigator: {
+      serviceWorker: {
+        getRegistration: async () => ({ unregister: async () => { diario.disiscrizioni += 1; } })
+      }
+    },
+    location: { reload: () => { diario.ricariche += 1; } }
+  };
+
+  const nomi = Object.keys(ambiente);
+  // eslint-disable-next-line no-new-func -- si esegue il codice del client cosi' com'e'
+  const fabbrica = new Function(...nomi, `
+    let freshnessBusy = false;
+    let lastFreshness = 0;
+    let staleReloadPending = false;
+    let lastAutoCheck = 0;
+    ${wrapper[0]}
+    ${corpo[0]}
+    return checkClientFreshness;
+  `);
+  banco.check = fabbrica(...nomi.map((n) => ambiente[n]));
+  return banco;
+}
+
+test('client stantio: si ricontrolla a ogni collegamento, non una volta sola', async () => {
+  // IL difetto segnalato dall'utente: l'host si aggiorna MENTRE il client e'
+  // aperto. Il primo controllo (host ancora vecchio) dice "tutto a posto"; poi
+  // l'host riparte con una build nuova e il client si ricollega. Finche' il
+  // controllo era uno solo per caricamento, nessuno se ne accorgeva piu' e
+  // restava una pagina vecchia: l'utente doveva fare Ctrl+R a mano, in mezzo a
+  // due versioni.
+  const banco = bancoFreschezza({ mine: 'build-A' });
+
+  await banco.check();
+  assert.equal(banco.diario.health, 1, 'primo collegamento: si controlla');
+  assert.equal(banco.diario.ricariche, 0, 'client allineato: nessuna ricarica');
+
+  // L'host si aggiorna e riparte; il client si ricollega piu' tardi.
+  banco.salute = { ok: true, data: { buildId: 'build-B', version: '0.10.1' } };
+  banco.orologio += 30_000;
+  await banco.check();
+
+  assert.equal(banco.diario.health, 2, 'alla riconnessione si ricontrolla');
+  assert.equal(banco.diario.ricariche, 1, 'build diversa: il client si ricarica da solo');
+  assert.ok(banco.diario.cacheTolte > 0, 'prima svuota la cache del guscio');
+  assert.equal(banco.diario.disiscrizioni, 1, 'e disiscrive il service worker vecchio');
+  assert.equal(banco.sessione.get('wdeck.stale'), 'build-B', 'segna il tentativo');
+});
+
+test('client stantio: le riconnessioni a raffica non moltiplicano i controlli', async () => {
+  const banco = bancoFreschezza({ mine: 'build-A' });
+  await banco.check();
+  banco.orologio += 1_000; // meno di 5 secondi: l'host sta ancora ripartendo
+  await banco.check();
+  assert.equal(banco.diario.health, 1, 'il freno evita una raffica di controlli');
+  banco.orologio += 6_000;
+  await banco.check();
+  assert.equal(banco.diario.health, 2, 'ma passato il freno si ricontrolla');
+});
+
+test('client stantio: nessuna ricarica a sorpresa mentre si modifica il deck', async () => {
+  const banco = bancoFreschezza({ mine: 'build-A', editing: true });
+  banco.salute = { ok: true, data: { buildId: 'build-B', version: '0.10.1' } };
+  await banco.check();
+  assert.equal(banco.diario.ricariche, 0, 'in modifica non si ricarica');
+  assert.ok(banco.diario.toast.includes('update.reloadReady'), 'ma si avvisa');
+  assert.equal(banco.sessione.has('wdeck.stale'), false,
+    'e non si consuma il tentativo: la ricarica va fatta uscendo dalla modifica');
+});
+
+test('client stantio: sulla stessa build non si ricarica una seconda volta', async () => {
+  const banco = bancoFreschezza({ mine: 'build-A', gia: 'build-B' });
+  banco.salute = { ok: true, data: { buildId: 'build-B', version: '0.10.1' } };
+  await banco.check();
+  assert.equal(banco.diario.ricariche, 0, 'nessun ciclo di ricariche');
+  assert.ok(banco.diario.toast.includes('update.reloadReady'), 'si avvisa e basta');
+});
+
+test('client stantio: host irraggiungibile non provoca ricariche', async () => {
+  const banco = bancoFreschezza({ mine: 'build-A' });
+  banco.salute = { ok: false };
+  await banco.check();
+  assert.equal(banco.diario.ricariche, 0, 'senza risposta non si conclude nulla');
+});
+
+test('setEditing rimanda la ricarica segnata durante la modifica', () => {
+  // Il rinvio serve a qualcosa solo se qualcuno lo riprende: uscendo dalla
+  // modifica il client deve rifare il controllo (col freno azzerato).
+  const app = leggi('web/app.js');
+  const setEditing = app.match(/function setEditing\([\s\S]*?\n\}/)[0];
+  assert.match(setEditing, /staleReloadPending/, 'setEditing deve riprendere la ricarica rimandata');
+  assert.match(setEditing, /lastFreshness = 0/, 'e azzerare il freno, altrimenti il controllo viene saltato');
+  assert.match(setEditing, /checkClientFreshness\(\)/);
+});

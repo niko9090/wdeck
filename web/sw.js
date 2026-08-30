@@ -24,7 +24,17 @@ const SHELL = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  '/shared/protocol.mjs'
+  '/shared/protocol.mjs',
+  // I caratteri degli stili: senza di loro, offline, i "mondi" tornerebbero
+  // tutti allo stesso carattere di sistema. Sono nel precache perche' devono
+  // esserci al PRIMO avvio senza rete, non solo dopo averli visti una volta.
+  './fonts/archivo-var.woff2',
+  './fonts/nunito-var.woff2',
+  './fonts/barlow-semicondensed-500.woff2',
+  './fonts/barlow-semicondensed-600.woff2',
+  './fonts/fraunces-var.woff2',
+  './fonts/inter-var.woff2',
+  './fonts/jetbrains-mono-var.woff2'
 ];
 
 self.addEventListener('install', (event) => {

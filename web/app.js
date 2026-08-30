@@ -590,6 +590,13 @@ function setEditing(value) {
   renderPages();
   renderGrid();
   toast(t(state.editing ? 'edit.on' : 'edit.off'));
+  // Una ricarica rimandata mentre si modificava il deck si fa adesso: il lavoro
+  // e' gia' stato salvato sull'host a ogni modifica.
+  if (!state.editing && staleReloadPending) {
+    staleReloadPending = false;
+    lastFreshness = 0;
+    checkClientFreshness();
+  }
 }
 
 /** Prima cella libera della pagina corrente, in "riga:colonna". */
@@ -2944,9 +2951,18 @@ function forgetHost(id) {
 
 // ---------------------------------------------------------------- aggiornamenti
 
-// Una volta sola per caricamento: evita che una riconnessione mentre si sta
-// modificando il deck faccia scattare una ricarica a sorpresa.
-let freshnessChecked = false;
+// NON piu' "una volta sola per caricamento". Il caso normale e' proprio questo:
+// l'host si aggiorna MENTRE il client e' aperto (il telefono resta acceso sulla
+// pagina), l'host riparte, il client si ricollega — e con un controllo unico al
+// primo caricamento nessuno si accorgeva piu' che la copia in cache era vecchia.
+// L'utente restava "in mezzo a due versioni" finche' non ricaricava a mano.
+// Ora si ricontrolla a ogni collegamento riuscito; contro le ricariche a
+// sorpresa ci sono il freno (riconnessioni a raffica) e il rinvio finche' si sta
+// modificando il deck.
+let freshnessBusy = false;
+let lastFreshness = 0;
+/** Ricarica rimandata perche' si stava modificando il deck. */
+let staleReloadPending = false;
 
 /**
  * Si accorge se questa pagina e' una copia vecchia rimasta in cache. Il service
@@ -2957,13 +2973,29 @@ let freshnessChecked = false;
  * Confronta l'impronta di build del client caricato (dal <meta wdeck-build>,
  * che riflette la copia in cache) con quella dell'host, letta da /api/health -
  * che il service worker non intercetta mai, quindi arriva sempre fresca. Se non
- * coincidono, pulisce la cache e ricarica **una volta sola**: il client stantio
- * si aggiorna da se' invece di mostrare una versione vecchia.
+ * coincidono, pulisce la cache e ricarica **una volta per ogni build dell'host**:
+ * il client stantio si aggiorna da se' invece di mostrare una versione vecchia.
+ *
+ * Si chiama a OGNI collegamento riuscito, non solo al primo: l'host si aggiorna
+ * quasi sempre mentre il client e' aperto, e la pagina in cache se ne accorge
+ * solo qui.
  */
 async function checkClientFreshness() {
-  if (freshnessChecked) return;
-  freshnessChecked = true;
+  if (freshnessBusy) return;
+  const adesso = Date.now();
+  // Una riconnessione con l'host che riparte puo' produrre piu' authOk di
+  // seguito: un controllo ogni 5 secondi basta e avanza.
+  if (lastFreshness && adesso - lastFreshness < 5000) return;
+  freshnessBusy = true;
+  lastFreshness = adesso;
+  try {
+    await freshnessRun();
+  } finally {
+    freshnessBusy = false;
+  }
+}
 
+async function freshnessRun() {
   const mine = document.querySelector('meta[name="wdeck-build"]')?.content ?? '';
   if (!mine) return; // build non marcata (sviluppo): niente da confrontare
 
@@ -3015,6 +3047,15 @@ async function checkClientFreshness() {
     toast(t('update.reloadReady'), '');
     return;
   }
+  // Mai ricaricare sotto le dita di chi sta modificando il deck: si perderebbe
+  // quello che sta facendo. Si segna la ricarica e la si fa appena esce dalla
+  // modifica (setEditing), senza consumare il segno di "gia' tentato".
+  if (state.editing) {
+    staleReloadPending = true;
+    toast(t('update.reloadReady'), '');
+    return;
+  }
+
   try { sessionStorage.setItem('wdeck.stale', hostBuild); } catch { /* storage assente */ }
 
   toast(t('update.refreshing'), '');

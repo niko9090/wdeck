@@ -1,14 +1,65 @@
 /* Wdeck - client web PWA. Tema scuro, griglia responsive, nessuna dipendenza. */
 
+/* ------------------------------------------------------------------ caratteri
+   Imbarcati in web/fonts/, MAI da una rete esterna: il deck si apre dal
+   telefono su una rete locale che puo' non avere internet, e Wdeck non ha
+   dipendenze. Prima erano solo pile di caratteri di sistema, e gli stili si
+   riducevano tutti allo stesso carattere su Android e iPhone (Bahnschrift e'
+   solo Windows, SF Pro solo Apple, Iowan solo Apple): i "mondi" si vedevano
+   uguali. Sei famiglie, licenza SIL Open Font (web/fonts/LICENSE.txt).
+   Cinque sono VARIABILI: un file solo copre tutti i pesi.
+   `font-display: swap` fa vedere subito il testo col carattere di sistema e lo
+   sostituisce quando il file e' pronto: mai un deck vuoto in attesa. */
+
+@font-face {
+  font-family: 'Archivo';           /* keycap: grottesco industriale, etichette maiuscole */
+  src: url('./fonts/archivo-var.woff2') format('woff2');
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Nunito';            /* ceramica: terminali arrotondati, morbido */
+  src: url('./fonts/nunito-var.woff2') format('woff2');
+  font-weight: 200 1000; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';  /* console: stretto da banco regia */
+  src: url('./fonts/barlow-semicondensed-500.woff2') format('woff2');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  src: url('./fonts/barlow-semicondensed-600.woff2') format('woff2');
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Fraunces';          /* quaderno: grazie con carattere, da pagina stampata */
+  src: url('./fonts/fraunces-var.woff2') format('woff2');
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';             /* strumento: neutro, leggibile in piccolo */
+  src: url('./fonts/inter-var.woff2') format('woff2');
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';    /* camera oscura + tutti i numeri dei quadranti */
+  src: url('./fonts/jetbrains-mono-var.woff2') format('woff2');
+  font-weight: 100 800; font-style: normal; font-display: swap;
+}
+
 :root {
   /* Il carattere e' un token come i colori: uno stile lo ridefinisce e basta.
-     Sono pile di caratteri di SISTEMA, non file da scaricare: il deck si apre
-     dal telefono su una rete locale che puo' benissimo non avere internet, e
-     un carattere che non arriva e' una pagina che salta all'occhio.
-     Per imbarcare un carattere vero: metterlo in web/fonts/, dichiararlo con
-     una regola font-face qui sotto, aggiungerlo alla lista della cache in
-     web/sw.js e nominarlo per PRIMO nella pila dello stile che lo usa. */
+     Ogni pila comincia con un carattere IMBARCATO (le regole font-face qui
+     sopra) e prosegue con quelli di sistema: se il file non fosse ancora
+     arrivato il deck si legge lo stesso.
+     Per aggiungerne uno: metterlo in web/fonts/, dichiararlo con una regola
+     font-face qui sopra, aggiungerlo alla lista della cache in web/sw.js e
+     all'elenco REQUIRED di scripts/build-web.mjs, e nominarlo per PRIMO nella
+     pila dello stile che lo usa. */
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* I numeri dei quadranti, dei display e dei timer: cifre di larghezza fissa,
+     cosi' un valore che cambia non fa ballare quello che gli sta intorno. */
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace;
   --bg: #0e1117;
   --bg-elev: #161b24;
   --bg-btn: #1e2430;
@@ -819,7 +870,7 @@ body {
 .sheet-body textarea {
   width: 100%;
   padding: 10px 12px;
-  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   color: var(--text);
   background: #0f131a;
@@ -1010,7 +1061,7 @@ body {
 }
 
 .ctl-value {
-  font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
@@ -1142,7 +1193,7 @@ body {
 }
 .ctl-stepper .st-btn:active { transform: translateY(1px); }
 .ctl-stepper .st-val {
-  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: clamp(14px, 3vmin, 18px);
   font-weight: 700;
   min-width: 3.2ch;
@@ -1218,7 +1269,7 @@ body {
 }
 .ctl-timer .rg span {
   position: relative;
-  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -1306,7 +1357,7 @@ body {
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 0 0 1px var(--ctl-edge);
 }
 .ctl-display .rd-big {
-  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: clamp(18px, 4.6vmin, 30px);
   font-weight: 700;
   line-height: 1;
@@ -1331,7 +1382,7 @@ body {
 /* --- Keycap: tastiera meccanica, capsule scolpite dentro un pozzetto --- */
 :root[data-style='keycap'] {
   /* Stretto e squadrato come la serigrafia di un tasto. */
-  --font: "Bahnschrift", "Roboto Condensed", "Avenir Next Condensed", "Segoe UI", system-ui, sans-serif;
+  --font: "Archivo", "Bahnschrift", "Roboto Condensed", "Segoe UI", system-ui, sans-serif;
   --bg: #14161a;
   --bg-elev: #1b1e24;
   --bg-btn: #262a31;
@@ -1359,7 +1410,7 @@ body {
 /* --- Ceramica: superfici smaltate, angoli generosi, un ocra caldo --- */
 :root[data-style='ceramica'] {
   /* Morbido e arrotondato, come lo smalto. */
-  --font: ui-rounded, "SF Pro Rounded", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font: "Nunito", ui-rounded, "SF Pro Rounded", "Segoe UI Variable Display", system-ui, sans-serif;
   --bg: #f2ede4;
   --bg-elev: #ffffff;
   --bg-btn: #ffffff;
@@ -1379,7 +1430,7 @@ body {
 /* --- Console: metallo scuro, spigoli vivi, verde acqua da strumentazione --- */
 :root[data-style='console'] {
   /* Tecnico e stretto: e' la scritta di un pannello di regia. */
-  --font: "Bahnschrift", "Roboto Condensed", "Helvetica Neue", system-ui, sans-serif;
+  --font: "Barlow Semi Condensed", "Bahnschrift", "Roboto Condensed", system-ui, sans-serif;
   --bg: #131619;
   --bg-elev: #1b1e22;
   --bg-btn: #2a2e34;
@@ -1398,7 +1449,7 @@ body {
 /* --- Quaderno: carta rigata, schede, un rosso da timbro --- */
 :root[data-style='quaderno'] {
   /* Con le grazie: e' carta, non uno schermo. */
-  --font: "Iowan Old Style", Georgia, Cambria, "Times New Roman", serif;
+  --font: "Fraunces", "Iowan Old Style", Georgia, Cambria, serif;
   --bg: #f6f1e6;
   --bg-elev: #fffdf7;
   --bg-btn: #fffdf7;
@@ -1424,7 +1475,7 @@ body {
 /* --- Strumento: alluminio spazzolato, comandi scuri su fondo chiaro --- */
 :root[data-style='strumento'] {
   /* Grottesco neutro da targhetta incisa. */
-  --font: "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font: "Inter", "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
   --bg: #b4babf;
   --bg-elev: #c3c8cc;
   --bg-btn: #9aa0a6;
@@ -1450,7 +1501,7 @@ body {
 /* --- Camera oscura: nero caldo, una sola luce rossa --- */
 :root[data-style='oscura'] {
   /* Cifre a larghezza fissa: al buio si leggono i numeri, non le parole. */
-  --font: ui-monospace, "Cascadia Mono", "SF Mono", "Roboto Mono", Menlo, monospace;
+  --font: "JetBrains Mono", ui-monospace, "Cascadia Mono", "SF Mono", monospace;
   --bg: #0a0708;
   --bg-elev: #14100f;
   --bg-btn: #1a1517;

@@ -150,3 +150,47 @@ test('firmware: il codice del tocco e\' condizionato al display che ce l\'ha', (
   assert.match(main, /#else[\s\S]*static void handleTouch\(\) \{\}/,
     'senza touch handleTouch deve esistere lo stesso, altrimenti loop() non compila');
 });
+
+// ------------------------------------------------------------------ caratteri
+
+test('caratteri: gli stili usano caratteri imbarcati, non solo quelli di sistema', () => {
+  // Il difetto: Bahnschrift esiste solo su Windows, SF Pro solo su Apple, Iowan
+  // Old Style solo su Apple. Dal telefono TUTTI gli stili ripiegavano sullo
+  // stesso carattere di sistema, e i "mondi" si vedevano identici.
+  const css = fs.readFileSync(path.join(ROOT, 'web', 'app.css'), 'utf8');
+  const dichiarati = [...css.matchAll(/@font-face\s*\{[^}]*?font-family:\s*'([^']+)'[^}]*?url\('\.\/fonts\/([^']+)'/gs)]
+    .map((m) => ({ famiglia: m[1], file: m[2] }));
+  assert.ok(dichiarati.length >= 7, 'servono le regole font-face dei caratteri imbarcati');
+
+  for (const { file } of dichiarati) {
+    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'fonts', file)), `manca web/fonts/${file}`);
+  }
+
+  // Nessuna rete: Wdeck si apre su una LAN che puo' non avere internet.
+  assert.doesNotMatch(css, /url\(\s*['"]?https?:/i, 'nessun carattere da scaricare da internet');
+  assert.doesNotMatch(css, /@import/i, 'nessun @import verso l\'esterno');
+
+  // Ogni stile deve NOMINARE PER PRIMO un carattere imbarcato: e' l'unico modo
+  // perche' si veda davvero diverso su un telefono.
+  const famiglie = new Set(dichiarati.map((d) => d.famiglia));
+  const stili = [...css.matchAll(/:root\[data-style='([a-z]+)'\]\s*\{([^}]*)\}/g)];
+  const conFont = stili.filter(([, , corpo]) => /--font:/.test(corpo));
+  assert.ok(conFont.length >= 6, 'ogni stile deve ridefinire il carattere');
+  for (const [, nome, corpo] of conFont) {
+    const primo = corpo.match(/--font:\s*"([^"]+)"/);
+    assert.ok(primo, `lo stile ${nome} deve cominciare la pila con un carattere fra virgolette`);
+    assert.ok(famiglie.has(primo[1]), `lo stile ${nome} comincia con "${primo[1]}", che non e' imbarcato`);
+  }
+
+  // I file devono finire nel guscio del service worker (altrimenti offline si
+  // perde lo stile) e nell'elenco che fa fallire la build se ne manca uno.
+  const sw = fs.readFileSync(path.join(ROOT, 'web', 'sw.js'), 'utf8');
+  const build = fs.readFileSync(path.join(ROOT, 'scripts', 'build-web.mjs'), 'utf8');
+  for (const { file } of dichiarati) {
+    assert.ok(sw.includes(`./fonts/${file}`), `sw.js non mette in cache ${file}`);
+    assert.ok(build.includes(`fonts/${file}`), `build-web.mjs non pretende ${file}`);
+  }
+
+  // La licenza OFL va distribuita coi caratteri.
+  assert.ok(fs.existsSync(path.join(ROOT, 'web', 'fonts', 'LICENSE.txt')), 'manca la licenza dei caratteri');
+});

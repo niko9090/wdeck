@@ -175,6 +175,16 @@ test('keys: il "piu\u2019" finale e\u2019 un tasto, non un separatore avanzato',
   assert.equal(parseHotkey('ctrl+shift++').key, 'plus');
   assert.equal(parseHotkey('+').key, 'plus');
   assert.equal(parseHotkey('ctrl+plus').keyCode, parseHotkey('ctrl++').keyCode);
+
+  // Il "piu'" e' il CARATTERE +, non il tasto "=/+": quello, premuto senza
+  // Shift, scrive "=". Mandarlo era il motivo per cui il comando Zoom del deck
+  // rimpiccioliva (ctrl+-) ma non ingrandiva (ctrl++ arrivava come ctrl+=).
+  // Il tasto del tastierino scrive "+" su qualunque disposizione di tastiera.
+  assert.equal(parseHotkey('ctrl++').keyCode, VK.numpadadd, 'il piu’ deve essere un vero piu’');
+  assert.equal(parseHotkey('ctrl+=').key, 'equal', 'l’uguale resta il tasto "=/+"');
+  assert.equal(parseHotkey('ctrl+=').keyCode, 0xbb);
+  assert.notEqual(parseHotkey('ctrl++').keyCode, parseHotkey('ctrl+=').keyCode,
+    'piu’ e uguale non sono lo stesso tasto');
 });
 
 test('windows: buildKeyScript rilascia i modificatori in ordine inverso', () => {

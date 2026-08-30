@@ -35,7 +35,15 @@ const REQUIRED = [
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-512.png',
-  'shared/protocol.mjs'
+  'shared/protocol.mjs',
+  'fonts/archivo-var.woff2',
+  'fonts/nunito-var.woff2',
+  'fonts/barlow-semicondensed-500.woff2',
+  'fonts/barlow-semicondensed-600.woff2',
+  'fonts/fraunces-var.woff2',
+  'fonts/inter-var.woff2',
+  'fonts/jetbrains-mono-var.woff2',
+  'fonts/LICENSE.txt'
 ];
 
 const errors = [];

@@ -5,6 +5,34 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.10.2] - 2026-08-31
+
+### Corretto
+
+- **Il client restava "in mezzo a due versioni" finche' non si ricaricava a
+  mano.** L'host si aggiorna quasi sempre MENTRE il deck e' aperto: il
+  controllo che si accorge della pagina vecchia rimasta in cache era pero' uno
+  solo per caricamento, fatto quando l'host era ancora quello di prima. Alla
+  riconnessione nessuno lo rifaceva, e restavano il banner dell'aggiornamento e
+  la doppia versione finche' non si premeva Ctrl+R. Ora il controllo si ripete a
+  ogni collegamento riuscito (con un freno di 5 secondi contro le riconnessioni
+  a raffica) e la ricarica viene rimandata, non annullata, se si sta modificando
+  il deck.
+- **Il comando Zoom rimpiccioliva ma non ingrandiva.** `ctrl++` mandava il tasto
+  fisico "=/+", che senza Shift scrive `=`: il programma non riceveva nessun
+  piu'. Ora il "piu'" e' il carattere `+` vero (il tasto del tastierino, che lo
+  scrive su qualunque disposizione di tastiera), mentre `ctrl+=` continua a
+  essere l'uguale. Vale per ogni scorciatoia, non solo per lo zoom.
+
+### Aggiunto
+
+- **I caratteri dei sette stili sono imbarcati nell'app.** Prima erano nomi di
+  caratteri di sistema (Bahnschrift solo su Windows, SF Pro e Iowan solo su
+  Apple): dal telefono tutti gli stili ripiegavano sullo stesso carattere e si
+  vedevano identici. Ora Wdeck porta con se' Archivo, Nunito, Barlow Semi
+  Condensed, Fraunces, Inter e JetBrains Mono (licenza SIL Open Font, 260 KB in
+  tutto), messi in cache per l'uso offline. Nessuno viene scaricato da internet.
+
 ## [0.10.1] - 2026-08-30
 
 ### Corretto

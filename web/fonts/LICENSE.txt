@@ -1,0 +1,20 @@
+Caratteri imbarcati in Wdeck
+============================
+
+Tutti i file .woff2 di questa cartella sono distribuiti con la SIL Open Font
+License, Version 1.1 (OFL-1.1). La licenza permette di usarli, includerli e
+ridistribuirli anche in un programma, a patto di NON venderli da soli e di
+conservare questa nota. Testo completo: https://openfontlicense.org
+
+  archivo-var.woff2              Archivo               (c) Omnibus-Type
+  nunito-var.woff2               Nunito                (c) Vernon Adams,
+                                                           Cyreal, Jacques Le Bailly
+  barlow-semicondensed-500.woff2 Barlow Semi Condensed (c) Jeremy Tribby
+  barlow-semicondensed-600.woff2 Barlow Semi Condensed (c) Jeremy Tribby
+  fraunces-var.woff2             Fraunces              (c) Phaedra Charles,
+                                                           Flavia Zimbardi, Undercase Type
+  inter-var.woff2                Inter                 (c) Rasmus Andersson
+  jetbrains-mono-var.woff2       JetBrains Mono        (c) JetBrains s.r.o.
+
+Sottoinsieme: solo il blocco "latin" (le pagine servite da Wdeck sono in
+italiano e inglese). I file variabili coprono tutti i pesi in un file solo.
