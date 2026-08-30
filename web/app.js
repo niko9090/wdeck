@@ -87,6 +87,17 @@ const state = {
   statuses: {},
   /** cursore attualmente sotto il dito: non va riallineato dall'host */
   draggingId: null,
+  /**
+   * Cursori appena mollati: id -> istante fino al quale l'host NON puo'
+   * riallinearli.
+   *
+   * L'host legge il livello vero del PC a intervalli. Alzando il volume da 20 a
+   * 100 e togliendo il dito, la lettura partita PRIMA del cambiamento arriva
+   * dopo il rilascio e riporta il cursore a 80: sembra che il gesto sia andato
+   * storto e si ricomincia da capo. Per un attimo dopo il rilascio comanda
+   * quello che ha chiesto l'utente, poi si torna ad ascoltare il PC.
+   */
+  levelHold: new Map(),
   update: null,
   /** versione dell'host in esecuzione, mostrata nella barra in alto */
   version: null,
@@ -1305,12 +1316,38 @@ function applyStatusTo(element, entry) {
 
   setStateTag(element, entry?.error ? '!' : (entry?.text ?? ''));
 
-  // Il livello reale allinea il cursore, tranne mentre il dito lo sta muovendo:
-  // vedersi scappare via il cursore sotto le dita e' peggio di un valore vecchio.
-  if (typeof entry?.level === 'number' && state.draggingId !== element.dataset.id) {
+  // Il livello reale allinea il cursore, tranne mentre il dito lo sta muovendo
+  // e per un attimo dopo che lo ha mollato: vedersi scappare via il cursore
+  // sotto le dita — o subito dopo averlo lasciato — e' peggio di un valore
+  // vecchio di mezzo secondo.
+  if (typeof entry?.level === 'number' && !levelIsHeld(element.dataset.id)) {
     state.levels.set(element.dataset.id, entry.level);
     updateSliderVisual(element, entry.level);
   }
+}
+
+/** Da quanti ms dopo il rilascio l'host puo' tornare a comandare il cursore. */
+const LEVEL_HOLD_MS = 1500;
+
+/**
+ * Il livello di questo comando e' "difeso" dall'utente in questo momento?
+ *
+ * Vale mentre il dito e' sopra e per `LEVEL_HOLD_MS` dopo averlo tolto: e' il
+ * tempo che serve all'host per fare il giro (mandare il comando al PC, vedere
+ * l'effetto, rileggere il livello) e smettere di raccontare il passato.
+ */
+function levelIsHeld(id) {
+  if (state.draggingId === id) return true;
+  const fino = state.levelHold.get(id);
+  if (fino === undefined) return false;
+  if (Date.now() < fino) return true;
+  state.levelHold.delete(id);
+  return false;
+}
+
+/** Difende il livello di un comando dalle letture in ritardo dell'host. */
+function holdLevel(id) {
+  if (id) state.levelHold.set(id, Date.now() + LEVEL_HOLD_MS);
 }
 
 /** Etichetta breve dello stato ("muto", "LIVE", nome della scena in onda). */
@@ -3435,6 +3472,10 @@ function bindGrid() {
     if (slider) {
       slider.setPointerCapture?.(event.pointerId);
       state.draggingId = slider.dataset.id;
+      // Via la transizione finche' il dito e' sopra: 90 ms di ammorbidimento su
+      // ogni movimento fanno sembrare il cursore incollato indietro rispetto al
+      // dito, e in un trascinamento veloce non lo raggiunge mai.
+      slider.classList.add('live');
       gesture = {
         kind: 'slider',
         element: slider,
@@ -3615,6 +3656,10 @@ function bindGrid() {
 
     if (gesture.kind === 'slider') {
       sendSliderValue(gesture.element, { final: true });
+      gesture.element.classList.remove('live');
+      // Il dito si e' alzato ma il PC non ha ancora finito: fino a che non ha
+      // fatto il giro, il cursore resta dove l'utente l'ha messo.
+      holdLevel(gesture.element.dataset.id);
       state.draggingId = null;
     } else if (gesture.kind === 'button' && gesture.momentary) {
       gesture.element.classList.remove('pending');
@@ -3640,7 +3685,7 @@ function bindGrid() {
     if (gesture?.kind === 'button' && gesture.momentary) {
       runPress(gesture.element, gesture.spec, { release: true });
     }
-    if (gesture?.element) gesture.element.classList.remove('pending', 'dragging');
+    if (gesture?.element) gesture.element.classList.remove('pending', 'dragging', 'live');
     clearHold();
     clearDropCell();
     state.draggingId = null;
@@ -3716,6 +3761,7 @@ function bindGrid() {
     state.levels.set(slider.dataset.id, next);
     updateSliderVisual(slider, next);
     sendSliderValue(slider, { final: true });
+    holdLevel(slider.dataset.id);
   });
 
   // Lo swipe funziona anche partendo dai bordi della pagina, non solo dalla griglia.
@@ -3835,6 +3881,7 @@ function finishCtlGesture(gesture) {
       // Il valore definitivo parte sempre, anche se l'ultimo era stato scartato
       // dal limitatore: altrimenti il PC resterebbe a un passo dalla posizione.
       if (gesture.pending) pressButton(element, gesture.pending);
+      holdLevel(element.dataset.id);
       return;
 
     case 'jog':
@@ -3971,6 +4018,7 @@ function abandonSlider(gesture) {
   // successivo: gli eventi arrivano lo stesso alla griglia (risalgono), ma il
   // dito resterebbe "attaccato" a un comando che non sta piu' comandando.
   if (gesture.pointerId !== undefined) slider.releasePointerCapture?.(gesture.pointerId);
+  slider.classList.remove('live');
   state.draggingId = null;
 }
 

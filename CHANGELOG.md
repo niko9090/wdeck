@@ -50,6 +50,15 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
   cursore riprende il valore che aveva. Il cursore ORIZZONTALE continua a
   tenerseli: li' trascinare di lato e' la sua regolazione, non c'e' modo di
   distinguere i due gesti.
+- **Il cursore era lento e non stava dietro al dito.** Il riempimento aveva una
+  transizione di 90 ms su ogni movimento: in un trascinamento veloce inseguiva
+  la mano senza mai raggiungerla. Ora la transizione c'e' solo quando il valore
+  arriva dall'host; sotto al dito e' tolta.
+- **Il cursore tornava indietro da solo dopo averlo mollato** (da 100 a 80, e
+  via da capo). L'host rilegge il livello vero del PC a intervalli: la lettura
+  partita PRIMA del cambiamento arrivava dopo il rilascio e vinceva. Per un
+  secondo e mezzo dopo che si toglie il dito comanda quello che ha chiesto
+  l'utente, poi si torna ad ascoltare il PC.
 - **Il valore del cursore non parte piu' al primo tocco** ma al primo movimento
   vero (o al rilascio, se e' stato solo un tocco): appoggiare il dito su un
   cursore per sfogliare le pagine non deve cambiare il volume del PC.

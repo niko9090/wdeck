@@ -315,3 +315,43 @@ test('cursore: alla pressione il valore si disegna ma non si spedisce', () => {
     'applySliderFromPointer deve accettare send'
   );
 });
+
+test('cursore: sotto al dito la transizione e’ tolta', () => {
+  // Ammorbidire ogni movimento significa che il riempimento insegue il dito con
+  // 90 ms di ritardo: in un trascinamento veloce non lo raggiunge mai e il
+  // cursore sembra lento e scollato dalla mano.
+  const css = leggi('web/app.css');
+  assert.match(css, /\.deck-slider\.live \.slider-fill\s*\{[^}]*transition:\s*none/,
+    'serve una regola che tolga la transizione mentre si trascina');
+  const app = leggi('web/app.js');
+  assert.match(app, /slider\.classList\.add\('live'\)/, 'la classe va messa alla pressione');
+  assert.match(app, /classList\.remove\('live'\)/, 'e tolta al rilascio');
+});
+
+test('cursore: dopo il rilascio l’host non puo’ riportarlo indietro', () => {
+  // L'host legge il livello vero a intervalli: alzando il volume da 20 a 100 e
+  // togliendo il dito, la lettura partita PRIMA del cambiamento arriva dopo il
+  // rilascio e riporterebbe il cursore a 80.
+  const app = leggi('web/app.js');
+  const sorgente = app.match(/function levelIsHeld\([\s\S]*?\n\}/);
+  assert.ok(sorgente, 'il client deve dichiarare levelIsHeld');
+  const durata = app.match(/const LEVEL_HOLD_MS = (\d+);/);
+  assert.ok(durata, 'serve una durata dichiarata per la difesa del livello');
+  assert.ok(Number(durata[1]) >= 500, 'meno di mezzo secondo non copre il giro dell’host');
+
+  const stato = { draggingId: null, levelHold: new Map() };
+  // eslint-disable-next-line no-new-func -- si esegue la funzione del client cosi' com'e'
+  const held = new Function('state', `${sorgente[0]}\nreturn levelIsHeld;`)(stato);
+
+  assert.equal(held('vol'), false, 'un cursore che nessuno tocca segue l’host');
+  stato.draggingId = 'vol';
+  assert.equal(held('vol'), true, 'col dito sopra comanda l’utente');
+  assert.equal(held('altro'), false, 'la difesa vale solo per quel comando');
+
+  stato.draggingId = null;
+  stato.levelHold.set('vol', Date.now() + 1000);
+  assert.equal(held('vol'), true, 'subito dopo il rilascio comanda ancora l’utente');
+  stato.levelHold.set('vol', Date.now() - 1);
+  assert.equal(held('vol'), false, 'scaduta la difesa si torna ad ascoltare il PC');
+  assert.equal(stato.levelHold.has('vol'), false, 'la scadenza va tolta dalla mappa');
+});

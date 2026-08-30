@@ -542,6 +542,347 @@
               }
             }
           ]
+        },
+        {
+          "id": "novita",
+          "name": "Novita 0.10.0",
+          "rows": 5,
+          "cols": 5,
+          "buttons": [
+            {
+              "id": "nv-vol-h",
+              "label": "Volume",
+              "kind": "slider",
+              "row": 0,
+              "col": 0,
+              "span": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "color": "#1f6feb",
+              "action": {
+                "type": "volume",
+                "params": {
+                  "mode": "set"
+                }
+              }
+            },
+            {
+              "id": "nv-vol-v",
+              "label": "Fader",
+              "kind": "slider",
+              "orientation": "v",
+              "row": 0,
+              "col": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "color": "#1f6feb",
+              "action": {
+                "type": "volume",
+                "params": {
+                  "mode": "set"
+                }
+              }
+            },
+            {
+              "id": "nv-luce",
+              "label": "Luce",
+              "kind": "slider",
+              "orientation": "v",
+              "row": 0,
+              "col": 3,
+              "min": 0,
+              "max": 100,
+              "step": 5,
+              "color": "#c9a227",
+              "action": {
+                "type": "brightness",
+                "params": {
+                  "mode": "set"
+                }
+              }
+            },
+            {
+              "id": "nv-centrato",
+              "label": "Centrato",
+              "kind": "slider",
+              "orientation": "v",
+              "center": true,
+              "row": 0,
+              "col": 4,
+              "min": -50,
+              "max": 50,
+              "step": 5,
+              "color": "#7c5cff",
+              "action": {
+                "type": "noop",
+                "params": {}
+              }
+            },
+            {
+              "id": "nv-manopola",
+              "label": "Volume",
+              "kind": "encoder",
+              "row": 1,
+              "col": 0,
+              "min": 0,
+              "max": 100,
+              "step": 2,
+              "color": "#1f6feb",
+              "action": {
+                "type": "volume",
+                "params": {
+                  "mode": "set"
+                }
+              }
+            },
+            {
+              "id": "nv-jog",
+              "label": "Scorri",
+              "kind": "jog",
+              "row": 1,
+              "col": 1,
+              "color": "#2d3b55",
+              "action": {
+                "type": "mouse",
+                "params": {
+                  "action": "wheel"
+                }
+              }
+            },
+            {
+              "id": "nv-zoom",
+              "label": "Zoom",
+              "kind": "stepper",
+              "row": 1,
+              "col": 2,
+              "step": 1,
+              "color": "#3fb950",
+              "action": {
+                "type": "hotkey",
+                "params": {
+                  "keys": "ctrl++",
+                  "keysBack": "ctrl+-"
+                }
+              }
+            },
+            {
+              "id": "nv-selettore",
+              "label": "Scena",
+              "kind": "selector",
+              "row": 1,
+              "col": 3,
+              "options": [
+                "Lavoro",
+                "Gioco",
+                "Film"
+              ],
+              "color": "#7c5cff",
+              "action": {
+                "type": "noop",
+                "params": {}
+              }
+            },
+            {
+              "id": "nv-timer",
+              "label": "Pausa 5m",
+              "kind": "timer",
+              "row": 1,
+              "col": 4,
+              "seconds": 300,
+              "color": "#c9a227",
+              "action": {
+                "type": "notify",
+                "params": {
+                  "title": "Wdeck",
+                  "message": "Tempo scaduto"
+                }
+              }
+            },
+            {
+              "id": "nv-tavoletta",
+              "label": "Puntatore",
+              "kind": "xy",
+              "row": 2,
+              "col": 0,
+              "color": "#e0603a",
+              "action": {
+                "type": "mouse",
+                "params": {
+                  "action": "move"
+                }
+              }
+            },
+            {
+              "id": "nv-matrice",
+              "label": "Matrice",
+              "kind": "pad",
+              "row": 2,
+              "col": 2,
+              "rows": 3,
+              "cols": 3,
+              "color": "#2d3b55",
+              "action": {
+                "type": "noop",
+                "params": {}
+              }
+            },
+            {
+              "id": "nv-colore",
+              "label": "Colore",
+              "kind": "color",
+              "row": 2,
+              "col": 4,
+              "color": "#7c5cff",
+              "action": {
+                "type": "noop",
+                "params": {}
+              }
+            },
+            {
+              "id": "nv-quadrante",
+              "label": "CPU",
+              "kind": "gauge",
+              "row": 3,
+              "col": 0,
+              "min": 0,
+              "max": 100,
+              "color": "#3fb950",
+              "action": {
+                "type": "noop",
+                "params": {}
+              }
+            },
+            {
+              "id": "nv-livello",
+              "label": "Livello",
+              "kind": "meter",
+              "row": 3,
+              "col": 1,
+              "min": 0,
+              "max": 100,
+              "color": "#3fb950",
+              "action": {
+                "type": "noop",
+                "params": {}
+              }
+            },
+            {
+              "id": "nv-grafico",
+              "label": "Rete",
+              "kind": "chart",
+              "row": 3,
+              "col": 2,
+              "color": "#1f6feb",
+              "action": {
+                "type": "noop",
+                "params": {}
+              }
+            },
+            {
+              "id": "nv-display",
+              "label": "Stato",
+              "kind": "display",
+              "row": 3,
+              "col": 4,
+              "color": "#2d3b55",
+              "action": {
+                "type": "noop",
+                "params": {}
+              }
+            },
+            {
+              "id": "nv-macro",
+              "label": "Copia-incolla",
+              "kind": "macro",
+              "row": 4,
+              "col": 0,
+              "color": "#e0603a",
+              "action": {
+                "type": "sequence",
+                "params": {
+                  "steps": [
+                    {
+                      "type": "hotkey",
+                      "params": {
+                        "keys": "ctrl+c"
+                      }
+                    },
+                    {
+                      "type": "delay",
+                      "params": {
+                        "ms": 120
+                      }
+                    },
+                    {
+                      "type": "hotkey",
+                      "params": {
+                        "keys": "ctrl+v"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "nv-ptt",
+              "label": "Parla",
+              "kind": "button",
+              "row": 4,
+              "col": 1,
+              "icon": "mic",
+              "color": "#3fb950",
+              "action": {
+                "type": "mic",
+                "params": {
+                  "mute": false
+                }
+              },
+              "releaseAction": {
+                "type": "mic",
+                "params": {
+                  "mute": true
+                }
+              }
+            },
+            {
+              "id": "nv-punteggiatura",
+              "label": "Ctrl +",
+              "kind": "button",
+              "row": 4,
+              "col": 2,
+              "color": "#2d3b55",
+              "action": {
+                "type": "hotkey",
+                "params": {
+                  "keys": "ctrl++"
+                }
+              }
+            },
+            {
+              "id": "nv-hold",
+              "label": "Tocca/Tieni",
+              "kind": "button",
+              "row": 4,
+              "col": 3,
+              "color": "#7c5cff",
+              "action": {
+                "type": "notify",
+                "params": {
+                  "title": "Wdeck",
+                  "message": "Tocco breve"
+                }
+              },
+              "holdAction": {
+                "type": "notify",
+                "params": {
+                  "title": "Wdeck",
+                  "message": "Tenuto premuto"
+                }
+              }
+            }
+          ]
         }
       ]
     },

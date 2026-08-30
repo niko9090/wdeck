@@ -622,8 +622,19 @@ body {
   position: absolute;
   background: var(--slider-accent, var(--accent));
   opacity: 0.55;
+  /* Le quattro proprieta' sono elencate una per una perche' un cursore centrato
+     muove anche il proprio bordo iniziale, non solo la lunghezza. Serve solo
+     per i cambiamenti che arrivano dall'host: sotto al dito da' fastidio. */
   transition: width 90ms linear, height 90ms linear, left 90ms linear, bottom 90ms linear;
   pointer-events: none;
+}
+
+/* Mentre il dito lo sta muovendo la transizione va TOLTA. Ammorbidire ogni
+   movimento significa che il riempimento insegue il dito con 90 ms di ritardo:
+   in un trascinamento veloce non lo raggiunge mai e il cursore sembra lento e
+   scollato dalla mano. */
+.deck-slider.live .slider-fill {
+  transition: none;
 }
 
 /* Cursore VERTICALE: si comanda dal basso verso l'alto, come un fader. */
