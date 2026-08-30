@@ -5,6 +5,8 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.10.1] - 2026-08-30
+
 ### Corretto
 
 - **Il banner dell'aggiornamento restava dopo l'aggiornamento, e vicino al nome

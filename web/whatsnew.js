@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.10.1': [
+    "Corretto: il suggerimento di aggiornare non resta piu' acceso dopo che l'aggiornamento e' gia' stato fatto, e accanto al nome dell'app non compaiono piu' due numeri di versione uguali."
+  ],
   '0.10.0': [
     'Nuovo: i tasti non sono piu\' solo tasti. Nell\'editor, sotto "Tipo", trovi manopole, rotelle, cursori, tavolette a due assi, matrici, selettori, timer e quadranti di sola lettura.',
     'Nuovo: gira una manopola sul volume o sulla luminosita\' e il livello segue lo scatto; puntala sul mouse e scorre la rotellina; su una scorciatoia la manda a ripetizione (e con "Tasti all\'indietro" i due versi fanno cose diverse, come zoom avanti e indietro).',
