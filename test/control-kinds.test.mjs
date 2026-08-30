@@ -355,3 +355,42 @@ test('cursore: dopo il rilascio l’host non puo’ riportarlo indietro', () => 
   assert.equal(held('vol'), false, 'scaduta la difesa si torna ad ascoltare il PC');
   assert.equal(stato.levelHold.has('vol'), false, 'la scadenza va tolta dalla mappa');
 });
+
+// ------------------------------------------------- banner dell'aggiornamento
+
+test('aggiornamento: non si propone una versione gia’ in esecuzione', () => {
+  // L'host calcola `available` PRIMA di aggiornarsi e la risposta resta in
+  // memoria nel client: dopo l'aggiornamento il banner continuava a proporre la
+  // versione appena installata, e il distintivo — che mostra la versione
+  // proposta accanto a quella in esecuzione — faceva vedere due versioni
+  // uguali vicino al nome dell'app.
+  const app = leggi('web/app.js');
+  const sorgenti = [
+    app.match(/function compareVersions\([\s\S]*?\n\}/),
+    app.match(/function updateWorthShowing\([\s\S]*?\n\}/)
+  ];
+  assert.ok(sorgenti[0], 'il client deve dichiarare compareVersions');
+  assert.ok(sorgenti[1], 'il client deve dichiarare updateWorthShowing');
+
+  const stato = { version: null };
+  // eslint-disable-next-line no-new-func -- si eseguono le funzioni del client cosi' come sono
+  const vale = new Function('state', `${sorgenti[0][0]}\n${sorgenti[1][0]}\nreturn updateWorthShowing;`)(stato);
+
+  const stat = (available, latest, current) => ({ available, current, latest: { version: latest } });
+
+  stato.version = '0.9.0';
+  assert.equal(vale(stat(true, '0.10.0', '0.9.0')), true, 'una versione piu’ nuova si propone');
+
+  // Il caso del bug: l'host si e' aggiornato, lo stato in memoria e' vecchio.
+  stato.version = '0.10.0';
+  assert.equal(vale(stat(true, '0.10.0', '0.9.0')), false, 'la versione gia’ in esecuzione non si propone');
+  assert.equal(vale(stat(true, '0.9.0', '0.9.0')), false, 'ne’ una piu’ vecchia');
+
+  // 0.10.0 e' piu' nuova di 0.9.0: il confronto e' per numero, non per testo.
+  assert.ok(new Function(`${sorgenti[0][0]}\nreturn compareVersions;`)()('0.10.0', '0.9.0') > 0,
+    '0.10.0 deve risultare piu’ nuova di 0.9.0');
+
+  stato.version = null;
+  assert.equal(vale(stat(false, '0.11.0', '0.10.0')), false, 'senza available non si propone nulla');
+  assert.equal(vale({ available: true, current: '0.10.0' }), false, 'senza la versione proposta non si propone nulla');
+});

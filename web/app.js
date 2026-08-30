@@ -2974,7 +2974,15 @@ async function checkClientFreshness() {
     if (!res.ok || !res.data?.buildId) return;
     hostBuild = res.data.buildId;
     hostVersion = res.data.version;
-    if (hostVersion) { state.version = hostVersion; renderVersion(); }
+    if (hostVersion) {
+      state.version = hostVersion;
+      renderVersion();
+      // Appena si scopre quale versione sta girando davvero, il distintivo e il
+      // banner vanno rivalutati SUBITO: se l'host si e' appena aggiornato, la
+      // proposta che il client ha in memoria riguarda una versione ormai
+      // installata e deve sparire senza aspettare un giro in rete.
+      if (state.update) showUpdate(state.update);
+    }
   } catch {
     return; // host non raggiungibile: si riprovera' al prossimo collegamento
   }
@@ -3198,11 +3206,46 @@ function renderUpdateProgress({ phase, done, total } = {}) {
   if (dettaglio) dettaglio.textContent = nota;
 }
 
+/**
+ * Confronta due versioni "x.y.z". Stessa regola dell'host (`updates.mjs`).
+ *
+ * Serve al client per decidere DA SOLO se un aggiornamento ha ancora senso,
+ * senza aspettare un giro in rete: dopo un aggiornamento riuscito la risposta
+ * vecchia e' ancora in memoria, e un giro in rete puo' non arrivare mai.
+ */
+function compareVersions(a, b) {
+  const parse = (v) => String(v).replace(/^v/i, '').split('.').map((n) => Number.parseInt(n, 10) || 0);
+  const va = parse(a);
+  const vb = parse(b);
+  for (let i = 0; i < Math.max(va.length, vb.length); i += 1) {
+    const diff = (va[i] ?? 0) - (vb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/**
+ * L'aggiornamento proposto e' davvero piu' nuovo di quello che sta girando?
+ *
+ * Non basta fidarsi di `available`: quel campo e' stato calcolato dall'host
+ * PRIMA di aggiornarsi, e resta in memoria nel client anche dopo. Proporre la
+ * versione che si sta gia' usando e' il difetto che si vedeva come "il banner
+ * non se ne va" e — siccome il distintivo mostra la versione proposta accanto a
+ * quella in esecuzione — come "due versioni vicino al nome".
+ */
+function updateWorthShowing(status) {
+  if (!status?.available || !status.latest?.version) return false;
+  const inEsecuzione = state.version || status.current;
+  if (!inEsecuzione) return true;
+  return compareVersions(status.latest.version, inEsecuzione) > 0;
+}
+
 function showUpdate(status) {
   state.update = status;
   if (status?.current && !state.version) { state.version = status.current; renderVersion(); }
-  ui.update.hidden = !status?.available;
-  if (status?.available) {
+  const proponi = updateWorthShowing(status);
+  ui.update.hidden = !proponi;
+  if (proponi) {
     ui.update.textContent = `v${status.latest.version}`;
     ui.update.title = t('settings.updateAvailable', { version: status.latest.version, current: status.current });
   }
@@ -3217,7 +3260,7 @@ function showUpdate(status) {
  */
 function renderUpdateBanner(status) {
   if (!ui.banner) return;
-  const versione = status?.available ? status.latest?.version : null;
+  const versione = updateWorthShowing(status) ? status.latest?.version : null;
   let chiuso = null;
   try { chiuso = sessionStorage.getItem('wdeck.updbanner'); } catch { /* storage assente */ }
   if (!versione || chiuso === versione) {

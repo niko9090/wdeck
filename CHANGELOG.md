@@ -3,6 +3,19 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/).
 Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
+## [Non rilasciato]
+
+### Corretto
+
+- **Il banner dell'aggiornamento restava dopo l'aggiornamento, e vicino al nome
+  dell'app comparivano due versioni.** Erano lo stesso difetto: il distintivo
+  mostra la versione PROPOSTA accanto a quella IN ESECUZIONE, e il client si
+  teneva la risposta calcolata dall'host prima di aggiornarsi. Ora il client
+  confronta da solo le due versioni (`compareVersions`, la stessa regola
+  dell'host) e non propone mai una versione che sta gia' girando; la
+  rivalutazione avviene appena si scopre la versione vera, senza aspettare un
+  giro in rete.
+
 ## [0.10.0] - 2026-08-27
 
 ### Aggiunto
