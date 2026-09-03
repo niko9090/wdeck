@@ -130,6 +130,14 @@ export function createHub(host) {
       conn.send({ type: MSG.deck, deck: publicDeck(configStore.get()), state: state.snapshot() });
       conn.send({ type: MSG.state, state: state.snapshot() });
       conn.send({ type: MSG.status, states: statusSnapshot() });
+      // Anche lo stato degli aggiornamenti viaggia subito. Un client rimasto
+      // aperto mentre l'host si aggiornava ha ancora in memoria la proposta di
+      // una versione che ormai sta girando: il banner "disponibile" resterebbe
+      // finche' qualcuno non gli dice che non c'e' piu' niente da installare.
+      // Dirglielo al ricollegamento vale anche per i client vecchi in cache,
+      // che questo evento lo capiscono da sempre.
+      const aggiornamenti = host.updates?.status;
+      if (aggiornamenti) conn.send({ type: MSG.event, event: 'update', data: aggiornamenti });
       // Il primo client collegato trova la cache vuota: una lettura subito, cosi'
       // i bottoni a due stati partono gia' con l'aspetto giusto.
       host.status?.refresh({ force: true }).catch(() => {});

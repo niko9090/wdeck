@@ -100,3 +100,25 @@ test('hub: un dispatcher.press che rigetta produce un errore, non una unhandledR
 
   process.off('unhandledRejection', onReject);
 });
+
+test('hub: al collegamento il client riceve subito lo stato degli aggiornamenti', async () => {
+  const host = fakeHost();
+  host.updates = { status: { checkedAt: 0, available: false, current: '0.10.2', latest: null, error: null } };
+  const hub = createHub(host);
+  const conn = new FakeConn();
+  hub.routes[ENDPOINTS.ws](conn, req);
+  await flush();
+
+  const evento = conn.sent.find((m) => m.type === MSG.event && m.event === 'update');
+  assert.ok(evento, 'l\'evento update deve arrivare senza aspettare un controllo in rete');
+  assert.equal(evento.data.current, '0.10.2');
+  assert.equal(evento.data.available, false, 'e\' lo stato dell\'host appena ripartito: niente da installare');
+});
+
+test('hub: senza controllo aggiornamenti (host senza updates) non si manda nulla e non si esplode', async () => {
+  const hub = createHub(fakeHost());
+  const conn = new FakeConn();
+  hub.routes[ENDPOINTS.ws](conn, req);
+  await flush();
+  assert.equal(conn.sent.some((m) => m.type === MSG.event && m.event === 'update'), false);
+});

@@ -5,6 +5,20 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.10.3] - 2026-09-03
+
+### Corretto
+
+- **Il suggerimento di aggiornare restava acceso anche dopo l'aggiornamento,
+  finche' non si riapriva l'app.** L'host, appena ripartito con la versione
+  nuova, non diceva nulla ai client che si ricollegavano: quelli avevano ancora
+  in memoria la proposta di una versione ormai installata e la tenevano in
+  vista (banner e distintivo accanto al nome) fino al controllo periodico o a
+  una ricarica. Ora l'host manda lo stato degli aggiornamenti a ogni
+  collegamento riuscito, e il banner sparisce da solo entro pochi secondi dal
+  riavvio. Vale anche per i client rimasti in cache con una versione vecchia
+  della pagina, che questo messaggio lo capiscono da sempre.
+
 ## [0.10.2] - 2026-08-31
 
 ### Corretto

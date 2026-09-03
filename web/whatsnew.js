@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.10.3': [
+    "Corretto: appena l'aggiornamento e' installato, il suggerimento di aggiornare sparisce da solo su tutti i deck collegati, senza chiudere e riaprire l'app."
+  ],
   '0.10.2': [
     "Corretto: dopo un aggiornamento il deck si rimette in pari da solo. Prima poteva restare la pagina vecchia, con il suggerimento di aggiornare acceso e due versioni vicino al nome, finche' non si ricaricava a mano.",
     "Corretto: il comando Zoom ora ingrandisce davvero (prima rimpiccioliva e basta). Riguarda tutte le scorciatoie che usano il tasto piu'.",
