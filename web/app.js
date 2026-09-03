@@ -55,7 +55,6 @@ const ui = {
   sheetBody: el('sheet-body'),
   sheetFoot: el('sheet-foot'),
   btnEdit: el('btn-edit'),
-  btnSimulate: el('btn-simulate'),
   btnFullscreen: el('btn-fullscreen'),
   btnSettings: el('btn-settings')
 };
@@ -68,7 +67,6 @@ const state = {
   hostState: null,
   profileId: null,
   pageId: null,
-  simulate: false,
   editing: false,
   socket: null,
   connected: false,
@@ -156,6 +154,8 @@ function cssColor(value) {
 
 function setStatus(stateName, text) {
   ui.dot.dataset.state = stateName;
+  // La riga di stato non c'e' piu': il pallino porta il testo nel titolo.
+  ui.dot.title = text;
   ui.statusText.textContent = text;
 }
 
@@ -542,7 +542,78 @@ function applyTheme(uiConfig) {
     document.documentElement.lang = scelta;
     applyStaticTexts();
   }
+
+  syncKeepAwake();
 }
+
+/* ------------------------------------------------------------ schermo acceso
+
+   Un telefono usato come deck sta appoggiato sul tavolo per ore: se spegne lo
+   schermo da solo, ogni comando comincia con "riaccendi, sblocca, ritrova la
+   pagina". Finche' il deck e' aperto e visibile, lo schermo resta acceso
+   (`settings.ui.keepAwake`, disattivabile dalle impostazioni).
+
+   Due vie, perche' nessuna delle due copre tutto:
+   - Screen Wake Lock API: pulita, ma il browser la concede solo in contesto
+     sicuro (https o localhost). Il deck si apre quasi sempre in http sulla
+     rete di casa, dove `navigator.wakeLock` NON ESISTE.
+   - Un video muto da 2x2 px in riproduzione continua: il vecchio trucco, ma
+     e' l'unico che funziona in http. Serve un tocco per farlo partire (regola
+     dei browser sulla riproduzione), e sul deck un tocco arriva sempre.       */
+
+const sveglia = { lock: null, video: null };
+
+function keepAwakeWanted() {
+  return state.deck?.ui?.keepAwake !== false && document.visibilityState === 'visible';
+}
+
+/** Allinea lo stato reale (lock o video) a quello voluto dalle impostazioni. */
+async function syncKeepAwake() {
+  if (!keepAwakeWanted()) {
+    try { await sveglia.lock?.release(); } catch { /* gia' rilasciato */ }
+    sveglia.lock = null;
+    sveglia.video?.pause();
+    return;
+  }
+  if (navigator.wakeLock) {
+    if (sveglia.lock) return;
+    try {
+      sveglia.lock = await navigator.wakeLock.request('screen');
+      // Il sistema puo' toglierlo (scheda nascosta, batteria): si annota, e alla
+      // prossima visibilita' o tocco lo si richiede.
+      sveglia.lock.addEventListener('release', () => { sveglia.lock = null; });
+      return;
+    } catch { /* negato: si prova col video */ }
+  }
+  playAwakeVideo();
+}
+
+function playAwakeVideo() {
+  if (!sveglia.video) {
+    const v = document.createElement('video');
+    v.setAttribute('playsinline', '');
+    v.setAttribute('aria-hidden', 'true');
+    v.loop = true;
+    // Non "muted": alcuni browser tengono acceso lo schermo solo per un video
+    // con l'audio, e questo ha una traccia audio SILENZIOSA apposta.
+    v.title = 'Wdeck: tiene acceso lo schermo';
+    v.className = 'sveglia';
+    for (const [src, type] of [['./sveglia.webm', 'video/webm'], ['./sveglia.mp4', 'video/mp4']]) {
+      const s = document.createElement('source');
+      s.src = src; s.type = type;
+      v.appendChild(s);
+    }
+    document.body.appendChild(v);
+    sveglia.video = v;
+  }
+  if (sveglia.video.paused) sveglia.video.play().catch(() => { /* senza un tocco non parte: al prossimo */ });
+}
+
+document.addEventListener('visibilitychange', () => { syncKeepAwake(); });
+// Il primo tocco sblocca la riproduzione del video (e rinnova il lock se il
+// sistema l'aveva tolto). In cattura, cosi' arriva anche se il gesto viene poi
+// consumato dalla griglia.
+document.addEventListener('pointerdown', () => { if (keepAwakeWanted()) syncKeepAwake(); }, { capture: true, passive: true });
 
 /** Traduce le parti dell'interfaccia scritte direttamente in index.html. */
 function applyStaticTexts() {
@@ -1406,7 +1477,6 @@ function pressButton(element, { hold = false, release = false, value, delta, x, 
     // docs/PROTOCOL.md, "Valore, scarto, coppia".
     ...(delta !== undefined ? { delta } : {}),
     ...(x !== undefined && y !== undefined ? { x, y } : {}),
-    dryRun: state.simulate,
     requestId
   });
   if (!sent) {
@@ -2785,6 +2855,8 @@ async function openSettings() {
         ${opzione('oscura', stileAttuale, t('settings.styleOscura'))}
       </select></label>
       <p class="sheet-hint">${t('settings.styleHint')}</p>
+      <label class="field checkbox"><input id="set-awake" type="checkbox"${state.deck?.ui?.keepAwake === false ? '' : ' checked'} /><span>${t('settings.keepAwake')}</span></label>
+      <p class="sheet-hint">${t('settings.keepAwakeHint')}</p>
 
       <h3 class="sheet-section">${t('settings.computers')}</h3>
       <div class="host-list">${state.hosts.map((h) => `
@@ -2921,6 +2993,8 @@ async function saveSettings() {
   if (tema !== (state.deck?.ui?.theme ?? 'dark')) ui.theme = tema;
   if (stile !== (state.deck?.ui?.style ?? 'default')) ui.style = stile;
   if (lingua !== (state.deck?.ui?.language ?? 'auto')) ui.language = lingua;
+  const sveglio = el('set-awake')?.checked ?? true;
+  if (sveglio !== (state.deck?.ui?.keepAwake !== false)) ui.keepAwake = sveglio;
   if (Object.keys(ui).length > 0) patch.ui = ui;
 
   if (Object.keys(patch).length === 0) {
@@ -3423,11 +3497,6 @@ function bindEvents() {
 
   ui.btnEdit.addEventListener('click', () => setEditing(!state.editing));
 
-  ui.btnSimulate.addEventListener('click', () => {
-    state.simulate = !state.simulate;
-    ui.btnSimulate.setAttribute('aria-pressed', String(state.simulate));
-    toast(t(state.simulate ? 'sim.on' : 'sim.off'));
-  });
 
   ui.btnFullscreen.addEventListener('click', async () => {
     if (document.fullscreenElement) await document.exitFullscreen();
@@ -3916,6 +3985,10 @@ function rotateCtl(gesture, event) {
   const attuale = ctlValue(spec);
   const prossimo = Math.min(max, Math.max(min, Math.round((attuale + verso * passo) / passo) * passo));
   if (prossimo === attuale) return;
+  // Mentre si gira, il livello e' dell'utente: una lettura dell'host in
+  // ritardo (il volume cambia in un secondo momento) non deve far saltare la
+  // manopola indietro sotto al dito.
+  state.draggingId = spec.id;
   state.levels.set(spec.id, prossimo);
   refreshCtl(gesture.element);
   pressButton(gesture.element, { delta: verso * passo });
@@ -3973,8 +4046,10 @@ function finishCtlGesture(gesture) {
 
     case 'encoder':
       // Un tocco senza rotazione e' la pressione dell'albero: la seconda azione
-      // della manopola.
+      // della manopola. Dopo una rotazione, come per il cursore, si difende il
+      // valore finche' l'host non ha fatto il giro.
       if (!gesture.moved) runPress(element, spec);
+      else holdLevel(element.dataset.id);
       return;
 
     case 'stepper': {

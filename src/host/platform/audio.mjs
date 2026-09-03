@@ -18,9 +18,11 @@ import {
   buildMuteScript,
   buildSetVolumeScript,
   clampPercent,
-  readVolume as readVolumeWindows,
+  flowOf,
+  muteMode,
   runLevelScript
 } from './levels.mjs';
+import { readVolumeFast as readVolumeWindows, withLevelServer } from './levelserver.mjs';
 
 /** Piattaforme su cui volume e muto sono pilotabili. */
 export const AUDIO_PLATFORMS = Object.freeze(['win32', 'darwin', 'linux']);
@@ -58,7 +60,9 @@ export async function readVolume(target = 'speaker') {
  */
 export async function setVolume(target, percent) {
   if (process.platform === 'win32') {
-    return runLevelScript(buildSetVolumeScript(target, percent), { what: `volume ${target}` });
+    // Prima il processo persistente (millisecondi), poi lo script singolo.
+    return withLevelServer(`VS ${flowOf(target)} ${clampPercent(percent)}`,
+      () => runLevelScript(buildSetVolumeScript(target, percent), { what: `volume ${target}` }));
   }
   const impl = adapter();
   if (!impl) throw unsupported();
@@ -72,7 +76,9 @@ export async function setVolume(target, percent) {
  */
 export async function adjustVolume(target, delta) {
   if (process.platform === 'win32') {
-    return runLevelScript(buildAdjustVolumeScript(target, delta), { what: `volume ${target}` });
+    const d = Math.max(-100, Math.min(100, Number(delta) || 0));
+    return withLevelServer(`VA ${flowOf(target)} ${d}`,
+      () => runLevelScript(buildAdjustVolumeScript(target, delta), { what: `volume ${target}` }));
   }
   const impl = adapter();
   if (!impl) throw unsupported();
@@ -88,7 +94,8 @@ export async function adjustVolume(target, delta) {
  */
 export async function setMute(target, value) {
   if (process.platform === 'win32') {
-    return runLevelScript(buildMuteScript(target, value), { what: `muto ${target}` });
+    return withLevelServer(`VM ${flowOf(target)} ${muteMode(value)}`,
+      () => runLevelScript(buildMuteScript(target, value), { what: `muto ${target}` }));
   }
   const impl = adapter();
   if (!impl) throw unsupported();

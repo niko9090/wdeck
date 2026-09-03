@@ -32,7 +32,6 @@ const DICTIONARIES = {
 
     'top.profile': 'Profilo',
     'top.edit': 'Modifica il deck',
-    'top.simulate': 'Simula le azioni (dry-run lato client)',
     'top.fullscreen': 'Schermo intero',
     'top.settings': 'Impostazioni',
     'top.addComputer': 'Aggiungi un computer',
@@ -258,6 +257,8 @@ const DICTIONARIES = {
     'settings.theme': 'Tema',
     'settings.style': 'Stile del deck',
     'settings.styleHint': 'Lo stile e\u2019 la FORMA: superfici, angoli, ombre, densita\u2019. Chiaro/scuro qui sopra e\u2019 un\u2019altra cosa, e i due si combinano.',
+    'settings.keepAwake': 'Tieni acceso lo schermo',
+    'settings.keepAwakeHint': 'Finche\u2019 il deck e\u2019 aperto, il telefono o il tablet non spegne lo schermo da solo.',
     'settings.styleDefault': 'Standard \u2014 quello di sempre',
     'settings.styleKeycap': 'Keycap \u2014 tastiera meccanica, tasti scolpiti',
     'settings.styleCeramica': 'Ceramica \u2014 smalto chiaro, angoli morbidi',
@@ -337,8 +338,6 @@ const DICTIONARIES = {
     'action.simulated': 'simulato: {description}',
     'action.noActions': 'Impossibile leggere le azioni disponibili',
     'action.error': 'errore',
-    'sim.on': 'Modalita\' simulazione attiva',
-    'sim.off': 'Modalita\' simulazione disattivata',
     'fullscreen.unavailable': 'Schermo intero non disponibile'
   },
 
@@ -360,7 +359,6 @@ const DICTIONARIES = {
 
     'top.profile': 'Profile',
     'top.edit': 'Edit the deck',
-    'top.simulate': 'Simulate actions (client-side dry run)',
     'top.fullscreen': 'Full screen',
     'top.settings': 'Settings',
     'top.addComputer': 'Add a computer',
@@ -586,6 +584,8 @@ const DICTIONARIES = {
     'settings.theme': 'Theme',
     'settings.style': 'Deck style',
     'settings.styleHint': 'The style is the SHAPE: surfaces, corners, shadows, density. Light/dark above is a different thing, and the two combine.',
+    'settings.keepAwake': 'Keep the screen on',
+    'settings.keepAwakeHint': 'While the deck is open, the phone or tablet will not turn its screen off by itself.',
     'settings.styleDefault': 'Standard \u2014 the usual one',
     'settings.styleKeycap': 'Keycap \u2014 mechanical keyboard, sculpted keys',
     'settings.styleCeramica': 'Ceramic \u2014 light glaze, soft corners',
@@ -665,8 +665,6 @@ const DICTIONARIES = {
     'action.simulated': 'simulated: {description}',
     'action.noActions': 'Cannot read the available actions',
     'action.error': 'error',
-    'sim.on': 'Simulation mode on',
-    'sim.off': 'Simulation mode off',
     'fullscreen.unavailable': 'Full screen unavailable'
   }
 };

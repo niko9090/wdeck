@@ -8,6 +8,12 @@
  */
 
 export const WHATSNEW = {
+  '0.10.4': [
+    "Nuovo: la barra in alto e' una riga sola e bassa, e la riga di stato in fondo non c'e' piu': lo spazio va ai tasti.",
+    "Nuovo: lo schermo del telefono o tablet resta acceso finche' il deck e' aperto (si disattiva dalle impostazioni).",
+    "Corretto: volume e luminosita' rispondono subito, non piu' dopo qualche secondo.",
+    "Cambiato: manopola, rotella e timer sono grandi quanto il tile; tolto il tasto SIM."
+  ],
   '0.10.3': [
     "Corretto: appena l'aggiornamento e' installato, il suggerimento di aggiornare sparisce da solo su tutti i deck collegati, senza chiudere e riaprire l'app."
   ],

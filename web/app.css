@@ -221,19 +221,27 @@ body {
   .update-banner .ub-notes { display: none; }
 }
 
+/* La barra e' una riga sola e bassa: il deck e' fatto per i tasti, non per le
+   informazioni. Tutto quello che non si usa col dito sta qui, compatto. */
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-height: 30px;
 }
 
-.topbar-left, .topbar-right { display: flex; align-items: center; gap: 8px; }
-.topbar strong { font-size: 15px; }
+.topbar-left, .topbar-right { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; min-width: 0; }
+.topbar strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32vw; }
+.topbar .last-action {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 11px; color: var(--text-dim); text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .app-version {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-dim);
   opacity: 0.85;
@@ -249,8 +257,8 @@ body {
 .dot[data-state="connecting"] { background: var(--warn); box-shadow: 0 0 0 3px rgba(240, 180, 41, 0.15); }
 
 .badge {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
-  padding: 3px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+  padding: 2px 6px; border-radius: 999px;
   background: rgba(240, 180, 41, 0.15); color: var(--warn);
 }
 
@@ -258,16 +266,17 @@ body {
   background: var(--bg-elev);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 7px 10px;
-  font-size: 14px;
-  max-width: 45vw;
+  border-radius: 7px;
+  padding: 3px 6px;
+  height: 28px;
+  font-size: 12px;
+  max-width: 30vw;
 }
 
 .icon-btn {
-  min-width: 38px; height: 34px;
-  padding: 0 10px;
-  font-size: 13px; font-weight: 600;
+  min-width: 30px; height: 28px;
+  padding: 0 7px;
+  font-size: 12px; font-weight: 600;
   color: var(--text-dim);
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -278,13 +287,13 @@ body {
 
 /* ---------------- tab pagine ---------------- */
 
-.pages { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.pages { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; }
 .pages::-webkit-scrollbar { display: none; }
 
 .page-tab {
   flex: 0 0 auto;
-  padding: 7px 14px;
-  font-size: 13px;
+  padding: 4px 11px;
+  font-size: 12px;
   color: var(--text-dim);
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -812,7 +821,6 @@ body {
   padding: 0 4px;
 }
 
-.last-action { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
 
 .toast {
   position: fixed;
@@ -919,6 +927,10 @@ body {
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1 1 0; min-width: 0; }
 .field.checkbox { display: flex; align-items: center; gap: 10px; }
+
+/* il video che tiene acceso lo schermo: c'e' ma non si vede (deve restare
+   "visibile" per il browser, quindi niente display:none) */
+video.sveglia { position: fixed; right: 0; bottom: 0; width: 2px; height: 2px; opacity: 0.02; pointer-events: none; }
 .field.checkbox input { width: 18px; height: 18px; }
 
 /* righe di gestione gruppi nell'editor della pagina */
@@ -1028,6 +1040,10 @@ body {
   box-shadow: inset 0 1px 0 var(--ctl-hi), inset 0 0 0 1px var(--ctl-edge), var(--ctl-shadow);
   overflow: hidden;
   cursor: pointer;
+  /* Il tile e' un contenitore misurabile (cqw/cqh): cosi' manopola, rotella e
+     timer si dimensionano sul TILE, non sullo schermo. Con 8vmin una manopola
+     era 40 px anche dentro un tile da 150: un bottoncino in mezzo al vuoto. */
+  container-type: size;
   /* Come i pulsanti: la griglia gestisce da se' i gesti, e sul deck non c'e'
      mai niente da selezionare. */
   touch-action: none;
@@ -1099,6 +1115,8 @@ body {
 .ctl-encoder .enc {
   position: relative;
   width: clamp(34px, 8vmin, 48px);
+  /* grande quanto il tile consente, lasciando spazio a etichetta e valore */
+  width: clamp(36px, min(74cqw, 54cqh), 160px);
   aspect-ratio: 1;
   border-radius: 50%;
   background: radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--text) 20%, var(--ctl-surf)), var(--ctl-surf-2) 74%);
@@ -1131,6 +1149,7 @@ body {
 /* ---------------- rotella ---------------- */
 .ctl-jog .jog {
   width: clamp(38px, 9vmin, 54px);
+  width: clamp(40px, min(76cqw, 60cqh), 170px);
   aspect-ratio: 1;
   border-radius: 50%;
   position: relative;
@@ -1253,6 +1272,7 @@ body {
 .ctl-timer .rg {
   position: relative;
   width: clamp(38px, 9vmin, 52px);
+  width: clamp(40px, min(76cqw, 60cqh), 170px);
   aspect-ratio: 1;
   border-radius: 50%;
   display: grid;
@@ -1271,6 +1291,7 @@ body {
   position: relative;
   font-family: var(--font-mono);
   font-size: 12px;
+  font-size: clamp(11px, min(14cqw, 12cqh), 34px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }

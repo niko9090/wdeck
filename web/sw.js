@@ -34,7 +34,11 @@ const SHELL = [
   './fonts/barlow-semicondensed-600.woff2',
   './fonts/fraunces-var.woff2',
   './fonts/inter-var.woff2',
-  './fonts/jetbrains-mono-var.woff2'
+  './fonts/jetbrains-mono-var.woff2',
+  // I due video muti da 2x2 px che tengono acceso lo schermo dove il Wake
+  // Lock non c'e' (pagina in http, non https): devono esserci anche offline.
+  './sveglia.mp4',
+  './sveglia.webm'
 ];
 
 self.addEventListener('install', (event) => {

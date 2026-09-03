@@ -5,6 +5,37 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.10.4] - 2026-09-03
+
+### Cambiato
+
+- **La barra in alto e' una riga sola, bassa.** Nome, versione, profilo e i
+  tre tasti (modifica, schermo intero, impostazioni) stanno in 30 pixel; le
+  linguette delle pagine sono piu' strette; la riga di stato in fondo non c'e'
+  piu' (lo stato e' nel pallino, l'ultima azione in mezzo alla barra). Lo
+  spazio va ai tasti, non alle informazioni.
+- **Tolto il tasto SIM** (simulazione lato client): non serviva a chi usa il
+  deck.
+- **Manopola, rotella e timer si dimensionano sul tile**, non sullo schermo:
+  prima una manopola era 40 pixel anche dentro un tile da 150.
+
+### Aggiunto
+
+- **Lo schermo del telefono o tablet resta acceso finche' il deck e' aperto**
+  (Impostazioni -> "Tieni acceso lo schermo", attivo di serie). Usa il Wake
+  Lock dove il browser lo concede (https) e, in http, un video muto da 2x2
+  pixel in riproduzione continua: parte al primo tocco.
+
+### Corretto
+
+- **Volume e luminosita' rispondevano in 2-7 secondi** (fino a 12 con i
+  comandi accodati da un cursore trascinato): ogni pressione avviava un
+  PowerShell nuovo e ricompilava il ponte C# verso Core Audio o DDC/CI. Ora un
+  processo resta acceso, compila una volta all'avvio dell'host e risponde in
+  15-75 millisecondi. Se non parte, si torna al metodo di prima.
+- **La manopola non salta piu' indietro** mentre la si gira: come per il
+  cursore, il valore e' difeso finche' l'host non ha fatto il giro.
+
 ## [0.10.3] - 2026-09-03
 
 ### Corretto

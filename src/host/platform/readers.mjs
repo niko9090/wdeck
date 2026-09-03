@@ -9,7 +9,7 @@
  */
 
 import { readVolume } from './audio.mjs';
-import { readBrightness } from './levels.mjs';
+import { readBrightnessFast as readBrightness } from './levelserver.mjs';
 
 /**
  * Volume e stato del muto di un canale, riusando la lettura del giro corrente.

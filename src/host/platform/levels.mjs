@@ -58,7 +58,7 @@ public class WdeckAudio {
 }
 `.trim();
 
-const AUDIO_PREAMBLE = [
+export const AUDIO_PREAMBLE = [
   '$src = @\'',
   AUDIO_CSHARP,
   '\'@',
@@ -66,8 +66,96 @@ const AUDIO_PREAMBLE = [
 ].join('\n');
 
 /** Converte il nome del canale nel dataFlow di Core Audio. */
-function flowOf(target) {
+export function flowOf(target) {
   return target === 'mic' || target === 'input' ? 1 : 0;
+}
+
+/**
+ * Le funzioni PowerShell che fanno davvero il lavoro, UNA volta sola: le usano
+ * sia gli script a colpo singolo qui sotto sia il processo persistente di
+ * `levelserver.mjs`. Ogni funzione restituisce la riga "chiave=valore;..."
+ * che `parseLevelOutput` sa leggere, e lancia (throw) quando non riesce.
+ * Volume: `flow` 0 = altoparlanti, 1 = microfono. Muto: 0 off, 1 on, 2 inverti.
+ */
+export const LEVEL_FUNCTIONS = [
+  'function Wdeck-VolOut($flow) {',
+  '  $v = [WdeckAudio]::GetVolume($flow); $m = [WdeckAudio]::GetMute($flow)',
+  '  return "volume=$([Math]::Round($v * 100));muted=$($m.ToString().ToLower())"',
+  '}',
+  'function Wdeck-VolSet($flow, $pct) {',
+  '  [WdeckAudio]::SetVolume($flow, [float]([Math]::Max(0, [Math]::Min(100, $pct)) / 100))',
+  '  return Wdeck-VolOut $flow',
+  '}',
+  'function Wdeck-VolAdjust($flow, $d) {',
+  '  $cur = [WdeckAudio]::GetVolume($flow) * 100',
+  '  $next = [Math]::Max(0, [Math]::Min(100, $cur + $d))',
+  '  [WdeckAudio]::SetVolume($flow, [float]($next / 100))',
+  '  $m = [WdeckAudio]::GetMute($flow)',
+  '  return "volume=$([Math]::Round($next));muted=$($m.ToString().ToLower())"',
+  '}',
+  'function Wdeck-VolMute($flow, $mode) {',
+  '  if ($mode -eq 2) { $next = -not [WdeckAudio]::GetMute($flow) } else { $next = ($mode -eq 1) }',
+  '  [WdeckAudio]::SetMute($flow, $next)',
+  '  return "volume=$([Math]::Round([WdeckAudio]::GetVolume($flow) * 100));muted=$($next.ToString().ToLower())"',
+  '}',
+  // Luminosita': prima WMI (portatili), poi DDC/CI (monitor esterni), poi la
+  // gamma come ultima spiaggia.
+  'function Wdeck-BriRead {',
+  '  $cur = $null; $mode = $null',
+  '  try {',
+  '    $b = Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightness -ErrorAction Stop',
+  '    $cur = ($b | Select-Object -First 1).CurrentBrightness',
+  '    if ($null -ne $cur) { $mode = "wmi" }',
+  '  } catch { $cur = $null }',
+  '  if ($null -eq $cur) { $d = [WdeckMon]::Get(); if ($d -ge 0) { $cur = $d; $mode = "ddc" } }',
+  '  if ($null -eq $cur) { $g = [WdeckGamma]::Get(); if ($g -ge 0) { $cur = $g; $mode = "gamma" } }',
+  '  if ($null -eq $cur) { throw "nessun metodo di controllo luminosita\' disponibile" }',
+  '  return "brightness=$cur;mode=$mode"',
+  '}',
+  'function Wdeck-BriSet($target) {',
+  '  $target = [int][Math]::Max(0, [Math]::Min(100, $target))',
+  '  $done = $false; $mode = "wmi"',
+  '  try {',
+  '    $m = Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop',
+  '    foreach ($mon in $m) { Invoke-CimMethod -InputObject $mon -MethodName WmiSetBrightness -Arguments @{ Brightness = $target; Timeout = 1 } | Out-Null }',
+  '    $done = $true',
+  '  } catch { $done = $false }',
+  '  if (-not $done) { if ([WdeckMon]::Set($target) -gt 0) { $done = $true; $mode = "ddc" } }',
+  '  if (-not $done) { if ([WdeckGamma]::Set($target)) { $done = $true; $mode = "gamma" } }',
+  '  if (-not $done) { throw "impostazione luminosita\' non riuscita" }',
+  '  return "brightness=$target;mode=$mode"',
+  '}',
+  'function Wdeck-BriAdjust($d) {',
+  '  $r = Wdeck-BriRead',
+  '  $cur = [int]($r.Split(";")[0].Split("=")[1])',
+  '  return Wdeck-BriSet ([int][Math]::Max(0, [Math]::Min(100, $cur + $d)))',
+  '}'
+].join('\n');
+
+/**
+ * Script completo a colpo singolo: preambolo (compilazione C#), funzioni,
+ * una chiamata. L'errore esce su stderr con exit 5, come prima.
+ * @param {string[]} preambles
+ * @param {string} call
+ * @returns {string}
+ */
+function oneShot(preambles, call) {
+  return [
+    ...preambles,
+    LEVEL_FUNCTIONS,
+    'try {',
+    `  Write-Output (${call})`,
+    '} catch {',
+    '  Write-Error $_.Exception.Message',
+    '  exit 5',
+    '}'
+  ].join('\n');
+}
+
+/** Il numero cosi' come lo capisce PowerShell (punto decimale, mai la virgola). */
+function num(value, fallback = 0) {
+  const n = Number(value);
+  return String(Number.isFinite(n) ? n : fallback);
 }
 
 /**
@@ -76,14 +164,7 @@ function flowOf(target) {
  * @returns {string}
  */
 export function buildReadVolumeScript(target = 'speaker') {
-  return [
-    AUDIO_PREAMBLE,
-    `$flow = ${flowOf(target)}`,
-    '$v = [WdeckAudio]::GetVolume($flow)',
-    '$m = [WdeckAudio]::GetMute($flow)',
-    '$pct = [Math]::Round($v * 100)',
-    'Write-Output "volume=$pct;muted=$($m.ToString().ToLower())"'
-  ].join('\n');
+  return oneShot([AUDIO_PREAMBLE], `Wdeck-VolOut ${flowOf(target)}`);
 }
 
 /**
@@ -93,16 +174,7 @@ export function buildReadVolumeScript(target = 'speaker') {
  * @returns {string}
  */
 export function buildSetVolumeScript(target, percent) {
-  const clamped = clampPercent(percent);
-  return [
-    AUDIO_PREAMBLE,
-    `$flow = ${flowOf(target)}`,
-    `[WdeckAudio]::SetVolume($flow, ${(clamped / 100).toFixed(4)})`,
-    '$v = [WdeckAudio]::GetVolume($flow)',
-    '$m = [WdeckAudio]::GetMute($flow)',
-    '$pct = [Math]::Round($v * 100)',
-    'Write-Output "volume=$pct;muted=$($m.ToString().ToLower())"'
-  ].join('\n');
+  return oneShot([AUDIO_PREAMBLE], `Wdeck-VolSet ${flowOf(target)} ${clampPercent(percent)}`);
 }
 
 /**
@@ -113,16 +185,7 @@ export function buildSetVolumeScript(target, percent) {
  */
 export function buildAdjustVolumeScript(target, delta) {
   const d = Math.max(-100, Math.min(100, Number(delta) || 0));
-  return [
-    AUDIO_PREAMBLE,
-    `$flow = ${flowOf(target)}`,
-    '$cur = [WdeckAudio]::GetVolume($flow) * 100',
-    `$next = [Math]::Max(0, [Math]::Min(100, $cur + (${d})))`,
-    '[WdeckAudio]::SetVolume($flow, $next / 100)',
-    '$m = [WdeckAudio]::GetMute($flow)',
-    '$pct = [Math]::Round($next)',
-    'Write-Output "volume=$pct;muted=$($m.ToString().ToLower())"'
-  ].join('\n');
+  return oneShot([AUDIO_PREAMBLE], `Wdeck-VolAdjust ${flowOf(target)} ${num(d)}`);
 }
 
 /**
@@ -132,18 +195,13 @@ export function buildAdjustVolumeScript(target, delta) {
  * @returns {string}
  */
 export function buildMuteScript(target, value = 'toggle') {
-  const lines = [AUDIO_PREAMBLE, `$flow = ${flowOf(target)}`];
-  if (value === 'toggle') {
-    lines.push('$next = -not [WdeckAudio]::GetMute($flow)');
-  } else {
-    lines.push(`$next = $${value === true ? 'true' : 'false'}`);
-  }
-  lines.push(
-    '[WdeckAudio]::SetMute($flow, $next)',
-    '$pct = [Math]::Round([WdeckAudio]::GetVolume($flow) * 100)',
-    'Write-Output "volume=$pct;muted=$($next.ToString().ToLower())"'
-  );
-  return lines.join('\n');
+  return oneShot([AUDIO_PREAMBLE], `Wdeck-VolMute ${flowOf(target)} ${muteMode(value)}`);
+}
+
+/** Il muto nel protocollo: 0 off, 1 on, 2 inverti. */
+export function muteMode(value) {
+  if (value === 'toggle') return 2;
+  return value === true ? 1 : 0;
 }
 
 /**
@@ -266,7 +324,7 @@ public class WdeckGamma {
 }
 `.trim();
 
-const DDC_PREAMBLE = [
+export const DDC_PREAMBLE = [
   // Senza questo, il caricamento dei moduli CIM stampa una barra di avanzamento
   // ("Preparazione dei moduli per il primo utilizzo") sullo stderr, che finiva
   // per essere mostrata come "errore" al posto del messaggio vero.
@@ -286,19 +344,7 @@ const DDC_PREAMBLE = [
  * @returns {string}
  */
 export function buildReadBrightnessScript() {
-  return [
-    DDC_PREAMBLE,
-    '$cur = $null',
-    'try {',
-    '  $b = Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightness -ErrorAction Stop',
-    '  $cur = ($b | Select-Object -First 1).CurrentBrightness',
-    '} catch { $cur = $null }',
-    'if ($null -eq $cur) { $d = [WdeckMon]::Get(); if ($d -ge 0) { $cur = $d; $mode = "ddc" } }',
-    'if ($null -eq $cur) { $g = [WdeckGamma]::Get(); if ($g -ge 0) { $cur = $g; $mode = "gamma" } }',
-    'if ($null -eq $cur) { Write-Error "nessun metodo di controllo luminosita\' disponibile"; exit 5 }',
-    'if ($null -eq $mode) { $mode = "wmi" }',
-    'Write-Output "brightness=$cur;mode=$mode"'
-  ].join('\n');
+  return oneShot([DDC_PREAMBLE], 'Wdeck-BriRead');
 }
 
 /**
@@ -307,22 +353,7 @@ export function buildReadBrightnessScript() {
  * @returns {string}
  */
 export function buildSetBrightnessScript(percent) {
-  const clamped = clampPercent(percent);
-  return [
-    DDC_PREAMBLE,
-    `$target = ${clamped}`,
-    '$done = $false',
-    'try {',
-    '  $m = Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop',
-    '  foreach ($mon in $m) { Invoke-CimMethod -InputObject $mon -MethodName WmiSetBrightness -Arguments @{ Brightness = $target; Timeout = 1 } | Out-Null }',
-    '  $done = $true',
-    '} catch { $done = $false }',
-    '$mode = "wmi"',
-    'if (-not $done) { if ([WdeckMon]::Set($target) -gt 0) { $done = $true; $mode = "ddc" } }',
-    'if (-not $done) { if ([WdeckGamma]::Set($target)) { $done = $true; $mode = "gamma" } }',
-    'if (-not $done) { Write-Error "nessun metodo di controllo luminosita\' disponibile"; exit 5 }',
-    'Write-Output "brightness=$target;mode=$mode"'
-  ].join('\n');
+  return oneShot([DDC_PREAMBLE], `Wdeck-BriSet ${clampPercent(percent)}`);
 }
 
 /**
@@ -332,29 +363,7 @@ export function buildSetBrightnessScript(percent) {
  */
 export function buildAdjustBrightnessScript(delta) {
   const d = Math.max(-100, Math.min(100, Number(delta) || 0));
-  return [
-    DDC_PREAMBLE,
-    '$cur = $null',
-    'try {',
-    '  $b = Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightness -ErrorAction Stop',
-    '  $cur = ($b | Select-Object -First 1).CurrentBrightness',
-    '} catch { $cur = $null }',
-    'if ($null -eq $cur) { $dd = [WdeckMon]::Get(); if ($dd -ge 0) { $cur = $dd } }',
-    'if ($null -eq $cur) { $gg = [WdeckGamma]::Get(); if ($gg -ge 0) { $cur = $gg } }',
-    'if ($null -eq $cur) { Write-Error "nessun metodo di controllo luminosita\' disponibile"; exit 5 }',
-    `$target = [int][Math]::Max(0, [Math]::Min(100, $cur + (${d})))`,
-    '$done = $false',
-    '$mode = "wmi"',
-    'try {',
-    '  $m = Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop',
-    '  foreach ($mon in $m) { Invoke-CimMethod -InputObject $mon -MethodName WmiSetBrightness -Arguments @{ Brightness = $target; Timeout = 1 } | Out-Null }',
-    '  $done = $true',
-    '} catch { $done = $false }',
-    'if (-not $done) { if ([WdeckMon]::Set($target) -gt 0) { $done = $true; $mode = "ddc" } }',
-    'if (-not $done) { if ([WdeckGamma]::Set($target)) { $done = $true; $mode = "gamma" } }',
-    'if (-not $done) { Write-Error "impostazione luminosita\' non riuscita"; exit 5 }',
-    'Write-Output "brightness=$target;mode=$mode"'
-  ].join('\n');
+  return oneShot([DDC_PREAMBLE], `Wdeck-BriAdjust ${num(d)}`);
 }
 
 /**

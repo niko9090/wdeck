@@ -17,6 +17,7 @@ import {
   clampPercent,
   runLevelScript
 } from '../../platform/levels.mjs';
+import { withLevelServer } from '../../platform/levelserver.mjs';
 
 /** Legge il modo in cui l'azione e' stata invocata: valore assoluto, delta o lettura. */
 function resolveMode(params) {
@@ -183,15 +184,17 @@ export const brightnessAction = {
     }
 
     let script;
-    if (mode === 'set') script = buildSetBrightnessScript(amount);
-    else if (mode === 'adjust') script = buildAdjustBrightnessScript(amount);
-    else script = buildReadBrightnessScript();
+    let comando;
+    if (mode === 'set') { script = buildSetBrightnessScript(amount); comando = `BS ${amount}`; }
+    else if (mode === 'adjust') { script = buildAdjustBrightnessScript(amount); comando = `BA ${amount}`; }
+    else { script = buildReadBrightnessScript(); comando = 'BR'; }
 
-    // La compilazione C# del primo avvio e' lenta: il timeout va oltre i 12s
-    // di default, altrimenti la prima pressione fallisce sempre.
+    // Prima il processo persistente (millisecondi); se non c'e', lo script
+    // singolo. La compilazione C# del primo avvio e' lenta: il timeout va oltre
+    // i 12s di default, altrimenti la prima pressione fallisce sempre.
     let out;
     try {
-      out = await runLevelScript(script, { what: 'luminosita\'', timeoutMs: 30000 });
+      out = await withLevelServer(comando, () => runLevelScript(script, { what: 'luminosita\'', timeoutMs: 30000 }));
     } catch (err) {
       // Nessuno dei metodi (WMI, DDC/CI, gamma) ha funzionato: quasi sempre e'
       // uno schermo che non si regola via software (PC fisso senza DDC/CI) o

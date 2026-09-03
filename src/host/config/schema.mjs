@@ -47,7 +47,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
       auth: { windowMs: 300000, max: 10 }
     }
   },
-  ui: { theme: 'dark', style: 'default', accent: '#4c8dff', showLabels: true, language: 'auto' },
+  ui: { theme: 'dark', style: 'default', accent: '#4c8dff', showLabels: true, language: 'auto', keepAwake: true },
   status: { enabled: true, intervalMs: 8000 },
   discovery: { enabled: true },
   tray: { enabled: true },
@@ -380,6 +380,7 @@ function validateSettings(ctx, settings) {
       }
       if (ui.accent !== undefined) checkString(ctx, 'settings.ui.accent', ui.accent, { pattern: HEX_COLOR_RE, label: 'colore hex' });
       checkBool(ctx, 'settings.ui.showLabels', ui.showLabels);
+      checkBool(ctx, 'settings.ui.keepAwake', ui.keepAwake);
       if (ui.language !== undefined && !['it', 'en', 'auto'].includes(ui.language)) {
         ctx.err('settings.ui.language', 'valore ammesso: it | en | auto');
       }

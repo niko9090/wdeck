@@ -20,6 +20,7 @@ import { startTray } from './tray.mjs';
 import { createDefaultRegistry } from './actions/handlers/index.mjs';
 import { createDispatcher } from './actions/dispatcher.mjs';
 import { stopKeyServer } from './platform/keyserver.mjs';
+import { stopLevelServer, warmLevelServer } from './platform/levelserver.mjs';
 import { createState } from './state.mjs';
 import { createStatusTracker } from './status.mjs';
 import { createAuth } from './security/auth.mjs';
@@ -517,6 +518,9 @@ export function createHost(options = {}) {
         });
       }
       host.updates.start();
+      // Il processo di volume/luminosita' compila il suo C# adesso, in
+      // disparte, e non alla prima pressione dell'utente.
+      warmLevelServer();
       status.start();
 
       // Se stiamo girando, l'aggiornamento e' andato a buon fine: la copia di
@@ -574,6 +578,7 @@ export function createHost(options = {}) {
     host.mdns?.stop();
     host.tray?.stop();
     stopKeyServer();
+    stopLevelServer();
     hub.close();
     upgrades.closeAll();
     if (!server.listening) return resolve();
