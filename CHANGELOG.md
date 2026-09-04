@@ -5,6 +5,17 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.10.7] - 2026-09-05
+
+### Cambiato
+
+- **Un gruppo e' un insieme contornato, non un segno sul tile.** Una linea
+  del colore del gruppo contorna tutti i suoi tasti affiancati, col nome sul
+  bordo. I tasti si spostano liberamente fra righe e colonne, ma quelli dello
+  stesso gruppo vanno tenuti vicini: se si allontanano il contorno si spezza
+  in piu' pezzi e l'editor lo dice. Tolti la barretta laterale e la tinta
+  sul tile.
+
 ## [0.10.6] - 2026-09-05
 
 ### Corretto

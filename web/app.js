@@ -824,7 +824,194 @@ function renderGrid() {
   }
   ui.grid.innerHTML = parts.join('');
   applyStatuses();
+  renderGroupOutlines(page);
   renderGroupLegend(page);
+}
+
+/* ------------------------------------------------------- contorno dei gruppi
+
+   Un gruppo non e' un segno sul tile ma un INSIEME: una linea che contorna
+   tutti i tasti del gruppo, affiancati, con il nome sul bordo. I tasti si
+   spostano liberamente, ma quelli dello stesso gruppo vanno tenuti vicini:
+   se si allontanano, il contorno si spezza in piu' pezzi (e l'editor avvisa).
+
+   Il contorno corre nello spazio FRA i tile (meta' del gap per lato), cosi'
+   non copre niente. Si calcola sulle celle della griglia: ogni cella
+   "allargata" di mezzo gap tocca esattamente le vicine, quindi l'unione di
+   celle e' un poligono a lati dritti i cui bordi interni si elidono a coppie.
+   Il disegno e' un SVG sopra la griglia (pointer-events: none), ricalcolato
+   a ogni rendering e a ogni cambio di misura della griglia.                */
+
+/** Celle occupate da ogni tasto del gruppo: id gruppo -> [{row, col}]. */
+function groupCells(page) {
+  const out = new Map();
+  for (const b of page.buttons ?? []) {
+    if (!b.group) continue;
+    const list = out.get(b.group) ?? [];
+    const span = Number(b.span) || 1;
+    for (let k = 0; k < span; k += 1) list.push({ row: b.row, col: b.col + k });
+    out.set(b.group, list);
+  }
+  return out;
+}
+
+/** Spezza un elenco di celle nei suoi pezzi contigui (vicinanza a 4). */
+function cellClusters(cells) {
+  const key = (r, c) => `${r}:${c}`;
+  const resto = new Map(cells.map((cell) => [key(cell.row, cell.col), cell]));
+  const clusters = [];
+  while (resto.size) {
+    const [primaChiave, prima] = resto.entries().next().value;
+    resto.delete(primaChiave);
+    const coda = [prima];
+    const pezzo = [];
+    while (coda.length) {
+      const cell = coda.pop();
+      pezzo.push(cell);
+      for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const k = key(cell.row + dr, cell.col + dc);
+        const vicina = resto.get(k);
+        if (vicina) { resto.delete(k); coda.push(vicina); }
+      }
+    }
+    clusters.push(pezzo);
+  }
+  return clusters;
+}
+
+/**
+ * Anelli del contorno di un insieme di celle, come sequenze di vertici del
+ * reticolo (colonna, riga). I bordi condivisi da due celle compaiono due
+ * volte in verso opposto e si tolgono; quelli rimasti si concatenano.
+ */
+function clusterOutline(cells) {
+  const edges = new Map(); // "x1,y1>x2,y2" -> [x1,y1,x2,y2]
+  const add = (x1, y1, x2, y2) => {
+    const inverso = `${x2},${y2}>${x1},${y1}`;
+    if (edges.has(inverso)) edges.delete(inverso);
+    else edges.set(`${x1},${y1}>${x2},${y2}`, [x1, y1, x2, y2]);
+  };
+  for (const { row: r, col: c } of cells) {
+    add(c, r, c + 1, r);           // sopra, verso destra
+    add(c + 1, r, c + 1, r + 1);   // destra, verso il basso
+    add(c + 1, r + 1, c, r + 1);   // sotto, verso sinistra
+    add(c, r + 1, c, r);           // sinistra, verso l'alto
+  }
+  const daInizio = new Map();
+  for (const e of edges.values()) daInizio.set(`${e[0]},${e[1]}`, e);
+  const anelli = [];
+  while (daInizio.size) {
+    const start = daInizio.values().next().value;
+    const anello = [];
+    let e = start;
+    while (e) {
+      daInizio.delete(`${e[0]},${e[1]}`);
+      anello.push([e[0], e[1]]);
+      e = daInizio.get(`${e[2]},${e[3]}`);
+    }
+    anelli.push(anello);
+  }
+  return anelli;
+}
+
+/** Percorso SVG di un anello, con gli angoli arrotondati. */
+function ringPath(punti, raggio) {
+  const n = punti.length;
+  if (n < 3) return '';
+  const parti = [];
+  for (let i = 0; i < n; i += 1) {
+    const prev = punti[(i + n - 1) % n];
+    const p = punti[i];
+    const next = punti[(i + 1) % n];
+    // Il raggio non puo' superare meta' del lato piu' corto che tocca il vertice.
+    const lato = Math.min(Math.hypot(p[0] - prev[0], p[1] - prev[1]), Math.hypot(next[0] - p[0], next[1] - p[1]));
+    const r = Math.min(raggio, lato / 2);
+    const inDir = [Math.sign(p[0] - prev[0]), Math.sign(p[1] - prev[1])];
+    const outDir = [Math.sign(next[0] - p[0]), Math.sign(next[1] - p[1])];
+    const a = [p[0] - inDir[0] * r, p[1] - inDir[1] * r];
+    const b = [p[0] + outDir[0] * r, p[1] + outDir[1] * r];
+    parti.push(`${i === 0 ? 'M' : 'L'}${a[0].toFixed(1)} ${a[1].toFixed(1)} Q${p[0].toFixed(1)} ${p[1].toFixed(1)} ${b[0].toFixed(1)} ${b[1].toFixed(1)}`);
+  }
+  return `${parti.join(' ')} Z`;
+}
+
+/** Disegna (o ridisegna) i contorni dei gruppi della pagina sopra la griglia. */
+function renderGroupOutlines(page) {
+  for (const old of ui.grid.querySelectorAll('.group-outlines, .group-tag')) old.remove();
+  if (!page || page.source || !(page.groups ?? []).length) return;
+  const cols = Number(page.cols) || 1;
+  const rows = Number(page.rows) || 1;
+  const W = ui.grid.clientWidth;
+  const H = ui.grid.clientHeight;
+  if (!W || !H) return;
+  const gap = parseFloat(getComputedStyle(ui.grid).columnGap) || 0;
+  const cw = (W - gap * (cols - 1)) / cols;
+  const rh = (H - gap * (rows - 1)) / rows;
+  // dal vertice del reticolo al pixel: il contorno passa a meta' del gap
+  const px = (c) => c * (cw + gap) - gap / 2;
+  const py = (r) => r * (rh + gap) - gap / 2;
+  const raggio = Math.max(4, Math.min(10, gap * 1.5));
+
+  const colori = new Map((page.groups ?? []).map((g) => [g.id, cssColor(g.color) || 'var(--accent)']));
+  const nomi = new Map((page.groups ?? []).map((g) => [g.id, g.label]));
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('class', 'group-outlines');
+  svg.setAttribute('aria-hidden', 'true');
+  const tags = [];
+
+  for (const [gid, cells] of groupCells(page)) {
+    for (const cluster of cellClusters(cells)) {
+      const d = clusterOutline(cluster)
+        .map((anello) => ringPath(anello.map(([c, r]) => [px(c), py(r)]), raggio))
+        .join(' ');
+      const path = document.createElementNS(svgNS, 'path');
+      path.setAttribute('d', d);
+      path.dataset.group = gid;
+      path.style.setProperty('--group-color', colori.get(gid));
+      svg.appendChild(path);
+      // Il nome sul bordo in alto a sinistra del pezzo.
+      const top = Math.min(...cluster.map((c) => c.row));
+      const left = Math.min(...cluster.filter((c) => c.row === top).map((c) => c.col));
+      const tag = document.createElement('span');
+      tag.className = 'group-tag';
+      tag.dataset.group = gid;
+      tag.textContent = nomi.get(gid) ?? gid;
+      tag.style.setProperty('--group-color', colori.get(gid));
+      tag.style.left = `${(px(left) + 10).toFixed(1)}px`;
+      tag.style.top = `${py(top).toFixed(1)}px`;
+      tags.push(tag);
+    }
+  }
+  ui.grid.appendChild(svg);
+  for (const tag of tags) ui.grid.appendChild(tag);
+}
+
+// La griglia cambia misura (rotazione, barra che compare): i contorni seguono.
+if (typeof ResizeObserver === 'function') {
+  let attesa = null;
+  new ResizeObserver(() => {
+    clearTimeout(attesa);
+    attesa = setTimeout(() => {
+      const page = currentPage();
+      if (page && ui.grid.querySelector('.group-outlines')) renderGroupOutlines(page);
+    }, 60);
+  }).observe(ui.grid);
+}
+
+/**
+ * Dopo uno spostamento o una modifica: se un gruppo non e' piu' tutto
+ * affiancato, lo si dice. Non si impedisce (spostare un gruppo intero passa
+ * per forza da uno stato "spezzato"), ma il contorno in due pezzi e l'avviso
+ * lo rendono evidente.
+ */
+function warnSplitGroups(page) {
+  if (!page?.groups?.length) return;
+  const celle = groupCells(page);
+  for (const g of page.groups) {
+    const cells = celle.get(g.id);
+    if (cells && cellClusters(cells).length > 1) toast(t('edit.groupSplit', { name: g.label }), 'err');
+  }
 }
 
 /**
@@ -891,6 +1078,7 @@ function applyGroupFocus() {
   const id = groupFocus.id;
   ui.grid.classList.toggle('group-focus', Boolean(id));
   for (const tile of ui.grid.children) tile.classList.toggle('in-group', Boolean(id) && tile.dataset.group === id);
+  for (const path of ui.grid.querySelectorAll('.group-outlines [data-group]')) path.classList.toggle('in-group', Boolean(id) && path.dataset.group === id);
   for (const chip of ui.groupLegend?.querySelectorAll('.group-chip') ?? []) {
     chip.setAttribute('aria-pressed', String(chip.dataset.group === id));
   }
@@ -2507,7 +2695,7 @@ async function saveButtonDraft(draft, existing) {
   // proprieta' "-1" ignorata dall'host.
   if (existing && index !== -1) page.buttons[index] = next;
   else page.buttons.push(next);
-  await persistDeck(deck, t('edit.saved', { label: next.label }));
+  if (await persistDeck(deck, t('edit.saved', { label: next.label })) && page) warnSplitGroups(page);
 }
 
 /**
@@ -2594,7 +2782,9 @@ async function moveButton(buttonId, target) {
   }
   button.row = target.row;
   button.col = target.col;
-  return persistDeck(deck, t('edit.moved'), { quiet: true });
+  const ok = await persistDeck(deck, t('edit.moved'), { quiet: true });
+  if (ok) warnSplitGroups(page);
+  return ok;
 }
 
 // ------------------------------------------------- pagine

@@ -191,7 +191,9 @@ body {
 .app > .topbar { grid-row: 2; }
 .app > .hosts { grid-row: 3; }
 .app > .pages { grid-row: 4; }
-.app > .group-legend { grid-row: 5; }
+/* un filo d'aria sotto la legenda: il nome del gruppo sta a cavallo del
+   contorno, e sulla prima riga sporgerebbe sui chip */
+.app > .group-legend { grid-row: 5; margin-bottom: 4px; }
 .app > .grid { grid-row: 6; }
 .app > .statusbar { grid-row: 7; }
 
@@ -456,16 +458,9 @@ body {
 .group-chip[aria-pressed='true'] .group-n { opacity: 0.85; }
 
 /* gruppo evidenziato: i suoi tasti restano accesi con un alone, gli altri si spengono */
-.grid.group-focus > :not(.in-group) { opacity: 0.22; filter: saturate(0.3); }
+.grid.group-focus > :not(.in-group):not(.group-outlines) { opacity: 0.22; filter: saturate(0.3); }
 .grid.group-focus > .in-group { box-shadow: 0 0 0 2px var(--group-color), 0 0 16px color-mix(in srgb, var(--group-color) 55%, transparent); }
 
-/* la faccia del tile prende una tinta del gruppo (se il tile ha un colore
-   suo, lo stile in linea vince e resta solo la barretta) */
-.deck-btn[data-group] {
-  background: color-mix(in srgb, var(--group-color) 14%, var(--bg-btn));
-  border-color: color-mix(in srgb, var(--group-color) 40%, var(--border));
-}
-.deck-ctl[data-group] { background: color-mix(in srgb, var(--group-color) 11%, var(--ctl-surf)); }
 
 /* ---------------- sfondo della pagina ----------------
    Colore, sfumatura o immagine scelti dal pannello della pagina: su TUTTA la
@@ -476,19 +471,42 @@ body.has-bg { background: var(--page-bg); }
 body.has-bg .grid,
 :root[data-style] body.has-bg .grid { background: transparent; box-shadow: none; }
 
-/* barretta del colore del gruppo sul bordo sinistro del tile */
-.deck-btn[data-group]::after,
-.deck-slider[data-group]::after {
-  content: '';
+/* il contorno dell'insieme (SVG sopra la griglia, disegnato da app.js) */
+.grid { position: relative; }
+.group-outlines {
   position: absolute;
-  top: 6px;
-  bottom: 6px;
-  left: 0;
-  width: 4px;
-  border-radius: 0 3px 3px 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2;
+}
+.group-outlines path {
+  fill: color-mix(in srgb, var(--group-color) 10%, transparent);
+  stroke: var(--group-color);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  transition: opacity 160ms ease;
+}
+.group-tag {
+  position: absolute;
+  z-index: 3;
+  transform: translateY(-50%);
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #fff;
   background: var(--group-color);
   pointer-events: none;
+  white-space: nowrap;
 }
+.grid.group-focus > .group-outlines { opacity: 1; filter: none; }
+.grid.group-focus .group-outlines path:not(.in-group) { opacity: 0.15; }
 
 /* ---------------- pagine dinamiche (finestre/app/widget) ----------------
    I tile arrivano dall'host e sono di numero variabile: la griglia va a
@@ -1146,16 +1164,6 @@ video.sveglia { position: fixed; right: 0; bottom: 0; width: 2px; height: 2px; o
 }
 .deck-ctl[data-on='1']::after { background: var(--ctl-accent); opacity: 1; box-shadow: 0 0 7px var(--ctl-accent); }
 
-/* barretta del gruppo, come sugli altri tile */
-.deck-ctl[data-group]::before {
-  content: '';
-  position: absolute;
-  top: 6px; bottom: 6px; left: 0;
-  width: 4px;
-  border-radius: 0 3px 3px 0;
-  background: var(--group-color);
-  pointer-events: none;
-}
 
 /* ---------------- manopola ---------------- */
 .enc-wrap { position: relative; display: grid; place-items: center; }

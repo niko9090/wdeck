@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.10.7': [
+    "Cambiato: i gruppi sono un insieme contornato. Una linea del colore del gruppo circonda i suoi tasti affiancati, col nome sul bordo. Tienili vicini: se li allontani il contorno si spezza e l'editor avvisa."
+  ],
   '0.10.6': [
     "Corretto: il suggerimento di una versione nuova compare entro pochi minuti dalla pubblicazione, anche con il deck sempre collegato (prima poteva volerci fino a 6 ore).",
     "Corretto: dopo un aggiornamento il deck torna a schermo intero al primo tocco, invece di restare con la barra del browser."
