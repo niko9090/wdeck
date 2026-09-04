@@ -8,6 +8,10 @@
  */
 
 export const WHATSNEW = {
+  '0.10.6': [
+    "Corretto: il suggerimento di una versione nuova compare entro pochi minuti dalla pubblicazione, anche con il deck sempre collegato (prima poteva volerci fino a 6 ore).",
+    "Corretto: dopo un aggiornamento il deck torna a schermo intero al primo tocco, invece di restare con la barra del browser."
+  ],
   '0.10.5': [
     "Corretto: salvare dall'editor non cancella piu' i gruppi, il tipo di pagina e il gruppo dei tasti (era il motivo per cui certe modifiche sparivano).",
     "Corretto: dopo un aggiornamento il deck sul telefono si ricarica da solo, su ordine dell'host, invece di restare alla versione vecchia.",

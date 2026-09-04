@@ -468,14 +468,13 @@ body {
 .deck-ctl[data-group] { background: color-mix(in srgb, var(--group-color) 11%, var(--ctl-surf)); }
 
 /* ---------------- sfondo della pagina ----------------
-   Colore, sfumatura o immagine scelti dal pannello della pagina: stanno sulla
-   griglia, sotto i tasti. Vince anche sugli stili (keycap dipinge la griglia). */
-.grid.has-bg,
-:root[data-style] .grid.has-bg {
-  background: var(--page-bg);
-  border-radius: 14px;
-  padding: 6px;
-}
+   Colore, sfumatura o immagine scelti dal pannello della pagina: su TUTTA la
+   pagina (body), sotto barra, schede e tasti. La griglia diventa trasparente,
+   anche negli stili che la dipingono (keycap), altrimenti coprirebbe lo
+   sfondo proprio dove sta il contenuto. */
+body.has-bg { background: var(--page-bg); }
+body.has-bg .grid,
+:root[data-style] body.has-bg .grid { background: transparent; box-shadow: none; }
 
 /* barretta del colore del gruppo sul bordo sinistro del tile */
 .deck-btn[data-group]::after,

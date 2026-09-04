@@ -5,6 +5,24 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.10.6] - 2026-09-05
+
+### Corretto
+
+- **Una release nuova poteva restare invisibile per ore.** L'host chiedeva a
+  GitHub ogni 6 ore e il deck solo al collegamento: un telefono che resta
+  collegato non chiedeva mai piu' nulla. Ora l'host controlla ogni 30 minuti
+  e il deck ogni 10 (e appena si torna sull'app), con un freno di 2 minuti
+  sull'host cosi' dieci deck non fanno dieci chiamate.
+- **Dopo una ricarica (aggiornamento) il deck usciva dallo schermo intero e
+  ci restava.** Nessun browser lascia rientrare senza un tocco: ora, se lo
+  schermo intero era stato scelto dal tasto della barra, torna al primo tocco
+  sul deck (che fa comunque la sua cosa). Vale per qualunque uscita non
+  chiesta (ricarica, selettore dei colori, tastiera, "indietro"): solo il
+  tasto della barra lo disattiva.
+- **Lo sfondo della pagina copre tutta la pagina**, non solo lo spazio sotto
+  i tasti.
+
 ## [0.10.5] - 2026-09-04
 
 ### Corretto

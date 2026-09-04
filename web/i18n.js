@@ -349,7 +349,8 @@ const DICTIONARIES = {
     'action.simulated': 'simulato: {description}',
     'action.noActions': 'Impossibile leggere le azioni disponibili',
     'action.error': 'errore',
-    'fullscreen.unavailable': 'Schermo intero non disponibile'
+    'fullscreen.unavailable': 'Schermo intero non disponibile',
+    'fullscreen.tapToReturn': 'Tocca lo schermo per tornare a schermo intero'
   },
 
   en: {
@@ -687,7 +688,8 @@ const DICTIONARIES = {
     'action.simulated': 'simulated: {description}',
     'action.noActions': 'Cannot read the available actions',
     'action.error': 'error',
-    'fullscreen.unavailable': 'Full screen unavailable'
+    'fullscreen.unavailable': 'Full screen unavailable',
+    'fullscreen.tapToReturn': 'Tap the screen to return to full screen'
   }
 };
 

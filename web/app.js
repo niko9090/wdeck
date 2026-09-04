@@ -567,6 +567,35 @@ function applyTheme(uiConfig) {
      e' l'unico che funziona in http. Serve un tocco per farlo partire (regola
      dei browser sulla riproduzione), e sul deck un tocco arriva sempre.       */
 
+/* ------------------------------------------------------------ schermo intero
+
+   Una ricarica (per esempio dopo un aggiornamento) butta fuori dallo schermo
+   intero, e nessun browser lascia rientrare senza un gesto dell'utente. Si
+   ricorda che lo schermo intero era VOLUTO (tasto della barra) e, dopo la
+   ricarica, lo si richiede al PRIMO tocco, che fa comunque la sua cosa
+   normale. SOLO il tasto della barra toglie il ricordo: ogni altra uscita
+   (ricarica, selettore dei colori o tastiera che su Android chiudono lo
+   schermo intero, "indietro") viene ripresa al tocco successivo. E' quello
+   che l'utente ha chiesto: "che non ci esca proprio".                      */
+
+const STORAGE_FULLSCREEN = 'wdeck.fullscreen';
+
+function rememberFullscreen(on) {
+  try { localStorage.setItem(STORAGE_FULLSCREEN, on ? '1' : '0'); } catch { /* storage assente */ }
+}
+function fullscreenWanted() {
+  try { return localStorage.getItem(STORAGE_FULLSCREEN) === '1'; } catch { return false; }
+}
+
+document.addEventListener('pointerdown', () => {
+  if (!fullscreenWanted() || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+  document.documentElement.requestFullscreen().catch(() => { /* negato: si riprova al prossimo tocco */ });
+}, { capture: true, passive: true });
+// Un avviso discreto: chi legge sa perche' la pagina non e' piu' a tutto schermo.
+setTimeout(() => {
+  if (fullscreenWanted() && !document.fullscreenElement && !document.getElementById('app')?.hidden) toast(t('fullscreen.tapToReturn'), '');
+}, 1500);
+
 const sveglia = { lock: null, video: null };
 
 function keepAwakeWanted() {
@@ -801,8 +830,9 @@ function renderGrid() {
 /**
  * Sfondo della pagina (`page.background`): un colore, una sfumatura fra due
  * colori, un'immagine caricata, o le tre cose insieme (l'immagine sopra, il
- * colore sotto). Assente = sfondo del tema. Si applica alla griglia, cosi' la
- * barra in alto resta leggibile qualunque cosa ci sia sotto i tasti.
+ * colore sotto). Assente = sfondo del tema. Si applica a TUTTA la pagina
+ * (body): l'utente lo vuole "ovunque", non solo sotto i tasti; la barra in
+ * alto ha il suo fondo e resta leggibile comunque.
  * @returns {string} il valore CSS di `background`, o '' se nessuno sfondo
  */
 function pageBackgroundCss(bg) {
@@ -816,9 +846,9 @@ function pageBackgroundCss(bg) {
 
 function applyPageBackground(page) {
   const css = pageBackgroundCss(page.background);
-  ui.grid.classList.toggle('has-bg', Boolean(css));
-  if (css) ui.grid.style.setProperty('--page-bg', css);
-  else ui.grid.style.removeProperty('--page-bg');
+  document.body.classList.toggle('has-bg', Boolean(css));
+  if (css) document.body.style.setProperty('--page-bg', css);
+  else document.body.style.removeProperty('--page-bg');
 }
 
 /**
@@ -3428,6 +3458,18 @@ function autoCheckUpdate() {
   checkUpdate({ quiet: true });
 }
 
+// Il controllo partiva SOLO al collegamento: un telefono che resta collegato
+// per ore non chiedeva mai piu' nulla, e una release nuova compariva solo al
+// giro dell'host (ogni 6 ore, allora) o riaprendo l'app. Ora si ripete ogni
+// 10 minuti finche' il deck e' collegato e visibile, e appena si torna
+// sull'app (il freno dei 10 minuti resta in autoCheckUpdate).
+setInterval(() => {
+  if (state.connected && document.visibilityState === 'visible') autoCheckUpdate();
+}, 10 * 60 * 1000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.connected) autoCheckUpdate();
+});
+
 async function checkUpdate({ force = false, quiet = false } = {}) {
   const fresco = force || quiet;
   const res = await api(`${ENDPOINTS.update}${fresco ? '?check=1' : ''}`);
@@ -3748,8 +3790,13 @@ function bindEvents() {
 
 
   ui.btnFullscreen.addEventListener('click', async () => {
-    if (document.fullscreenElement) await document.exitFullscreen();
-    else await document.documentElement.requestFullscreen().catch(() => toast(t('fullscreen.unavailable'), 'err'));
+    if (document.fullscreenElement) {
+      rememberFullscreen(false);
+      await document.exitFullscreen();
+    } else {
+      rememberFullscreen(true);
+      await document.documentElement.requestFullscreen().catch(() => toast(t('fullscreen.unavailable'), 'err'));
+    }
   });
 
   ui.btnSettings.addEventListener('click', openSettings);

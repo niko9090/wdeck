@@ -14,7 +14,14 @@
 import { FILE_IMPRONTE } from './update-apply.mjs';
 
 /** Ogni quanto ricontrollare, se il controllo periodico e' attivo. */
-export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+// Ogni 30 minuti, non 6 ore: con 6 ore una release pubblicata un quarto
+// d'ora dopo l'ultimo controllo restava invisibile per mezza giornata (il
+// telefono resta collegato e il controllo del client parte solo al
+// ricollegamento). GitHub concede 60 richieste l'ora senza token: 2 l'ora
+// dall'host, piu' quelle dei client (frenate sotto), stanno larghe.
+export const CHECK_INTERVAL_MS = 30 * 60 * 1000;
+/** Sotto questa distanza da un controllo riuscito si risponde con l'ultimo esito. */
+export const MIN_FRESH_MS = 2 * 60 * 1000;
 
 /**
  * Confronta due versioni semver (senza pre-release).
@@ -91,6 +98,11 @@ export function createUpdateChecker({ version, repository, enabled = true, logge
    */
   async function check({ force = false } = {}) {
     if (!enabled && !force) return last;
+    // Freno: dieci client che si ricollegano insieme, o che chiedono tutti un
+    // controllo "fresco" allo stesso minuto, farebbero dieci chiamate a GitHub
+    // per la stessa risposta. Un esito riuscito vale due minuti per tutti,
+    // anche per chi chiede "fresco" (check=1) dalla tray o dalle impostazioni.
+    if (!last.error && last.checkedAt && Date.now() - last.checkedAt < MIN_FRESH_MS) return last;
     try {
       const latest = await fetchLatestRelease(repository);
       const available = compareVersions(latest.version, version) > 0;
