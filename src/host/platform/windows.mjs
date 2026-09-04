@@ -329,12 +329,25 @@ export function buildPlaySoundScript(soundPath, volume = 100) {
  * @returns {Promise<{pid: number|undefined}>}
  */
 export function playSound({ path: soundPath, volume = 100 }) {
+  return startPowerShellDetached(buildPlaySoundScript(soundPath, volume));
+}
+
+/**
+ * Esegue uno script PowerShell "spara e dimentica": processo staccato, l'host
+ * non ne attende la fine. Serve a tutto cio' che deve VIVERE a schermo (un
+ * suono, un fumetto di notifica) senza tenere occupato il tasto che l'ha
+ * chiesto. Risolve appena il processo e' partito.
+ * @param {string} script
+ * @returns {Promise<{pid: number|undefined}>}
+ */
+export function startPowerShellDetached(script) {
   return new Promise((resolve, reject) => {
     const child = spawn(powershellPath(), [
       '-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
-      '-EncodedCommand', encodePowerShell(buildPlaySoundScript(soundPath, volume))
+      '-EncodedCommand', encodePowerShell(script)
     ], { detached: true, stdio: 'ignore', windowsHide: true });
     child.on('error', reject);
+    // Un piccolo ritardo evita di risolvere prima che 'error' possa essere emesso.
     setTimeout(() => {
       child.unref();
       resolve({ pid: child.pid });

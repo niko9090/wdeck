@@ -266,6 +266,31 @@ test('normalizeDeck: espone groups per pagina e group per bottone', () => {
   assert.equal(n.profiles[0].pages[0].buttons[1]?.group ?? null, null);
 });
 
+test('schema: lo sfondo della pagina accetta colore, sfumatura e immagine', () => {
+  for (const bg of [{ color: '#112233' }, { color: '#112233', color2: '#445566' }, { image: 'mio-sfondo' }, { color: '#000', image: 'foto-1' }]) {
+    const deck = rawDeck();
+    deck.profiles[0].pages[0].background = bg;
+    const r = validate(deck);
+    assert.equal(r.valid, true, `dovrebbe accettare ${JSON.stringify(bg)}: ${JSON.stringify(r.errors)}`);
+  }
+  const deck = rawDeck();
+  deck.profiles[0].pages[0].background = { color: '#112233', color2: '#445566' };
+  const n = normalizeDeck(deck);
+  assert.deepEqual(n.profiles[0].pages[0].background, { color: '#112233', color2: '#445566', image: null });
+  // senza sfondo: null, cosi' il client non deve indovinare
+  assert.equal(normalizeDeck(rawDeck()).profiles[0].pages[0].background, null);
+});
+
+test('schema: uno sfondo malformato viene rifiutato', () => {
+  for (const bg of [{}, { color: 'blu' }, { color: '#fff', color2: 'rosso' }, { image: 'Con Spazi' }, 'rosso']) {
+    const deck = rawDeck();
+    deck.profiles[0].pages[0].background = bg;
+    const r = validate(deck);
+    assert.equal(r.valid, false, `dovrebbe rifiutare ${JSON.stringify(bg)}`);
+    assert.ok(r.errors.some((e) => e.path.includes('background')), `errore su background per ${JSON.stringify(bg)}`);
+  }
+});
+
 test('schema: page.source accetta i valori dinamici e rifiuta gli altri', () => {
   for (const s of ['windows', 'apps', 'widgets']) {
     const deck = rawDeck();

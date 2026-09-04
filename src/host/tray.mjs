@@ -196,10 +196,15 @@ $icon.ShowBalloonTip(4000)
 # Se l'host termina (chiusura del terminale, arresto del PC) l'icona deve
 # sparire da sola, altrimenti resta un fantasma cliccabile nella barra.
 $watch = New-Object System.Windows.Forms.Timer
-$watch.Interval = 2000
+$watch.Interval = 500
 $watch.add_Tick({
-  if (-not (Get-Process -Id $hostPid -ErrorAction SilentlyContinue)) {
+  # L'host e' morto, oppure ha tolto questo script (e' il suo modo di dire
+  # "chiudi", vedi stop() in tray.mjs): l'icona si toglie da sola PRIMA di
+  # uscire. Uccisa da fuori, lascerebbe un'icona fantasma nella barra accanto
+  # a quella nuova: "piu' Wdeck aperti" dopo ogni aggiornamento.
+  if (-not (Get-Process -Id $hostPid -ErrorAction SilentlyContinue) -or -not (Test-Path -LiteralPath $PSCommandPath)) {
     $icon.Visible = $false
+    $icon.Dispose()
     [System.Windows.Forms.Application]::Exit()
   }
 })
@@ -219,10 +224,10 @@ $icon.Dispose()
  * Avvia l'icona nell'area di notifica.
  *
  * @param {{url: string, urls?: string[], token: string, version: string, deckName: string, scriptsDir?: string, logger?: object}} spec
- * @returns {{stop: () => void, pid: number|null, scriptFile: string|null}}
+ * @returns {{stop: () => Promise<void>, pid: number|null, scriptFile: string|null}}
  */
 export function startTray({ url, urls = [], token, version, deckName, scriptsDir = '', logger = console }) {
-  const inactive = { stop() {}, pid: null, scriptFile: null };
+  const inactive = { async stop() {}, pid: null, scriptFile: null };
   if (!isWindows()) {
     logger.debug?.('[wdeck] icona nella barra disponibile solo su Windows');
     return inactive;
@@ -271,12 +276,27 @@ export function startTray({ url, urls = [], token, version, deckName, scriptsDir
     pid: child.pid ?? null,
     scriptFile,
     stop() {
-      try {
-        child.kill();
-      } catch {
-        // il processo della tray si chiude comunque da solo quando l'host muore
-      }
+      // Prima si toglie lo script: la tray lo controlla ogni mezzo secondo e,
+      // non trovandolo piu', nasconde l'icona ed esce da sola. Ucciderla
+      // subito lascerebbe l'icona fantasma. Se non esce entro un secondo e
+      // mezzo, allora si uccide.
       cleanup();
+      return new Promise((resolve) => {
+        let done = false;
+        let timer = null;
+        const fine = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve();
+        };
+        if (child.exitCode !== null || child.signalCode !== null) { fine(); return; }
+        timer = setTimeout(() => {
+          try { child.kill(); } catch { /* gia' uscito */ }
+          fine();
+        }, 1500);
+        child.once('exit', fine);
+      });
     }
   };
 }

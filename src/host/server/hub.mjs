@@ -126,7 +126,9 @@ export function createHub(host) {
       conn.data.authenticated = true;
       clearTimeout(authTimer);
       state.addClient(conn);
-      conn.send({ type: MSG.authOk, protocol: PROTOCOL_VERSION });
+      // La build dell'host viaggia con l'ok: il client la confronta con la
+      // propria e, se e' rimasto indietro, si ricarica senza aspettare nessuno.
+      conn.send({ type: MSG.authOk, protocol: PROTOCOL_VERSION, build: host.buildId ?? null, version: host.version ?? null });
       conn.send({ type: MSG.deck, deck: publicDeck(configStore.get()), state: state.snapshot() });
       conn.send({ type: MSG.state, state: state.snapshot() });
       conn.send({ type: MSG.status, states: statusSnapshot() });
@@ -138,6 +140,14 @@ export function createHub(host) {
       // che questo evento lo capiscono da sempre.
       const aggiornamenti = host.updates?.status;
       if (aggiornamenti) conn.send({ type: MSG.event, event: 'update', data: aggiornamenti });
+      // Comando esplicito di ricarica. Dopo un aggiornamento dell'host la
+      // pagina aperta sul telefono e' quella vecchia, tenuta in cache dal
+      // service worker: se il client dichiara una build diversa, gli si ordina
+      // di rifare il giro (pulizia cache + ricarica) invece di sperare che se
+      // ne accorga da solo.
+      if (conn.data.clientBuild && host.buildId && conn.data.clientBuild !== host.buildId) {
+        conn.send({ type: MSG.event, event: 'reload', data: { build: host.buildId, version: host.version ?? null } });
+      }
       // Il primo client collegato trova la cache vuota: una lettura subito, cosi'
       // i bottoni a due stati partono gia' con l'aspetto giusto.
       host.status?.refresh({ force: true }).catch(() => {});
@@ -179,6 +189,7 @@ export function createHub(host) {
         }
         conn.data.token = msg.token;
         conn.data.deviceId = identity.device?.id ?? null;
+        conn.data.clientBuild = typeof msg.build === 'string' ? msg.build.slice(0, 64) : null;
         host.limits.clearAuth({ address: conn.data.address });
         completeAuth();
         return;

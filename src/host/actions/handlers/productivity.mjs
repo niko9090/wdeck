@@ -8,7 +8,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { AUDIO_EXTENSIONS, buildKeyScript, buildPlaySoundScript, playSound, runPowerShell } from '../../platform/windows.mjs';
+import { AUDIO_EXTENSIONS, buildKeyScript, buildPlaySoundScript, playSound, runPowerShell, startPowerShellDetached } from '../../platform/windows.mjs';
 import { parseHotkey } from '../../platform/keys.mjs';
 
 /** Codifica una stringa per inserirla in uno script senza problemi di quoting. */
@@ -275,8 +275,11 @@ export const notifyAction = {
   describe: (params) => `notifica "${String(params?.message ?? '').slice(0, 40)}"`,
   async run(params, ctx) {
     if (ctx.dryRun) return { ok: true, simulated: true, detail: `mostrerebbe la notifica "${params.message}"` };
-    const res = await runPowerShell(buildNotifyScript(params), { timeoutMs: 12000 });
-    if (res.code !== 0) throw new Error(`notifica fallita: ${res.stderr.slice(0, 200)}`);
+    // Il fumetto resta a schermo 6 secondi e il processo che lo mostra deve
+    // vivere quanto lui: il TASTO no. Prima si aspettava la fine (8-10 secondi
+    // a pressione, dal registro); ora il processo e' staccato e il tasto torna
+    // libero appena la notifica e' partita.
+    await startPowerShellDetached(buildNotifyScript(params));
     return { ok: true, detail: 'notifica mostrata sul PC' };
   }
 };

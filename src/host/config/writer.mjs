@@ -78,6 +78,23 @@ export function compactDeck(deck) {
         name: page.name,
         rows: page.rows,
         cols: page.cols,
+        // I campi di pagina arrivati dopo il primo formato (tipo di pagina,
+        // gruppi, sfondo). Erano ASSENTI da questo elenco: ogni salvataggio
+        // dall'editor li cancellava, e con loro il gruppo di ogni tasto. E' il
+        // difetto "le modifiche non vengono registrate".
+        ...(page.source ? { source: page.source } : {}),
+        ...(Array.isArray(page.groups) && page.groups.length
+          ? { groups: page.groups.map((g) => ({ id: g.id, label: g.label, color: g.color })) }
+          : {}),
+        ...(page.background && (page.background.color || page.background.image)
+          ? {
+            background: {
+              ...(page.background.color ? { color: page.background.color } : {}),
+              ...(page.background.color2 ? { color2: page.background.color2 } : {}),
+              ...(page.background.image ? { image: page.background.image } : {})
+            }
+          }
+          : {}),
         buttons: (page.buttons ?? []).map((button) => {
           const out = {
             id: button.id,
@@ -93,6 +110,7 @@ export function compactDeck(deck) {
           if (button.icon) out.icon = button.icon;
           if (button.color) out.color = button.color;
           if (button.textColor) out.textColor = button.textColor;
+          if (button.group) out.group = button.group;
           if (button.holdAction) out.holdAction = button.holdAction;
           if (button.releaseAction) out.releaseAction = button.releaseAction;
           for (const key of ['min', 'max', 'step', 'rows', 'cols', 'seconds', 'mode', 'orientation']) {

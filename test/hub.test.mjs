@@ -115,6 +115,39 @@ test('hub: al collegamento il client riceve subito lo stato degli aggiornamenti'
   assert.equal(evento.data.available, false, 'e\' lo stato dell\'host appena ripartito: niente da installare');
 });
 
+test('hub: authOk porta la build dell\'host e un client con build diversa riceve l\'ordine di ricaricarsi', async () => {
+  const host = fakeHost();
+  host.buildId = 'nuova1234567';
+  host.version = '0.10.5';
+  host.auth = { required: true, verifyRequest: () => ({ ok: false }), identify: () => ({ ok: true }) };
+  const hub = createHub(host);
+
+  const vecchio = new FakeConn();
+  hub.routes[ENDPOINTS.ws](vecchio, req);
+  vecchio.emit('message', JSON.stringify({ type: MSG.auth, token: 't', build: 'vecchia000000' }));
+  await flush();
+  const ok = vecchio.sent.find((m) => m.type === MSG.authOk);
+  assert.equal(ok.build, 'nuova1234567');
+  assert.equal(ok.version, '0.10.5');
+  const reload = vecchio.sent.find((m) => m.type === MSG.event && m.event === 'reload');
+  assert.ok(reload, 'un client con una build vecchia deve ricevere il comando di ricarica');
+  assert.equal(reload.data.build, 'nuova1234567');
+
+  const nuovo = new FakeConn();
+  hub.routes[ENDPOINTS.ws](nuovo, req);
+  nuovo.emit('message', JSON.stringify({ type: MSG.auth, token: 't', build: 'nuova1234567' }));
+  await flush();
+  assert.equal(nuovo.sent.some((m) => m.type === MSG.event && m.event === 'reload'), false, 'stessa build: nessun ordine');
+
+  // un client che non dichiara la build (vecchio) non riceve l'ordine, ma neanche errori
+  const muto = new FakeConn();
+  hub.routes[ENDPOINTS.ws](muto, req);
+  muto.emit('message', JSON.stringify({ type: MSG.auth, token: 't' }));
+  await flush();
+  assert.ok(muto.sent.some((m) => m.type === MSG.authOk));
+  assert.equal(muto.sent.some((m) => m.type === MSG.event && m.event === 'reload'), false);
+});
+
 test('hub: senza controllo aggiornamenti (host senza updates) non si manda nulla e non si esplode', async () => {
   const hub = createHub(fakeHost());
   const conn = new FakeConn();

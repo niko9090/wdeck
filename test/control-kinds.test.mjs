@@ -408,10 +408,14 @@ function bancoFreschezza({ mine, editing = false, gia = null }) {
   const app = leggi('web/app.js');
   const wrapper = app.match(/async function checkClientFreshness\([\s\S]*?\n\}/);
   const corpo = app.match(/async function freshnessRun\([\s\S]*?\n\}\n/);
+  const impronta = app.match(/function clientBuild\([\s\S]*?\n\}/);
   assert.ok(wrapper, 'il client deve dichiarare checkClientFreshness');
   assert.ok(corpo, 'il client deve dichiarare freshnessRun');
+  assert.ok(impronta, 'il client deve dichiarare clientBuild');
 
-  const diario = { ricariche: 0, toast: [], cacheTolte: 0, disiscrizioni: 0, health: 0 };
+  // ricariche = location.reload(); sostituzioni = location.replace(url) (la
+  // seconda via, con ?fresh=, quando la prima ricarica non e' bastata)
+  const diario = { ricariche: 0, sostituzioni: [], toast: [], cacheTolte: 0, disiscrizioni: 0, health: 0 };
   const sessione = new Map();
   if (gia) sessione.set('wdeck.stale', gia);
   const state = { version: null, update: null, editing };
@@ -449,7 +453,12 @@ function bancoFreschezza({ mine, editing = false, gia = null }) {
         getRegistration: async () => ({ unregister: async () => { diario.disiscrizioni += 1; } })
       }
     },
-    location: { reload: () => { diario.ricariche += 1; } }
+    location: {
+      reload: () => { diario.ricariche += 1; },
+      replace: (url) => { diario.sostituzioni.push(url); },
+      pathname: '/', search: '', hash: ''
+    },
+    history: { replaceState: () => {} }
   };
 
   const nomi = Object.keys(ambiente);
@@ -459,6 +468,7 @@ function bancoFreschezza({ mine, editing = false, gia = null }) {
     let lastFreshness = 0;
     let staleReloadPending = false;
     let lastAutoCheck = 0;
+    ${impronta[0]}
     ${wrapper[0]}
     ${corpo[0]}
     return checkClientFreshness;
@@ -489,7 +499,7 @@ test('client stantio: si ricontrolla a ogni collegamento, non una volta sola', a
   assert.equal(banco.diario.ricariche, 1, 'build diversa: il client si ricarica da solo');
   assert.ok(banco.diario.cacheTolte > 0, 'prima svuota la cache del guscio');
   assert.equal(banco.diario.disiscrizioni, 1, 'e disiscrive il service worker vecchio');
-  assert.equal(banco.sessione.get('wdeck.stale'), 'build-B', 'segna il tentativo');
+  assert.equal(banco.sessione.get('wdeck.stale'), 'build-B#1', 'segna il primo tentativo per quella build');
 });
 
 test('client stantio: le riconnessioni a raffica non moltiplicano i controlli', async () => {
@@ -513,12 +523,43 @@ test('client stantio: nessuna ricarica a sorpresa mentre si modifica il deck', a
     'e non si consuma il tentativo: la ricarica va fatta uscendo dalla modifica');
 });
 
-test('client stantio: sulla stessa build non si ricarica una seconda volta', async () => {
-  const banco = bancoFreschezza({ mine: 'build-A', gia: 'build-B' });
+test('client stantio: se la prima ricarica non e\' bastata, la seconda chiede l\'indirizzo a prova di cache', async () => {
+  // Dopo la prima ricarica la pagina e' ANCORA vecchia (una cache che non si e'
+  // lasciata svuotare): si riprova una volta con ?fresh=<build>, un indirizzo
+  // che nessuna cache puo' avere gia'. Il segno vecchio senza "#" (client 0.10.2
+  // - 0.10.4) vale come primo tentativo.
+  for (const segno of ['build-B#1', 'build-B']) {
+    const banco = bancoFreschezza({ mine: 'build-A', gia: segno });
+    banco.salute = { ok: true, data: { buildId: 'build-B', version: '0.10.1' } };
+    await banco.check();
+    assert.equal(banco.diario.ricariche, 0, 'niente reload() semplice, non e\' servito');
+    assert.deepEqual(banco.diario.sostituzioni, ['/?fresh=build-B'], `seconda via con ?fresh= (segno ${segno})`);
+    assert.equal(banco.sessione.get('wdeck.stale'), 'build-B#2');
+  }
+});
+
+test('client stantio: al terzo giro sulla stessa build ci si ferma e si avvisa', async () => {
+  const banco = bancoFreschezza({ mine: 'build-A', gia: 'build-B#2' });
   banco.salute = { ok: true, data: { buildId: 'build-B', version: '0.10.1' } };
   await banco.check();
   assert.equal(banco.diario.ricariche, 0, 'nessun ciclo di ricariche');
+  assert.equal(banco.diario.sostituzioni.length, 0);
   assert.ok(banco.diario.toast.includes('update.reloadReady'), 'si avvisa e basta');
+});
+
+test('client stantio: l\'ordine "reload" dell\'host e la build in authOk passano dal controllo di freschezza', () => {
+  const app = leggi('web/app.js');
+  assert.match(app, /type: MSG\.auth, token: token\(\), build: clientBuild\(\)/, 'il client dichiara la sua build all\'host');
+  assert.match(app, /if \(msg\.event === 'reload'\) reloadOnCommand\(msg\.data\);/, 'l\'evento reload va gestito');
+  const corpo = app.match(/function reloadOnCommand\([\s\S]*?\n\}/);
+  assert.ok(corpo, 'serve reloadOnCommand');
+  assert.match(corpo[0], /lastFreshness = 0;/, 'l\'ordine toglie il freno dei 5 secondi');
+  assert.match(corpo[0], /checkClientFreshness\(\)/);
+  // e il service worker che ha appena attivato uno shell nuovo fa ricaricare da solo
+  const sw = app.match(/wdeck-shell-updated[\s\S]*?\n  \}\);/);
+  assert.ok(sw, 'manca la gestione del messaggio del service worker');
+  assert.match(sw[0], /location\.reload\(\)/, 'shell nuovo in cache: si ricarica senza chiedere');
+  assert.match(sw[0], /staleReloadPending = true/, 'ma non sotto le mani di chi modifica');
 });
 
 test('client stantio: host irraggiungibile non provoca ricariche', async () => {

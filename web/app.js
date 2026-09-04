@@ -375,7 +375,9 @@ function connect() {
   state.socket = socket;
 
   socket.addEventListener('open', () => {
-    socket.send(JSON.stringify({ type: MSG.auth, token: token() }));
+    // La build di questa pagina viaggia con l'autenticazione: se non e' quella
+    // dell'host, l'host risponde con l'ordine di ricaricarsi (evento "reload").
+    socket.send(JSON.stringify({ type: MSG.auth, token: token(), build: clientBuild() }));
   });
 
   socket.addEventListener('message', (event) => {
@@ -418,6 +420,9 @@ function handleMessage(msg) {
       setStatus('online', t('status.online'));
       renderHosts();
       autoCheckUpdate();
+      // L'host dichiara la sua build: se non e' quella di questa pagina il
+      // controllo parte subito, senza il freno dei 5 secondi.
+      if (msg.build && clientBuild() && msg.build !== clientBuild()) lastFreshness = 0;
       checkClientFreshness();
       // Deep-link dalla tray: "#settings" apre le impostazioni, "#update" apre
       // le impostazioni e avvia l'aggiornamento con la barra di avanzamento
@@ -467,6 +472,7 @@ function handleMessage(msg) {
       if (msg.event === 'press') renderLastAction(msg.data);
       if (msg.event === 'update') showUpdate(msg.data);
       if (msg.event === 'update-progress') renderUpdateProgress(msg.data);
+      if (msg.event === 'reload') reloadOnCommand(msg.data);
       break;
 
     case MSG.error:
@@ -750,6 +756,7 @@ function clearDynTimer() { if (dynTimer) { clearInterval(dynTimer); dynTimer = n
 function renderGrid() {
   const page = currentPage();
   if (!page) return;
+  applyPageBackground(page);
 
   // Le pagine dinamiche (finestre/app/widget) prendono i tile dall'host e hanno
   // un rendering e un ciclo di aggiornamento propri.
@@ -792,22 +799,71 @@ function renderGrid() {
 }
 
 /**
- * Legenda dei gruppi: sotto le pagine mostra un "chip" colorato con la label di
- * ogni gruppo, cosi' si riconosce a colpo d'occhio a cosa serve ogni colore.
+ * Sfondo della pagina (`page.background`): un colore, una sfumatura fra due
+ * colori, un'immagine caricata, o le tre cose insieme (l'immagine sopra, il
+ * colore sotto). Assente = sfondo del tema. Si applica alla griglia, cosi' la
+ * barra in alto resta leggibile qualunque cosa ci sia sotto i tasti.
+ * @returns {string} il valore CSS di `background`, o '' se nessuno sfondo
  */
+function pageBackgroundCss(bg) {
+  const c1 = cssColor(bg?.color);
+  const c2 = cssColor(bg?.color2);
+  const strati = [];
+  if (bg?.image) strati.push(`url("${customIconUrl(bg.image)}") center / cover no-repeat`);
+  if (c1) strati.push(c2 ? `linear-gradient(160deg, ${c1}, ${c2})` : c1);
+  return strati.join(', ');
+}
+
+function applyPageBackground(page) {
+  const css = pageBackgroundCss(page.background);
+  ui.grid.classList.toggle('has-bg', Boolean(css));
+  if (css) ui.grid.style.setProperty('--page-bg', css);
+  else ui.grid.style.removeProperty('--page-bg');
+}
+
+/**
+ * Legenda dei gruppi: sotto le pagine mostra un "chip" colorato con la label e
+ * il numero di tasti di ogni gruppo. Toccando un chip si EVIDENZIANO i tasti
+ * del gruppo (gli altri si spengono), cosi' su una pagina piena si trovano
+ * subito; un secondo tocco, o il cambio pagina, rimette tutto come prima.
+ */
+const groupFocus = { pageKey: null, id: null };
+
 function renderGroupLegend(page) {
   if (!ui.groupLegend) return;
   const groups = page.groups ?? [];
+  const chiave = `${state.profileId}/${page.id}`;
+  if (groupFocus.pageKey !== chiave) { groupFocus.pageKey = chiave; groupFocus.id = null; }
+  if (groupFocus.id && !groups.some((g) => g.id === groupFocus.id)) groupFocus.id = null;
   if (!groups.length) {
     ui.groupLegend.hidden = true;
     ui.groupLegend.innerHTML = '';
+    applyGroupFocus();
     return;
   }
   ui.groupLegend.hidden = false;
-  ui.groupLegend.innerHTML = groups.map((g) =>
-    `<span class="group-chip" style="--group-color:${cssColor(g.color) || 'var(--accent)'}">`
-    + `<span class="group-dot"></span>${escapeHtml(g.label)}</span>`
-  ).join('');
+  ui.groupLegend.innerHTML = groups.map((g) => {
+    const n = (page.buttons ?? []).filter((b) => b.group === g.id).length;
+    return `<button type="button" class="group-chip" data-group="${escapeHtml(g.id)}" aria-pressed="${groupFocus.id === g.id}"`
+      + ` title="${escapeHtml(t('legend.tapHint'))}" style="--group-color:${cssColor(g.color) || 'var(--accent)'}">`
+      + `<span class="group-dot"></span>${escapeHtml(g.label)}<span class="group-n">${n}</span></button>`;
+  }).join('');
+  applyGroupFocus();
+}
+
+function toggleGroupFocus(id) {
+  groupFocus.id = groupFocus.id === id ? null : id;
+  applyGroupFocus();
+}
+
+/** Allinea griglia e legenda al gruppo evidenziato (o a nessuno). */
+function applyGroupFocus() {
+  const id = groupFocus.id;
+  ui.grid.classList.toggle('group-focus', Boolean(id));
+  for (const tile of ui.grid.children) tile.classList.toggle('in-group', Boolean(id) && tile.dataset.group === id);
+  for (const chip of ui.groupLegend?.querySelectorAll('.group-chip') ?? []) {
+    chip.setAttribute('aria-pressed', String(chip.dataset.group === id));
+  }
 }
 
 // ------------------------------------------------- pagine dinamiche
@@ -2513,13 +2569,92 @@ async function moveButton(buttonId, target) {
 
 // ------------------------------------------------- pagine
 
+/** Bozza dello sfondo nel pannello pagina (letta da savePage). */
+let pageBgDraft = null;
+
+/** Sfumature pronte: [colore, secondo colore o null]. Le prime scure, le ultime chiare. */
+const BG_PRESETS = [
+  ['#0f172a', '#1e293b'], ['#0b3d5c', '#0a6c8c'], ['#14532d', '#1f7a3e'], ['#3b0764', '#6d28d9'],
+  ['#4a1030', '#7a1f4a'], ['#7c2d12', '#c2410c'], ['#1f2937', null], ['#f5e9d6', '#e8d5b5'], ['#f8fafc', null]
+];
+
+/** Da bozza a `page.background` (null = sfondo del tema). */
+function backgroundFromDraft(d) {
+  if (!d) return null;
+  const out = {};
+  if (d.on) {
+    out.color = d.color;
+    if (d.gradient) out.color2 = d.color2;
+  }
+  if (d.image) out.image = d.image;
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Riduce un'immagine (lato lungo 1400 px, JPEG) finche' sta nel limite delle
+ * immagini dell'host, e la restituisce come data URL. SVG e GIF passano cosi'
+ * come sono. Una foto da telefono e' 3-5 MB: senza questo passaggio l'host la
+ * rifiuterebbe sempre.
+ */
+async function shrinkImage(file) {
+  const leggi = () => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('file illeggibile'));
+    reader.readAsDataURL(file);
+  });
+  if (file.type === 'image/svg+xml' || file.type === 'image/gif') return leggi();
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) return leggi();
+  const LIMITE = 185 * 1024; // poco sotto i 192 KB dell'host
+  const canvas = document.createElement('canvas');
+  let ultimo = '';
+  for (const lato of [1400, 1000, 720, 480]) {
+    const scala = Math.min(1, lato / Math.max(bitmap.width, bitmap.height));
+    canvas.width = Math.max(1, Math.round(bitmap.width * scala));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scala));
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    for (const q of [0.82, 0.7, 0.55]) {
+      ultimo = canvas.toDataURL('image/jpeg', q);
+      if (ultimo.length * 0.75 < LIMITE) return ultimo;
+    }
+  }
+  return ultimo;
+}
+
+/** Carica un'immagine fra quelle dell'host e ne restituisce il nome. */
+async function uploadPageImage(file) {
+  const content = await shrinkImage(file);
+  const name = uniqueSlug(
+    slugify(file.name.replace(/\.[^.]+$/, ''), 'sfondo'),
+    (await loadCustomIcons()).map((i) => i.name)
+  );
+  const res = await api(ENDPOINTS.icons, { method: 'POST', body: { name, content } });
+  if (!res.ok) throw new Error(res.data?.error?.message ?? t('edit.rejected'));
+  await loadCustomIcons({ force: true });
+  return res.data.icon.name;
+}
+
 /** Pannello di gestione di una pagina. */
-function editPage(pageId) {
+async function editPage(pageId) {
+  // Riletta ogni volta: un'immagine caricata da un altro dispositivo (o
+  // dall'editor del tasto) deve comparire fra gli sfondi senza ricaricare.
+  const customIcons = await loadCustomIcons({ force: true });
   const profile = currentProfile();
   const page = findPage(profile, pageId) ?? currentPage();
   const isLast = profile.pages.length <= 1;
   const index = profile.pages.findIndex((p) => p.id === page.id);
   const isDefault = profile.defaultPage === page.id;
+  // Bozza dello sfondo: i colori di partenza sono quelli salvati, o due toni
+  // del tema scuro se la pagina non ha ancora uno sfondo suo.
+  const bg0 = {
+    on: Boolean(page.background?.color),
+    color: cssColor(page.background?.color) || '#1e293b',
+    color2: cssColor(page.background?.color2) || '#0f172a',
+    gradient: Boolean(page.background?.color2),
+    image: page.background?.image ?? ''
+  };
+  pageBgDraft = { ...bg0 };
 
   openSheet({
     title: t('page.title', { name: page.name }),
@@ -2548,6 +2683,24 @@ function editPage(pageId) {
       <p class="sheet-hint">${t('page.groupsHint')}</p>
       <div id="pg-groups" class="pg-groups"></div>
       <button class="btn ghost small" type="button" id="pg-add-group">${t('page.addGroup')}</button>
+
+      <h3 class="sheet-section">${t('page.background')}</h3>
+      <p class="sheet-hint">${t('page.backgroundHint')}</p>
+      <div id="pg-bg-swatches" class="pg-swatches" role="group" aria-label="${escapeHtml(t('page.background'))}"></div>
+      <div class="field-row">
+        <label class="field"><span>${t('page.bgColor')}</span><input id="pg-bg-1" type="color" value="${bg0.color}" /></label>
+        <label class="field"><span>${t('page.bgColor2')}</span><input id="pg-bg-2" type="color" value="${bg0.color2}" /></label>
+      </div>
+      <label class="field checkbox"><input id="pg-bg-grad" type="checkbox"${bg0.gradient ? ' checked' : ''} /><span>${t('page.bgGradient')}</span></label>
+      <label class="field"><span>${t('page.bgImage')}</span><select id="pg-bg-image" class="select wide">
+        <option value="">${t('page.bgImageNone')}</option>
+        ${customIcons.map((i) => `<option value="${escapeHtml(i.name)}"${bg0.image === i.name ? ' selected' : ''}>${escapeHtml(i.name)}</option>`).join('')}
+      </select></label>
+      <div class="field-row bg-upload">
+        <label class="btn ghost small file-btn">${t('page.bgUpload')}<input id="pg-bg-file" type="file" accept="image/*" hidden /></label>
+        <span id="pg-bg-msg" class="sheet-hint"></span>
+      </div>
+      <div class="pg-bg-preview" id="pg-bg-preview" aria-hidden="true"><span></span><span></span><span></span></div>
     `,
     actions: [
       ...(isLast ? [] : [{ label: t('sheet.delete'), kind: 'danger', onClick: () => removePage(page.id) }]),
@@ -2578,6 +2731,63 @@ function editPage(pageId) {
   }
   (page.groups ?? []).forEach((g) => addGroupRow(g));
   el('pg-add-group').addEventListener('click', () => addGroupRow(null));
+
+  // Sezione sfondo: tavolozza, due colori, immagine; l'anteprima segue la bozza.
+  const swatches = el('pg-bg-swatches');
+  const swatchHtml = ([c1, c2]) => `<button type="button" class="pg-swatch" data-c1="${c1}" data-c2="${c2 ?? ''}"`
+    + ` title="${c1}${c2 ? ` / ${c2}` : ''}" style="--sw:${c2 ? `linear-gradient(160deg, ${c1}, ${c2})` : c1}"></button>`;
+  swatches.innerHTML = `<button type="button" class="pg-swatch theme" data-theme="1" title="${escapeHtml(t('page.bgTheme'))}">${escapeHtml(t('page.bgTheme'))}</button>`
+    + BG_PRESETS.map(swatchHtml).join('');
+  const syncBg = () => {
+    const d = pageBgDraft;
+    el('pg-bg-1').value = d.color;
+    el('pg-bg-2').value = d.color2;
+    el('pg-bg-grad').checked = d.gradient;
+    el('pg-bg-image').value = d.image;
+    for (const b of swatches.querySelectorAll('.pg-swatch')) {
+      const attivo = b.dataset.theme
+        ? !d.on && !d.image
+        : d.on && b.dataset.c1 === d.color && (b.dataset.c2 || '') === (d.gradient ? d.color2 : '');
+      b.setAttribute('aria-pressed', String(attivo));
+    }
+    el('pg-bg-preview').style.background = pageBackgroundCss(backgroundFromDraft(d)) || 'var(--bg)';
+  };
+  swatches.addEventListener('click', (event) => {
+    const b = event.target.closest('.pg-swatch');
+    if (!b) return;
+    if (b.dataset.theme) {
+      pageBgDraft.on = false;
+      pageBgDraft.image = '';
+    } else {
+      pageBgDraft.on = true;
+      pageBgDraft.color = b.dataset.c1;
+      pageBgDraft.gradient = Boolean(b.dataset.c2);
+      if (b.dataset.c2) pageBgDraft.color2 = b.dataset.c2;
+    }
+    syncBg();
+  });
+  el('pg-bg-1').addEventListener('input', (event) => { pageBgDraft.on = true; pageBgDraft.color = event.target.value; syncBg(); });
+  el('pg-bg-2').addEventListener('input', (event) => { pageBgDraft.on = true; pageBgDraft.gradient = true; pageBgDraft.color2 = event.target.value; syncBg(); });
+  el('pg-bg-grad').addEventListener('change', (event) => { pageBgDraft.on = true; pageBgDraft.gradient = event.target.checked; syncBg(); });
+  el('pg-bg-image').addEventListener('change', (event) => { pageBgDraft.image = event.target.value; syncBg(); });
+  el('pg-bg-file').addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const message = el('pg-bg-msg');
+    message.textContent = t('page.bgUploading');
+    try {
+      const name = await uploadPageImage(file);
+      const select = el('pg-bg-image');
+      if (![...select.options].some((o) => o.value === name)) select.add(new Option(name, name));
+      pageBgDraft.image = name;
+      message.textContent = '';
+      syncBg();
+    } catch (err) {
+      message.textContent = err.message;
+    }
+  });
+  syncBg();
 }
 
 async function savePage(pageId) {
@@ -2603,6 +2813,10 @@ async function savePage(pageId) {
   // altrimenti la validazione dell'host rifiuterebbe il deck.
   const validGroupIds = new Set(groups.map((g) => g.id));
   for (const b of page.buttons) if (b.group && !validGroupIds.has(b.group)) b.group = null;
+
+  // Sfondo: dalla bozza del pannello; nessuno sfondo = campo assente.
+  const background = backgroundFromDraft(pageBgDraft);
+  if (background) page.background = background; else delete page.background;
 
   await persistDeck(deck, t('page.saved', { name: page.name }));
 }
@@ -3069,8 +3283,25 @@ async function checkClientFreshness() {
   }
 }
 
+/** Impronta della build di QUESTA pagina (dal <meta>, quindi della copia in cache). */
+function clientBuild() {
+  return document.querySelector('meta[name="wdeck-build"]')?.content ?? '';
+}
+
+/**
+ * Ordine di ricarica dall'host (evento `reload`): arriva al collegamento
+ * quando la build dichiarata da questa pagina non e' quella dell'host. Fa il
+ * giro completo (confronto, pulizia della cache, ricarica) senza freni.
+ */
+function reloadOnCommand(data) {
+  const mine = clientBuild();
+  if (data?.build && mine && data.build === mine) return; // gia' allineati
+  lastFreshness = 0;
+  checkClientFreshness();
+}
+
 async function freshnessRun() {
-  const mine = document.querySelector('meta[name="wdeck-build"]')?.content ?? '';
+  const mine = clientBuild();
   if (!mine) return; // build non marcata (sviluppo): niente da confrontare
 
   let hostBuild;
@@ -3106,6 +3337,10 @@ async function freshnessRun() {
 
   if (hostBuild === mine) {
     try { sessionStorage.removeItem('wdeck.stale'); } catch { /* storage assente */ }
+    // La ricarica "a prova di cache" lascia ?fresh= nell'indirizzo: via, non serve piu'.
+    if (/[?&]fresh=/.test(location.search)) {
+      try { history.replaceState(null, '', location.pathname + location.hash); } catch { /* history non disponibile */ }
+    }
     // Client allineato all'host: e' il momento buono per raccontare le novita'
     // se veniamo da un aggiornamento (versione cambiata da quella vista prima).
     maybeWhatsNew(hostVersion);
@@ -3115,9 +3350,17 @@ async function freshnessRun() {
   // Disallineati: la pagina e' vecchia. Ci si guarisce una sola volta per ogni
   // build dell'host; se dopo la ricarica e' ancora diversa (caso raro) ci si
   // limita ad avvisare, per non entrare in un ciclo di ricariche.
-  let gia = false;
-  try { gia = sessionStorage.getItem('wdeck.stale') === hostBuild; } catch { /* storage assente */ }
-  if (gia) {
+  // Quanti tentativi sono gia' stati fatti per QUESTA build dell'host. Il
+  // primo e' una ricarica normale dopo la pulizia; il secondo chiede l'indirizzo
+  // con un parametro che nessuna cache (service worker o browser) puo' avere
+  // gia'. Al terzo ci si ferma e si avvisa: meglio una pagina vecchia che un
+  // ciclo di ricariche.
+  let tentativi = 0;
+  try {
+    const segno = sessionStorage.getItem('wdeck.stale') ?? '';
+    if (segno.split('#')[0] === hostBuild) tentativi = Number(segno.split('#')[1]) || 1;
+  } catch { /* storage assente */ }
+  if (tentativi >= 2) {
     toast(t('update.reloadReady'), '');
     return;
   }
@@ -3130,7 +3373,7 @@ async function freshnessRun() {
     return;
   }
 
-  try { sessionStorage.setItem('wdeck.stale', hostBuild); } catch { /* storage assente */ }
+  try { sessionStorage.setItem('wdeck.stale', `${hostBuild}#${tentativi + 1}`); } catch { /* storage assente */ }
 
   toast(t('update.refreshing'), '');
   try {
@@ -3141,7 +3384,8 @@ async function freshnessRun() {
     const reg = await navigator.serviceWorker?.getRegistration?.();
     await reg?.unregister?.();
   } catch { /* se la pulizia fallisce si ricarica lo stesso: meglio che restare vecchi */ }
-  location.reload();
+  if (tentativi === 0) location.reload();
+  else location.replace(`${location.pathname}?fresh=${encodeURIComponent(hostBuild)}${location.hash}`);
 }
 
 /**
@@ -3490,6 +3734,11 @@ function bindEvents() {
       return;
     }
     goToPage(tab.dataset.page);
+  });
+
+  ui.groupLegend?.addEventListener('click', (event) => {
+    const chip = event.target.closest('.group-chip');
+    if (chip?.dataset.group) toggleGroupFocus(chip.dataset.group);
   });
 
   bindGrid();
@@ -4301,7 +4550,18 @@ if ('serviceWorker' in navigator) {
   // Il service worker avvisa quando una build nuova ha rimpiazzato lo shell:
   // senza ricaricare si continuerebbe a usare il vecchio app.js gia' in memoria.
   navigator.serviceWorker.addEventListener('message', (event) => {
-    if (event.data?.type === 'wdeck-shell-updated') toast(t('update.reloadReady'), '');
+    if (event.data?.type !== 'wdeck-shell-updated') return;
+    // Ricarica da sola: lo shell nuovo e' gia' in cache, e senza ricaricare
+    // resterebbero in memoria il vecchio app.js e il vecchio foglio di stile,
+    // cioe' un'app che dice di essere aggiornata ma non lo e'. Solo mentre si
+    // modifica il deck si rimanda (setEditing la fa uscendo dalla modifica).
+    if (state.editing) {
+      staleReloadPending = true;
+      toast(t('update.reloadReady'), '');
+      return;
+    }
+    toast(t('update.refreshing'), '');
+    setTimeout(() => location.reload(), 400);
   });
 }
 

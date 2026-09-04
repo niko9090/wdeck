@@ -8,6 +8,8 @@
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+/** Nome di un'immagine caricata (come ICON_NAME_RE in icons.mjs). */
+const IMAGE_NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const PIN_RE = /^[0-9]{4,12}$/;
 
 export const LIMITS = Object.freeze({
@@ -444,6 +446,34 @@ function validateGroups(ctx, gpath, groups) {
   return ids;
 }
 
+/**
+ * Valida `page.background` (sfondo della pagina): un colore, o due per una
+ * sfumatura. Assente = sfondo del tema.
+ */
+function validateBackground(ctx, gpath, background) {
+  if (background === undefined || background === null) return;
+  const path = `${gpath}.background`;
+  if (!isPlainObject(background)) {
+    ctx.err(path, 'atteso oggetto { color, color2? }');
+    return;
+  }
+  // Serve almeno un colore o un'immagine: un oggetto vuoto non e' uno sfondo.
+  if (background.color === undefined && background.image === undefined) {
+    ctx.err(path, 'indicare almeno color o image');
+  }
+  if (background.color !== undefined && background.color !== null) {
+    checkString(ctx, `${path}.color`, background.color, { pattern: HEX_COLOR_RE, label: 'colore hex' });
+  }
+  if (background.color2 !== undefined && background.color2 !== null) {
+    checkString(ctx, `${path}.color2`, background.color2, { pattern: HEX_COLOR_RE, label: 'colore hex' });
+  }
+  // L'immagine e' il nome di un'immagine caricata dall'utente (stesso deposito
+  // delle icone personalizzate, vedi src/host/icons.mjs).
+  if (background.image !== undefined && background.image !== null) {
+    checkString(ctx, `${path}.image`, background.image, { pattern: IMAGE_NAME_RE, label: 'nome immagine (minuscole, cifre e -)' });
+  }
+}
+
 function validateButton(ctx, path, button, page, seen, actionTypes, groupIds = new Set()) {
   if (!isPlainObject(button)) {
     ctx.err(path, 'atteso oggetto bottone');
@@ -717,6 +747,7 @@ export function validateDeck(raw, options = {}) {
         // I gruppi visivi (label + colore) sono opzionali; qui si raccolgono gli
         // id validi per poter poi controllare i riferimenti `button.group`.
         const groupIds = validateGroups(ctx, gpath, page.groups);
+        validateBackground(ctx, gpath, page.background);
         const seen = { cells: new Map(), buttonIds };
         page.buttons.forEach((button, bi) => {
           validateButton(ctx, `${gpath}.buttons[${bi}]`, button, page, seen, actionTypes, groupIds);
@@ -758,6 +789,9 @@ export function normalizeDeck(raw) {
       rows: page.rows,
       cols: page.cols,
       source: page.source ?? null,
+      background: page.background
+        ? { color: page.background.color ?? null, color2: page.background.color2 ?? null, image: page.background.image ?? null }
+        : null,
       groups: (page.groups ?? []).map((group) => ({
         id: group.id,
         label: group.label,

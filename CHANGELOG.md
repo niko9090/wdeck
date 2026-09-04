@@ -5,6 +5,38 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.10.5] - 2026-09-04
+
+### Corretto
+
+- **Salvare qualunque cosa dall'editor cancellava i gruppi, il tipo di pagina
+  (Finestre/App/Widget) e il gruppo di ogni tasto.** Il file veniva riscritto
+  da un elenco esplicito di campi in cui quei tre non c'erano mai stati: era
+  il difetto "le modifiche non vengono registrate". Ora restano.
+- **Dopo un aggiornamento dell'host, il deck si ricarica su comando.** Ogni
+  client dichiara la propria build al collegamento e l'host, se non e' la
+  sua, gli ordina di ricaricarsi (pulizia cache compresa). Il client si
+  ricarica da solo anche quando il service worker attiva uno shell nuovo
+  (prima si limitava a un avviso "ricarica la pagina"). Se la prima ricarica
+  non basta, la seconda usa un indirizzo che nessuna cache puo' avere gia'.
+- **La notifica sul PC teneva il tasto occupato 8-10 secondi**: aspettava
+  che il fumetto sparisse. Ora il tasto e' libero subito.
+- **Dopo un riavvio (aggiornamento) restava un'icona "Wdeck" fantasma nella
+  barra** accanto a quella nuova: l'icona veniva uccisa senza potersi
+  togliere. Ora si chiude da sola.
+
+### Aggiunto
+
+- **Sfondo delle pagine.** Dal pannello della pagina (in modifica, tocca la
+  matita sulla scheda): tavolozza di sfumature pronte, due colori a scelta, o
+  una foto (ridotta da sola prima di caricarla, cosi' passa il limite
+  dell'host). "Tema" rimette lo sfondo di sempre.
+- **Gruppi piu' facili da trovare.** I chip della legenda sono tasti: toccane
+  uno e i tasti del gruppo restano accesi con un alone mentre gli altri si
+  spengono; un altro tocco (o il cambio pagina) rimette tutto. Ogni chip
+  mostra quanti tasti ha, e i tile di un gruppo prendono una tinta del suo
+  colore, non solo la barretta sul bordo.
+
 ## [0.10.4] - 2026-09-03
 
 ### Cambiato

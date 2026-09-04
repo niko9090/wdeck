@@ -8,6 +8,13 @@
  */
 
 export const WHATSNEW = {
+  '0.10.5': [
+    "Corretto: salvare dall'editor non cancella piu' i gruppi, il tipo di pagina e il gruppo dei tasti (era il motivo per cui certe modifiche sparivano).",
+    "Corretto: dopo un aggiornamento il deck sul telefono si ricarica da solo, su ordine dell'host, invece di restare alla versione vecchia.",
+    "Nuovo: sfondo delle pagine (colore, sfumatura o foto) dal pannello della pagina.",
+    "Nuovo: tocca un gruppo nella legenda e i suoi tasti restano accesi mentre gli altri si spengono, cosi' li trovi subito.",
+    "Corretto: la notifica sul PC non tiene piu' il tasto occupato per 8 secondi; e alla chiusura non resta un'icona Wdeck fantasma nella barra."
+  ],
   '0.10.4': [
     "Nuovo: la barra in alto e' una riga sola e bassa, e la riga di stato in fondo non c'e' piu': lo spazio va ai tasti.",
     "Nuovo: lo schermo del telefono o tablet resta acceso finche' il deck e' aperto (si disattiva dalle impostazioni).",

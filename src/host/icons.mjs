@@ -217,6 +217,8 @@ export function createIconStore({ dir, logger = console }) {
       const out = [];
       for (const profile of deck?.profiles ?? []) {
         for (const page of profile.pages ?? []) {
+          // Un'immagine puo' anche fare da sfondo a una pagina.
+          if (page.background?.image === name) out.push(`pagina:${page.id}`);
           for (const button of page.buttons ?? []) {
             if (button.icon === ref) out.push(button.id);
           }

@@ -571,22 +571,27 @@ export function createHost(options = {}) {
   });
 
   /** Ferma il server e libera le risorse. */
-  host.stop = () => new Promise((resolve) => {
+  host.stop = async () => {
     configStore.close();
     host.updates.stop();
     status.stop();
     host.mdns?.stop();
-    host.tray?.stop();
+    // L'icona nella barra si chiude da sola (fino a 1,5 s): si aspetta, cosi'
+    // un riavvio per aggiornamento non lascia un'icona fantasma.
+    const trayClosed = host.tray?.stop() ?? Promise.resolve();
     stopKeyServer();
     stopLevelServer();
     hub.close();
     upgrades.closeAll();
-    if (!server.listening) return resolve();
-    server.close(() => resolve());
-    // forza la chiusura delle connessioni keep-alive
-    server.closeAllConnections?.();
-    return undefined;
-  });
+    if (server.listening) {
+      await new Promise((resolve) => {
+        server.close(() => resolve());
+        // forza la chiusura delle connessioni keep-alive
+        server.closeAllConnections?.();
+      });
+    }
+    await trayClosed;
+  };
 
   return host;
 }
