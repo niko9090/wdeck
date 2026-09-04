@@ -5,6 +5,13 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.10.8] - 2026-09-05
+
+### Cambiato
+
+- **Il contorno dei gruppi e' piu' spesso** (almeno 4 pixel, di piu' su
+  schermi grandi) e il riempimento leggermente piu' visibile.
+
 ## [0.10.7] - 2026-09-05
 
 ### Cambiato

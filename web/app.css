@@ -483,9 +483,11 @@ body.has-bg .grid,
   z-index: 2;
 }
 .group-outlines path {
-  fill: color-mix(in srgb, var(--group-color) 10%, transparent);
+  fill: color-mix(in srgb, var(--group-color) 12%, transparent);
   stroke: var(--group-color);
-  stroke-width: 2;
+  /* "troppo sottile": almeno 4px, e cresce col gap (il contorno corre a meta'
+     del gap, quindi puo' occuparne al massimo la meta' senza toccare i tile) */
+  stroke-width: max(4px, calc(var(--gap) * 0.55));
   stroke-linejoin: round;
   transition: opacity 160ms ease;
 }

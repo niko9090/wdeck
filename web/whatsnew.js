@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.10.8': [
+    "Cambiato: il contorno dei gruppi e' piu' spesso e si vede meglio."
+  ],
   '0.10.7': [
     "Cambiato: i gruppi sono un insieme contornato. Una linea del colore del gruppo circonda i suoi tasti affiancati, col nome sul bordo. Tienili vicini: se li allontani il contorno si spezza e l'editor avvisa."
   ],
