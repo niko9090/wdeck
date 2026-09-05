@@ -3725,9 +3725,11 @@ async function startUpdate(versione) {
   openSheet({
     title: t('settings.installTitle'),
     body: `
-      <p class="sheet-text" id="upd-phase">${t('settings.installing')}</p>
-      <div class="update-bar"><div class="update-bar-fill" id="upd-fill"></div></div>
-      <p class="sheet-hint" id="upd-detail"></p>
+      <div class="update-progress">
+        <p class="sheet-text" id="upd-phase">${t('settings.installing')}</p>
+        <div class="update-bar"><div class="update-bar-fill" id="upd-fill"></div></div>
+        <p class="sheet-hint" id="upd-detail">&nbsp;</p>
+      </div>
     `
   });
 
