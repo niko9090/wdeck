@@ -71,6 +71,8 @@ const state = {
   socket: null,
   connected: false,
   retry: 0,
+  /** vero dopo che, in questo collegamento, si e' detto all'host su che pagina si sta */
+  claimedPage: false,
   requestSeq: 0,
   pending: new Map(),
   /** azioni disponibili sull'host, caricate alla prima apertura dell'editor */
@@ -419,6 +421,7 @@ function handleMessage(msg) {
     case MSG.authOk:
       state.connected = true;
       state.retry = 0;
+      state.claimedPage = false;
       setStatus('online', t('status.online'));
       renderHosts();
       autoCheckUpdate();
@@ -443,6 +446,18 @@ function handleMessage(msg) {
       if (msg.state) applyState(msg.state);
       applyTheme(msg.deck.ui);
       renderAll();
+      // Al (ri)collegamento il client dice all'host su che pagina sta. Dopo un
+      // riavvio (aggiornamento) l'host riparte dalla pagina iniziale e il
+      // lettore di stato interroga QUELLA: i quadranti della pagina davvero
+      // aperta sul telefono restavano muti (il grafico "Rete" piatto).
+      if (!state.claimedPage && msg.state) {
+        state.claimedPage = true;
+        const profile = currentProfile();
+        const page = currentPage();
+        if (profile && page && (msg.state.activeProfile !== profile.id || msg.state.activePage !== page.id)) {
+          send({ type: MSG.navigate, profile: profile.id, page: page.id });
+        }
+      }
       break;
 
     case MSG.state:

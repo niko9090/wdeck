@@ -5,6 +5,15 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.11.2] - 2026-09-06
+
+### Corretto
+
+- **Dopo un riavvio dell'host i quadranti della pagina aperta sul telefono
+  restavano muti** (grafico "Rete" piatto, CPU "--"): l'host ripartiva dalla
+  pagina iniziale e leggeva lo stato solo di quella. Ora il deck, appena
+  ricollegato, dice all'host su che pagina sta, e la lettura riparte subito.
+
 ## [0.11.1] - 2026-09-06
 
 ### Corretto

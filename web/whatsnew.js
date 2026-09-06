@@ -8,6 +8,9 @@
  */
 
 export const WHATSNEW = {
+  '0.11.2': [
+    "Corretto: dopo un riavvio dell'host i quadranti (CPU, rete, memoria) della pagina aperta sul telefono restavano vuoti finche' non si cambiava pagina."
+  ],
   '0.11.1': [
     "Corretto: quadrante, livello, grafico e display ora mostrano dati veri del PC (azione \"Stato del PC\": CPU, memoria, disco, rete, acceso da, ora).",
     "Corretto: la tavoletta del puntatore e i cursori non si bloccano piu' dopo qualche secondo di trascinamento, e il puntatore segue il dito.",
