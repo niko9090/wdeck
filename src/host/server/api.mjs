@@ -245,6 +245,41 @@ export function createApiRouter(host) {
       sendJson(res, 200, { ok: true, deck: publicDeck(result.deck), state: state.snapshot(), backup: result.backup });
     },
 
+    // Annulla l'ultima modifica: rimette la copia precedente di deck.json
+    // (l'host ne tiene fino a 10 a ogni salvataggio).
+    [`POST ${ENDPOINTS.deckRestore}`]: (req, res) => {
+      if (!requireAuth(req, res)) return;
+      const esito = host.restoreDeck();
+      if (!esito.ok) {
+        sendError(res, esito.status ?? 409, ERROR_CODES.badRequest, esito.error);
+        return;
+      }
+      sendJson(res, 200, { ok: true, restored: esito.restored, remaining: esito.remaining, deck: publicDeck(configStore.get()), state: state.snapshot() });
+    },
+
+    // Riavvio dell'host (dalla tray): solo nell'eseguibile installato, dove
+    // esiste un exe da rilanciare.
+    [`POST ${ENDPOINTS.restart}`]: (req, res) => {
+      if (!requireAuth(req, res)) return;
+      if (!host.selfUpdate?.support?.supported) {
+        sendError(res, 409, ERROR_CODES.forbidden, 'riavvio disponibile solo nell\'eseguibile installato');
+        return;
+      }
+      sendJson(res, 200, { ok: true });
+      host.selfUpdate.restart();
+    },
+
+    // Icona di un programma (.exe/.lnk) salvata fra le icone personalizzate.
+    [`GET ${ENDPOINTS.appIcon}`]: async (req, res, url) => {
+      if (!requireAuth(req, res)) return;
+      try {
+        const icon = await host.extractAppIcon(url.searchParams.get('path'));
+        sendJson(res, 200, { ok: true, icon });
+      } catch (err) {
+        sendError(res, 400, ERROR_CODES.badRequest, err.message);
+      }
+    },
+
     [`GET ${ENDPOINTS.settings}`]: (req, res) => {
       if (!requireAuth(req, res)) return;
       const deck = configStore.get();

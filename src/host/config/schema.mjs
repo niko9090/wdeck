@@ -15,6 +15,8 @@ const PIN_RE = /^[0-9]{4,12}$/;
 export const LIMITS = Object.freeze({
   maxRows: 8,
   maxCols: 12,
+  maxSpanRows: 3,
+  maxAppsPerProfile: 16,
   maxLabel: 48,
   maxGroupLabel: 32,
   maxGroupsPerPage: 24,
@@ -49,7 +51,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
       auth: { windowMs: 300000, max: 10 }
     }
   },
-  ui: { theme: 'dark', style: 'default', accent: '#4c8dff', showLabels: true, language: 'auto', keepAwake: true },
+  ui: {
+    theme: 'dark', style: 'default', accent: '#4c8dff', showLabels: true, language: 'auto', keepAwake: true,
+    // profili per applicazione, schermo che si abbassa dopo N minuti (0 = mai),
+    // vibrazione e suono al tocco, lampo del tasto quando l'host ha eseguito
+    autoProfile: true, dimAfterMin: 0, haptics: true, clickSound: false, flashOnDone: true
+  },
   status: { enabled: true, intervalMs: 8000 },
   discovery: { enabled: true },
   tray: { enabled: true },
@@ -383,6 +390,11 @@ function validateSettings(ctx, settings) {
       if (ui.accent !== undefined) checkString(ctx, 'settings.ui.accent', ui.accent, { pattern: HEX_COLOR_RE, label: 'colore hex' });
       checkBool(ctx, 'settings.ui.showLabels', ui.showLabels);
       checkBool(ctx, 'settings.ui.keepAwake', ui.keepAwake);
+      checkBool(ctx, 'settings.ui.autoProfile', ui.autoProfile);
+      checkBool(ctx, 'settings.ui.haptics', ui.haptics);
+      checkBool(ctx, 'settings.ui.clickSound', ui.clickSound);
+      checkBool(ctx, 'settings.ui.flashOnDone', ui.flashOnDone);
+      checkInt(ctx, 'settings.ui.dimAfterMin', ui.dimAfterMin, { min: 0, max: 240 });
       if (ui.language !== undefined && !['it', 'en', 'auto'].includes(ui.language)) {
         ctx.err('settings.ui.language', 'valore ammesso: it | en | auto');
       }
@@ -411,6 +423,26 @@ function validateAction(ctx, path, action, actionTypes, depth = 0) {
     } else {
       steps.forEach((step, i) => validateAction(ctx, `${path}.params.steps[${i}]`, step, actionTypes, depth + 1));
     }
+  }
+}
+
+/**
+ * Le cartelle: `page.parent` deve essere un'altra pagina dello stesso profilo,
+ * che non sia a sua volta dentro una cartella (un livello solo: due livelli di
+ * "indietro" su un telefono sono gia' un labirinto).
+ */
+function validateFolders(ctx, raw) {
+  for (const [pi, profile] of (raw.profiles ?? []).entries()) {
+    if (!Array.isArray(profile?.pages)) continue;
+    const byId = new Map(profile.pages.filter((p) => isPlainObject(p) && typeof p.id === 'string').map((p) => [p.id, p]));
+    profile.pages.forEach((page, gi) => {
+      if (!isPlainObject(page) || typeof page.parent !== 'string') return;
+      const path = `profiles[${pi}].pages[${gi}].parent`;
+      const madre = byId.get(page.parent);
+      if (!madre) ctx.err(path, `pagina madre "${page.parent}" non trovata nel profilo`);
+      else if (madre === page) ctx.err(path, 'una pagina non puo\' essere cartella di se stessa');
+      else if (typeof madre.parent === 'string') ctx.err(path, `"${page.parent}" e' gia' dentro una cartella: un livello solo`);
+    });
   }
 }
 
@@ -535,10 +567,18 @@ function validateButton(ctx, path, button, page, seen, actionTypes, groupIds = n
   if (typeof button.col === 'number' && typeof page.cols === 'number' && button.col + span > page.cols) {
     ctx.err(`${path}.span`, `il controllo largo ${span} celle da colonna ${button.col} esce dalla griglia (cols=${page.cols})`);
   }
-  for (let offset = 0; offset < span; offset += 1) {
-    const cell = `${button.row}:${button.col + offset}`;
-    if (seen.cells.has(cell)) ctx.err(path, `cella ${cell} gia' occupata dal controllo "${seen.cells.get(cell)}"`);
-    else seen.cells.set(cell, button.id);
+  // Alto piu' righe (spanRows): stesse regole in verticale.
+  if (button.spanRows !== undefined) checkInt(ctx, `${path}.spanRows`, button.spanRows, { min: 1, max: LIMITS.maxSpanRows });
+  const spanRows = Number.isInteger(button.spanRows) && button.spanRows > 0 ? button.spanRows : 1;
+  if (typeof button.row === 'number' && typeof page.rows === 'number' && button.row + spanRows > page.rows) {
+    ctx.err(`${path}.spanRows`, `il controllo alto ${spanRows} righe da riga ${button.row} esce dalla griglia (rows=${page.rows})`);
+  }
+  for (let dr = 0; dr < spanRows; dr += 1) {
+    for (let offset = 0; offset < span; offset += 1) {
+      const cell = `${button.row + dr}:${button.col + offset}`;
+      if (seen.cells.has(cell)) ctx.err(path, `cella ${cell} gia' occupata dal controllo "${seen.cells.get(cell)}"`);
+      else seen.cells.set(cell, button.id);
+    }
   }
 
   if (typeof button.id === 'string') {
@@ -702,6 +742,15 @@ export function validateDeck(raw, options = {}) {
       }
       checkString(ctx, `${ppath}.id`, profile.id, { required: true, pattern: SLUG_RE, label: 'slug minuscolo' });
       checkString(ctx, `${ppath}.name`, profile.name, { max: 64 });
+      // Programmi collegati: nomi di processo o pezzi di titolo di finestra che,
+      // in primo piano, fanno scegliere questo profilo (vedi autoprofile.mjs).
+      if (profile.apps !== undefined) {
+        if (!Array.isArray(profile.apps)) ctx.err(`${ppath}.apps`, 'atteso array di nomi di programma');
+        else {
+          if (profile.apps.length > LIMITS.maxAppsPerProfile) ctx.err(`${ppath}.apps`, `troppi programmi (max ${LIMITS.maxAppsPerProfile})`);
+          profile.apps.forEach((app, ai) => checkString(ctx, `${ppath}.apps[${ai}]`, app, { required: true, max: 64 }));
+        }
+      }
       if (typeof profile.id === 'string') {
         if (profileIds.has(profile.id)) ctx.err(`${ppath}.id`, `id profilo duplicato: "${profile.id}"`);
         else profileIds.add(profile.id);
@@ -725,6 +774,15 @@ export function validateDeck(raw, options = {}) {
         // invece che da `buttons`; il campo e' opzionale e assente = pagina normale.
         if (page.source !== undefined && !PAGE_SOURCES.includes(page.source)) {
           ctx.err(`${gpath}.source`, `valore ammesso: ${PAGE_SOURCES.join(' | ')}`);
+        }
+        // Stile proprio della pagina (scavalca settings.ui.style) e cartella:
+        // una pagina con `parent` e' il contenuto di una cartella, non compare
+        // fra le schede e si apre da un tasto "cartella" della pagina madre.
+        if (page.style !== undefined && page.style !== null && !UI_STYLES.includes(page.style)) {
+          ctx.err(`${gpath}.style`, `valore ammesso: ${UI_STYLES.join(' | ')}`);
+        }
+        if (page.parent !== undefined && page.parent !== null) {
+          checkString(ctx, `${gpath}.parent`, page.parent, { pattern: SLUG_RE, label: 'slug minuscolo' });
         }
         checkInt(ctx, `${gpath}.rows`, page.rows, { required: true, min: 1, max: LIMITS.maxRows });
         checkInt(ctx, `${gpath}.cols`, page.cols, { required: true, min: 1, max: LIMITS.maxCols });
@@ -755,6 +813,7 @@ export function validateDeck(raw, options = {}) {
       });
     });
 
+    validateFolders(ctx, raw);
     validateNavigationTargets(ctx, raw);
   }
 
@@ -783,12 +842,15 @@ export function normalizeDeck(raw) {
     id: profile.id,
     name: profile.name ?? profile.id,
     defaultPage: profile.defaultPage ?? profile.pages[0].id,
+    apps: [...(profile.apps ?? [])],
     pages: profile.pages.map((page) => ({
       id: page.id,
       name: page.name ?? page.id,
       rows: page.rows,
       cols: page.cols,
       source: page.source ?? null,
+      parent: page.parent ?? null,
+      style: page.style ?? null,
       background: page.background
         ? { color: page.background.color ?? null, color2: page.background.color2 ?? null, image: page.background.image ?? null }
         : null,
@@ -804,6 +866,7 @@ export function normalizeDeck(raw) {
         col: button.col,
         kind: button.kind ?? 'button',
         span: button.span ?? defaultSpan(button.kind ?? 'button', button.orientation),
+        spanRows: button.spanRows ?? 1,
         confirm: button.confirm === true,
         status: button.status !== false,
         // Ogni tipo porta con se' solo i campi che gli servono: cosi' il client

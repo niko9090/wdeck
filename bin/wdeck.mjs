@@ -12,6 +12,7 @@
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { createHost, PROJECT_ROOT } from '../src/host/index.mjs';
+import { createFileLogger } from '../src/host/logfile.mjs';
 import { addDevice, listDevices, pruneExpiredDevices, revokeDevice, rotateToken } from '../src/host/security/manage.mjs';
 import { qrText } from '../shared/qr.mjs';
 
@@ -175,9 +176,12 @@ function main() {
   if (args['no-token']) overrides.requireToken = false;
   if (args.tls) overrides.tls = true;
 
-  const logger = args.quiet
-    ? { ...console, info: () => {}, debug: () => {} }
-    : console;
+  // Tutto quello che va a console finisce anche in wdeck.log accanto a
+  // deck.json: l'eseguibile gira senza console e senza questo file un avvio
+  // fallito o una morte improvvisa non lascerebbero traccia.
+  const logFile = args.config ? path.join(path.dirname(path.resolve(args.config)), 'wdeck.log') : null;
+  const logger = createFileLogger({ file: logFile, quiet: Boolean(args.quiet) });
+  logger.info(`[wdeck] avvio ${process.pid} (config: ${args.config ?? '-'})`);
 
   let host;
   try {

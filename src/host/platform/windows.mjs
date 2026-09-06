@@ -356,6 +356,31 @@ export function startPowerShellDetached(script) {
 }
 
 /**
+ * Script che estrae l'icona di un programma (.exe, o il bersaglio di un .lnk)
+ * e la stampa come PNG in base64. E' l'icona "associata" (32 px): piccola ma
+ * riconoscibile, e senza inventare un P/Invoke per le dimensioni jumbo.
+ * @param {string} target percorso
+ */
+export function buildAppIconScript(target) {
+  const b64 = Buffer.from(String(target), 'utf8').toString('base64');
+  return [
+    'Add-Type -AssemblyName System.Drawing',
+    `$p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}'))`,
+    'if ($p.ToLower().EndsWith(".lnk")) {',
+    '  $sh = New-Object -ComObject WScript.Shell',
+    '  $t = $sh.CreateShortcut($p).TargetPath',
+    '  if ($t -and (Test-Path -LiteralPath $t)) { $p = $t }',
+    '}',
+    '$icon = [System.Drawing.Icon]::ExtractAssociatedIcon($p)',
+    'if ($null -eq $icon) { throw "nessuna icona in $p" }',
+    '$bmp = $icon.ToBitmap()',
+    '$ms = New-Object System.IO.MemoryStream',
+    '$bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)',
+    'Write-Output ([Convert]::ToBase64String($ms.ToArray()))'
+  ].join('\n');
+}
+
+/**
  * Avvia un programma esterno in modo detached (l'host non attende la chiusura).
  * @param {{path: string, args?: string[], cwd?: string}} spec
  * @returns {Promise<{pid: number|undefined}>}

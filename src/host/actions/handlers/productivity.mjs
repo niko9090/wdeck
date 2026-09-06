@@ -293,19 +293,37 @@ export const notifyAction = {
  */
 export function buildNotifyScript(params) {
   return [
-    'Add-Type -AssemblyName System.Windows.Forms,System.Drawing',
     decodeLine('title', params.title ?? 'Wdeck'),
     decodeLine('msg', params.message),
-    '$icon = New-Object System.Windows.Forms.NotifyIcon',
-    '$icon.Icon = [System.Drawing.SystemIcons]::Information',
-    '$icon.BalloonTipTitle = $title',
-    '$icon.BalloonTipText = $msg',
-    '$icon.Visible = $true',
-    '$icon.ShowBalloonTip(6000)',
-    ...(params.sound ? ['[System.Media.SystemSounds]::Asterisk.Play()'] : []),
-    // Senza attesa il processo termina e la notifica sparisce prima di comparire.
-    'Start-Sleep -Milliseconds 6500',
-    '$icon.Dispose()'
+    // Notifica VERA di Windows 10/11 (centro notifiche, resta nell'elenco),
+    // via WinRT. L'AppId e' quello di PowerShell, gia' registrato con Windows:
+    // senza un AppId registrato la notifica non compare affatto.
+    'try {',
+    '  [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null',
+    '  [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null',
+    "  $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe'",
+    '  $t = [System.Security.SecurityElement]::Escape($title)',
+    '  $m = [System.Security.SecurityElement]::Escape($msg)',
+    `  $audio = '${params.sound ? '' : '<audio silent="true"/>'}'`,
+    '  $xml = "<toast><visual><binding template=\'ToastGeneric\'><text>$t</text><text>$m</text></binding></visual>$audio</toast>"',
+    '  $doc = New-Object Windows.Data.Xml.Dom.XmlDocument',
+    '  $doc.LoadXml($xml)',
+    '  $toast = New-Object Windows.UI.Notifications.ToastNotification $doc',
+    '  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)',
+    '} catch {',
+    // Ripiego: il vecchio fumetto della barra (Windows senza WinRT, o notifiche
+    // bloccate per PowerShell). Serve tenere vivo il processo finche' sparisce.
+    '  Add-Type -AssemblyName System.Windows.Forms,System.Drawing',
+    '  $icon = New-Object System.Windows.Forms.NotifyIcon',
+    '  $icon.Icon = [System.Drawing.SystemIcons]::Information',
+    '  $icon.BalloonTipTitle = $title',
+    '  $icon.BalloonTipText = $msg',
+    '  $icon.Visible = $true',
+    '  $icon.ShowBalloonTip(6000)',
+    ...(params.sound ? ['  [System.Media.SystemSounds]::Asterisk.Play()'] : []),
+    '  Start-Sleep -Milliseconds 6500',
+    '  $icon.Dispose()',
+    '}'
   ].join('\n');
 }
 

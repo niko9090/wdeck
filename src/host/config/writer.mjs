@@ -73,6 +73,7 @@ export function compactDeck(deck) {
       id: profile.id,
       name: profile.name,
       defaultPage: profile.defaultPage,
+      ...(Array.isArray(profile.apps) && profile.apps.length ? { apps: [...profile.apps] } : {}),
       pages: (profile.pages ?? []).map((page) => ({
         id: page.id,
         name: page.name,
@@ -83,6 +84,8 @@ export function compactDeck(deck) {
         // dall'editor li cancellava, e con loro il gruppo di ogni tasto. E' il
         // difetto "le modifiche non vengono registrate".
         ...(page.source ? { source: page.source } : {}),
+        ...(page.parent ? { parent: page.parent } : {}),
+        ...(page.style ? { style: page.style } : {}),
         ...(Array.isArray(page.groups) && page.groups.length
           ? { groups: page.groups.map((g) => ({ id: g.id, label: g.label, color: g.color })) }
           : {}),
@@ -105,6 +108,7 @@ export function compactDeck(deck) {
           };
           if (button.kind && button.kind !== 'button') out.kind = button.kind;
           if (button.span && button.span !== 1) out.span = button.span;
+          if (button.spanRows && button.spanRows !== 1) out.spanRows = button.spanRows;
           if (button.confirm) out.confirm = true;
           if (button.status === false) out.status = false;
           if (button.icon) out.icon = button.icon;

@@ -17,6 +17,9 @@ import { formatErrors, validateDeck } from './config/schema.mjs';
 import { createUpdateChecker } from './updates.mjs';
 import { applyUpdate, cleanupOldExe, restart as restartExe, selfUpdateSupport } from './update-apply.mjs';
 import { startTray } from './tray.mjs';
+import { createAutoProfile } from './autoprofile.mjs';
+import { pruneRuntimeDirs, pruneTrayScripts, runtimeLayout } from './cleanup.mjs';
+import { buildAppIconScript, isWindows, runPowerShell } from './platform/windows.mjs';
 import { createDefaultRegistry } from './actions/handlers/index.mjs';
 import { createDispatcher } from './actions/dispatcher.mjs';
 import { stopKeyServer } from './platform/keyserver.mjs';
@@ -278,6 +281,55 @@ export function createHost(options = {}) {
    * Salva su deck.json le modifiche fatte dall'editor visuale.
    * @param {object} incoming deck (o porzione) proveniente dal client
    */
+  /**
+   * Annulla l'ultima modifica: rimette la copia piu' recente fra i backup.
+   * La copia usata viene TOLTA dai backup e la scrittura non ne crea uno
+   * nuovo: cosi' "annulla" ripetuto torna indietro di un passo alla volta
+   * invece di rimbalzare fra due stati.
+   */
+  host.restoreDeck = () => {
+    const backupDir = path.join(baseDir, '.wdeck-backup');
+    const base = path.basename(configFile);
+    let files = [];
+    try {
+      files = fs.readdirSync(backupDir).filter((f) => f.startsWith(`${base}.`) && f.endsWith('.bak')).sort();
+    } catch { /* nessuna cartella: nessun backup */ }
+    if (!files.length) return { ok: false, status: 409, error: 'nessuna modifica da annullare' };
+    const ultimo = path.join(backupDir, files.at(-1));
+    let raw;
+    try {
+      raw = JSON.parse(fs.readFileSync(ultimo, 'utf8'));
+    } catch (err) {
+      return { ok: false, status: 500, error: `copia precedente illeggibile: ${err.message}` };
+    }
+    const validation = validateDeck(raw, { actionTypes: registry.types() });
+    if (!validation.valid) return { ok: false, status: 409, error: 'la copia precedente non e\' valida: non la rimetto' };
+    const tmp = `${configFile}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify(raw, null, 2)}\n`);
+    fs.renameSync(tmp, configFile);
+    try { fs.unlinkSync(ultimo); } catch { /* resta: al massimo si annulla due volte lo stesso passo */ }
+    configStore.reload();
+    state.replaceDeck(configStore.get());
+    hub.broadcastDeck?.();
+    logger.info?.(`[wdeck] modifica annullata: rimessa ${path.basename(ultimo)}`);
+    return { ok: true, restored: path.basename(ultimo), remaining: files.length - 1 };
+  };
+
+  /**
+   * Estrae l'icona di un programma e la salva fra le icone personalizzate
+   * (nome "app-<programma>"), cosi' un tasto "Avvia" puo' avere l'icona vera.
+   */
+  host.extractAppIcon = async (target) => {
+    if (!isWindows()) throw new Error('estrazione icone disponibile solo su Windows');
+    const p = String(target ?? '').trim();
+    if (!p || !/\.(exe|lnk)$/i.test(p) || !fs.existsSync(p)) throw new Error('indicare il percorso di un .exe o .lnk esistente');
+    const out = await runPowerShell(buildAppIconScript(p), { timeoutMs: 15000 });
+    const b64 = String(out.stdout ?? '').trim().split(/\s+/).at(-1) ?? '';
+    if (out.code !== 0 || !b64) throw new Error(`icona non estratta: ${out.stderr || 'nessun dato'}`.slice(0, 200));
+    const base = path.basename(p).replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'programma';
+    return host.icons.save({ name: `app-${base}`, content: `data:image/png;base64,${b64}` });
+  };
+
   host.saveDeck = (incoming) => {
     const result = saveDeck({
       configPath: configFile,
@@ -414,6 +466,9 @@ export function createHost(options = {}) {
     }
   };
 
+  // Profili per applicazione: guarda il primo piano e cambia profilo da solo.
+  host.autoProfile = createAutoProfile({ state, getDeck: () => configStore.get(), logger });
+
   const api = createApiRouter(host);
   const hub = createHub(host);
   host.hub = hub;
@@ -518,6 +573,18 @@ export function createHost(options = {}) {
         });
       }
       host.updates.start();
+      host.autoProfile.start();
+      // Pulizia di cio' che si accumula: qualche secondo dopo l'avvio, cosi'
+      // non rallenta la partenza. Fuori dall'eseguibile non c'e' nulla da fare.
+      setTimeout(() => {
+        try {
+          const layout = runtimeLayout(PROJECT_ROOT);
+          if (layout) pruneRuntimeDirs({ ...layout, logger });
+          pruneTrayScripts({ tmpDir: os.tmpdir(), logger });
+        } catch (err) {
+          logger.debug?.(`[wdeck] pulizia non riuscita: ${err.message}`);
+        }
+      }, 5000).unref?.();
       // Il processo di volume/luminosita' compila il suo C# adesso, in
       // disparte, e non alla prima pressione dell'utente.
       warmLevelServer();
@@ -574,6 +641,7 @@ export function createHost(options = {}) {
   host.stop = async () => {
     configStore.close();
     host.updates.stop();
+    host.autoProfile?.stop();
     status.stop();
     host.mdns?.stop();
     // L'icona nella barra si chiude da sola (fino a 1,5 s): si aspetta, cosi'
