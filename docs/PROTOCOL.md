@@ -502,6 +502,34 @@ su disco non viene toccato.
 Al salvataggio riuscito l'host rimanda a tutti i client collegati il messaggio
 WebSocket `deck` aggiornato.
 
+### `POST /api/deck/restore`
+
+Annulla l'ultima modifica: rimette la copia piu' recente di `deck.json` fra
+quelle in `.wdeck-backup/` (l'host ne tiene fino a dieci, una per
+salvataggio). La copia usata viene tolta dai backup e la scrittura non ne crea
+una nuova: chiamarlo di nuovo torna indietro di un altro passo, invece di
+rimbalzare fra due stati. Risponde con il deck rimesso e `remaining`, quante
+copie restano; `409` se non c'e' niente da annullare o se la copia non passa
+la validazione.
+
+```json
+{ "ok": true, "restored": "deck.json.2026-09-06T09-53-44-240Z.bak", "remaining": 6, "deck": { ... }, "state": { ... } }
+```
+
+### `POST /api/restart`
+
+Chiude in ordine e rilancia l'eseguibile (e' cio' che fa il riavvio dopo un
+aggiornamento). Disponibile solo in `wdeck.exe` (`409` dai sorgenti). Lo usa
+la voce "Riavvia Wdeck" della tray.
+
+### `GET /api/app-icon?path=<percorso>`
+
+Estrae l'icona di un programma (`.exe`, o il bersaglio di un `.lnk`) e la
+salva fra le icone personalizzate con nome `app-<programma>`; la risposta e'
+la stessa voce di `POST /api/icons`. Solo Windows; `400` se il percorso non
+esiste o non ha un'icona. Nel client e' il bottone "Icona del programma" di un
+tasto con azione `launch`.
+
 ### `GET /api/settings`
 
 Restituisce le impostazioni modificabili. Del blocco sicurezza espone solo la
