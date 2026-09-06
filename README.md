@@ -390,7 +390,7 @@ quali azioni possono essere *eseguite*:
 |---|:---:|:---:|:---:|
 | `media`, `hotkey`, `text`, `url` | si | si | si |
 | `volume`, `mic` | si | si | si |
-| `launch`, `script`, `http`, `sequence`, `navigate`, `obs`, `homeassistant`, `hue` | si | si | si |
+| `launch`, `script`, `http`, `sequence`, `navigate`, `obs`, `homeassistant`, `hue`, `sysinfo` | si | si | si |
 | `brightness`, `focus`, `desktop`, `window`, `power`, `clipboard`, `folder`, `screenshot`, `notify`, `browser`, `game`, `rdp` | si | - | - |
 
 Fuori dalle piattaforme supportate un'azione risponde `501` con un messaggio
@@ -419,7 +419,7 @@ Cosa serve installare:
 | Tastiera e testo | `hotkey`, `text` |
 | Mouse | `mouse` (clic, rotellina, sposta il puntatore) |
 | Finestre e desktop | `focus`, `desktop`, `window` |
-| Sistema e alimentazione | `brightness`, `power` |
+| Sistema e alimentazione | `brightness`, `power`, `sysinfo` (CPU, memoria, disco, rete, ora per i comandi di sola lettura) |
 | Programmi e giochi | `launch`, `game` |
 | Browser e web | `browser`, `url`, `http` |
 | Desktop remoti | `rdp` |
