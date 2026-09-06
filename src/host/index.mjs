@@ -621,6 +621,7 @@ export function createHost(options = {}) {
           version: host.version,
           deckName: configStore.get().name,
           scriptsDir: path.join(baseDir, 'scripts'),
+          logFile: logger.file ?? path.join(baseDir, 'wdeck.log'),
           logger
         });
       }

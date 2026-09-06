@@ -8,6 +8,16 @@
  */
 
 export const WHATSNEW = {
+  '0.11.0': [
+    "Nuovo: profili per applicazione. Collega dei programmi a un profilo (Gestisci profili) e il deck cambia da solo quando quel programma e' in primo piano sul PC.",
+    "Nuovo: cartelle vere. Un tasto \"Cartella\" apre la sua pagina, con la scheda indietro.",
+    "Nuovo: tasti alti due o tre righe, duplica tasto e pagina, esporta e importa il deck, stile diverso per ogni pagina.",
+    "Nuovo: schermo che si abbassa da solo dopo N minuti senza tocchi; vibrazione, suono e lampo del tasto configurabili.",
+    "Nuovo: pressione lunga su un gruppo nella legenda per rinominarlo; in modifica trascina il nome del gruppo per spostare tutto l'insieme.",
+    "Nuovo: dalla tray, avvio automatico, riavvio e apertura del log; cinquanta icone in piu' e l'icona vera del programma per i tasti Avvia.",
+    "Nuovo: annulla l'ultima modifica (la freccia accanto al + in modifica).",
+    "Corretto: pulizia automatica delle versioni vecchie sul disco, log dell'host su file, notifiche moderne di Windows."
+  ],
   '0.10.8': [
     "Cambiato: il contorno dei gruppi e' piu' spesso e si vede meglio."
   ],

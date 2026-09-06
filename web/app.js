@@ -550,6 +550,7 @@ function applyTheme(uiConfig) {
   }
 
   syncKeepAwake();
+  scheduleDim();
 }
 
 /* ------------------------------------------------------------ schermo acceso
@@ -595,6 +596,44 @@ document.addEventListener('pointerdown', () => {
 setTimeout(() => {
   if (fullscreenWanted() && !document.fullscreenElement && !document.getElementById('app')?.hidden) toast(t('fullscreen.tapToReturn'), '');
 }, 1500);
+
+/* --------------------------------------------------- schermo che si abbassa
+
+   L'opposto di "tieni acceso": un tablet che sta sul tavolo tutto il giorno
+   non ha bisogno di brillare al massimo. Dopo N minuti senza tocchi
+   (`settings.ui.dimAfterMin`, 0 = mai) un velo scuro copre il deck; il primo
+   tocco toglie il velo e NON arriva ai tasti sotto.                        */
+
+const dim = { timer: null, overlay: null };
+
+function scheduleDim() {
+  clearTimeout(dim.timer);
+  dim.timer = null;
+  const minuti = Number(state.deck?.ui?.dimAfterMin) || 0;
+  if (!minuti) { dim.overlay?.classList.remove('on'); return; }
+  dim.timer = setTimeout(showDim, minuti * 60000);
+}
+
+function showDim() {
+  if (!dim.overlay) {
+    const velo = document.createElement('div');
+    velo.className = 'dim';
+    velo.setAttribute('aria-hidden', 'true');
+    velo.addEventListener('pointerdown', (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      velo.classList.remove('on');
+      scheduleDim();
+    }, { capture: true });
+    document.body.appendChild(velo);
+    dim.overlay = velo;
+  }
+  dim.overlay.classList.add('on');
+}
+
+document.addEventListener('pointerdown', () => {
+  if (!dim.overlay?.classList.contains('on')) scheduleDim();
+}, { capture: true, passive: true });
 
 const sveglia = { lock: null, video: null };
 
@@ -761,11 +800,30 @@ function renderProfiles() {
 function renderPages() {
   const profile = currentProfile();
   const page = currentPage();
-  ui.pages.innerHTML = profile.pages
-    .map((p) => `<button class="page-tab" role="tab" data-page="${p.id}" aria-selected="${p.id === page.id}">`
-      + `${escapeHtml(p.name)}${state.editing ? '<span class="page-edit" title="Modifica la pagina">&#9998;</span>' : ''}</button>`)
-    .join('')
-    + (state.editing ? '<button class="page-tab add" type="button" data-page-add="1" title="Aggiungi una pagina">+</button>' : '');
+  // Le pagine di una cartella (parent) non stanno fra le schede: si aprono dal
+  // loro tasto. Quando si e' dentro, compare la scheda "indietro" e la scheda
+  // della cartella stessa, cosi' si sa dove si e'.
+  const madre = page?.parent ? profile.pages.find((p) => p.id === page.parent) : null;
+  ui.pages.innerHTML = (madre
+    ? `<button class="page-tab back" role="tab" data-page="${madre.id}" aria-selected="false" title="${escapeHtml(t('page.back'))}">&larr; ${escapeHtml(madre.name)}</button>`
+    : '')
+    + profile.pages
+      .filter((p) => !p.parent || p.id === page.id)
+      .map((p) => `<button class="page-tab${p.parent ? ' child' : ''}" role="tab" data-page="${p.id}" aria-selected="${p.id === page.id}">`
+        + `${escapeHtml(p.name)}${state.editing ? '<span class="page-edit" title="Modifica la pagina">&#9998;</span>' : ''}</button>`)
+      .join('')
+    + (state.editing ? '<button class="page-tab add" type="button" data-page-add="1" title="Aggiungi una pagina">+</button>' : '')
+    + (state.editing ? `<button class="page-tab undo" type="button" data-undo="1" title="${escapeHtml(t('edit.undo'))}">&#8630;</button>` : '');
+}
+
+/** Annulla l'ultima modifica: l'host rimette la copia precedente di deck.json. */
+async function undoLastChange() {
+  const res = await api(ENDPOINTS.deckRestore, { method: 'POST' });
+  if (!res.ok) {
+    toast(res.data?.error?.message ?? t('edit.undoNone'), 'err');
+    return;
+  }
+  toast(t('edit.undone', { n: res.data.remaining ?? 0 }), 'ok');
 }
 
 /**
@@ -786,6 +844,7 @@ function renderGrid() {
   const page = currentPage();
   if (!page) return;
   applyPageBackground(page);
+  applyPageStyle(page);
 
   // Le pagine dinamiche (finestre/app/widget) prendono i tile dall'host e hanno
   // un rendering e un ciclo di aggiornamento propri.
@@ -806,7 +865,10 @@ function renderGrid() {
   const occupied = new Map();
   for (const button of page.buttons) {
     const span = button.span ?? 1;
-    for (let offset = 0; offset < span; offset += 1) occupied.set(`${button.row}:${button.col + offset}`, button);
+    const spanRows = Number(button.spanRows) || 1;
+    for (let dr = 0; dr < spanRows; dr += 1) {
+      for (let offset = 0; offset < span; offset += 1) occupied.set(`${button.row + dr}:${button.col + offset}`, button);
+    }
   }
 
   const parts = [];
@@ -818,7 +880,7 @@ function renderGrid() {
         continue;
       }
       // Le celle successive a quella iniziale sono gia' coperte dallo span.
-      if (button.col !== col) continue;
+      if (button.col !== col || button.row !== row) continue;
       parts.push(controlHtml(button));
     }
   }
@@ -849,7 +911,10 @@ function groupCells(page) {
     if (!b.group) continue;
     const list = out.get(b.group) ?? [];
     const span = Number(b.span) || 1;
-    for (let k = 0; k < span; k += 1) list.push({ row: b.row, col: b.col + k });
+    const spanRows = Number(b.spanRows) || 1;
+    for (let dr = 0; dr < spanRows; dr += 1) {
+      for (let k = 0; k < span; k += 1) list.push({ row: b.row + dr, col: b.col + k });
+    }
     out.set(b.group, list);
   }
   return out;
@@ -1029,6 +1094,14 @@ function pageBackgroundCss(bg) {
   if (bg?.image) strati.push(`url("${customIconUrl(bg.image)}") center / cover no-repeat`);
   if (c1) strati.push(c2 ? `linear-gradient(160deg, ${c1}, ${c2})` : c1);
   return strati.join(', ');
+}
+
+/** Stile della pagina (`page.style`) se ne ha uno, altrimenti quello del deck. */
+function applyPageStyle(page) {
+  const root = document.documentElement;
+  const stile = page?.style || state.deck?.ui?.style;
+  if (stile && stile !== 'default') root.dataset.style = stile;
+  else root.removeAttribute('data-style');
 }
 
 function applyPageBackground(page) {
@@ -1243,6 +1316,7 @@ function buttonHtml(button) {
     bg ? `background:${bg}` : '',
     fg ? `color:${fg}` : '',
     button.span > 1 ? `grid-column:span ${Number(button.span) || 1}` : '',
+    Number(button.spanRows) > 1 ? `grid-row:span ${Number(button.spanRows)}` : '',
     groupColorVar(button)
   ].filter(Boolean).join(';');
   return `<button class="deck-btn" type="button" data-id="${escapeHtml(button.id)}" data-row="${button.row}" data-col="${button.col}"${groupData(button)} style="${style}" title="${escapeHtml(button.label || button.id)}">`
@@ -1288,6 +1362,7 @@ function sliderHtml(button) {
   const style = [
     accent ? `--slider-accent:${accent}` : '',
     `grid-column:span ${Number(button.span) || kindDefaultSpan('slider', button.orientation)}`,
+    Number(button.spanRows) > 1 ? `grid-row:span ${Number(button.spanRows)}` : '',
     groupColorVar(button)
   ].filter(Boolean).join(';');
   const classi = ['deck-slider', vertical ? 'vert' : '', center ? 'centered' : ''].filter(Boolean).join(' ');
@@ -1452,6 +1527,7 @@ function ctlHtml(button, kind) {
     accent ? `--ctl-accent:${accent}` : '',
     fg ? `color:${fg}` : '',
     button.span > 1 ? `grid-column:span ${Number(button.span) || 1}` : '',
+    Number(button.spanRows) > 1 ? `grid-row:span ${Number(button.spanRows)}` : '',
     groupColorVar(button)
   ].filter(Boolean).join(';');
 
@@ -1767,10 +1843,35 @@ function pressButton(element, { hold = false, release = false, value, delta, x, 
   }, 12000);
 }
 
+/** Un "clic" breve generato al volo: nessun file, parte al primo tocco. */
+let audioCtx = null;
+function clickBeep() {
+  try {
+    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'square';
+    o.frequency.value = 1400;
+    g.gain.value = 0.05;
+    o.connect(g).connect(audioCtx.destination);
+    const t0 = audioCtx.currentTime;
+    o.start(t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.06);
+    o.stop(t0 + 0.07);
+  } catch { /* audio non disponibile */ }
+}
+
 function finishPress(pending, ok, result) {
   const { element } = pending;
   element.classList.remove('pending');
   element.classList.add(ok ? 'ok' : 'err');
+  // Il lampo: l'host ha ESEGUITO davvero (ack), non solo ricevuto il tocco.
+  if (ok && state.deck?.ui?.flashOnDone !== false) {
+    element.classList.remove('done');
+    void element.offsetWidth;
+    element.classList.add('done');
+    setTimeout(() => element.classList.remove('done'), 520);
+  }
   setTimeout(() => element.classList.remove('ok', 'err'), 700);
 
   if (!ok) {
@@ -1985,6 +2086,8 @@ function iconPickerHtml(selected, customIcons) {
     .map((e) => choice(`${EMOJI_PREFIX}${e}`, `<span class="icon-emoji">${escapeHtml(e)}</span>`, e))
     .join('');
   const custom = customIcons
+    // le foto usate come sfondo delle pagine (nome "sfondo-...") non sono icone
+    .filter((icon) => !icon.name.startsWith('sfondo-'))
     .map((icon) => choice(`${CUSTOM_PREFIX}${icon.name}`,
       `<img src="${customIconUrl(icon.name)}" alt="" />`, icon.name))
     .join('');
@@ -2459,6 +2562,8 @@ async function editButton(buttonId, cell, seed = null) {
         <label class="field"><span>${t('edit.paramsJson')}</span><textarea id="ed-params" rows="5" spellcheck="false">${escapeHtml(JSON.stringify(draft.action.params ?? {}, null, 2))}</textarea></label>
       </div>
       <button type="button" class="btn ghost small" id="ed-test">${t('edit.test')}</button>
+      <button type="button" class="btn ghost small" id="ed-app-icon" hidden>${t('edit.appIcon')}</button>
+      ${existing ? `<button type="button" class="btn ghost small" id="ed-dup">${t('edit.duplicate')}</button>` : ''}
       <p id="ed-test-result" class="sheet-hint" role="status" aria-live="polite"></p>
 
       <h3 class="sheet-section">${t('edit.icon')}</h3>
@@ -2492,6 +2597,7 @@ async function editButton(buttonId, cell, seed = null) {
         <label class="field"><span>${t('edit.color')}</span><input id="ed-color" type="color" value="${draft.color ?? '#2d3b55'}" /></label>
         <label class="field"><span>${t('edit.textColor')}</span><input id="ed-text-color" type="color" value="${draft.textColor ?? '#ffffff'}" /></label>
         <label class="field"><span>${t('edit.width')}</span><input id="ed-span" type="number" min="1" max="12" value="${draft.span ?? 1}" /></label>
+        <label class="field"><span>${t('edit.height')}</span><input id="ed-spanrows" type="number" min="1" max="3" value="${draft.spanRows ?? 1}" /></label>
       </div>
       <div id="ed-kind-fields" class="ed-fields"></div>
       <p id="ed-kind-hint" class="sheet-hint"></p>
@@ -2570,6 +2676,23 @@ async function editButton(buttonId, cell, seed = null) {
   // ne' toccare il sistema. Utile a chi non sa cosa fa un'azione e per
   // controllare i parametri prima di salvare.
   el('ed-test')?.addEventListener('click', () => testAction());
+  el('ed-dup')?.addEventListener('click', () => duplicateButton(existing?.id));
+  // L'icona vera del programma (azione "Avvia"): l'host la estrae dall'exe
+  // e la salva fra le icone personalizzate, poi la si seleziona nella griglia.
+  el('ed-app-icon')?.addEventListener('click', async () => {
+    const bottone = el('ed-app-icon');
+    const percorso = String(edMainCtl?.readParams?.()?.path ?? '').trim();
+    if (!percorso) { toast(t('edit.appIconNoPath'), 'err'); return; }
+    bottone.disabled = true;
+    const res = await api(`${ENDPOINTS.appIcon}?path=${encodeURIComponent(percorso)}`);
+    bottone.disabled = false;
+    if (!res.ok) { toast(res.data?.error?.message ?? t('edit.appIconFailed'), 'err'); return; }
+    draft.icon = `${CUSTOM_PREFIX}${res.data.icon.name}`;
+    const icone = await loadCustomIcons({ force: true });
+    el('ed-icons').outerHTML = iconPickerHtml(draft.icon, icone);
+    bindIconPicker({ onPick: (value) => { draft.icon = value; } });
+    toast(t('edit.appIconDone'), 'ok');
+  });
 
   // La descrizione dell'azione e le opzioni che dipendono dal tipo (cursore,
   // stato reale) restano gestite a parte dal form dei parametri.
@@ -2583,6 +2706,8 @@ async function editButton(buttonId, cell, seed = null) {
     const statusBox = el('ed-status');
     statusBox.disabled = spec ? spec.reportsState !== true : false;
     statusBox.closest('.field').classList.toggle('disabled', statusBox.disabled);
+    const appIcon = el('ed-app-icon');
+    if (appIcon) appIcon.hidden = typeSelect.value !== 'launch';
   };
   typeSelect.addEventListener('change', describe);
   describe();
@@ -2664,6 +2789,7 @@ async function saveButtonDraft(draft, existing) {
     color: el('ed-color').value,
     textColor: el('ed-text-color').value,
     span: Math.max(1, Number(el('ed-span').value) || 1),
+    spanRows: Math.max(1, Math.min(3, Number(el('ed-spanrows')?.value) || 1)),
     status: el('ed-status').checked,
     group: el('ed-group')?.value || null,
     // Un comando di sola lettura non puo' avere azioni di pressione: l'host le
@@ -2693,6 +2819,17 @@ async function saveButtonDraft(draft, existing) {
   // Se il bottone e' sparito tra apertura e salvataggio (index -1) lo si
   // aggiunge in coda invece di scrivere in buttons[-1], che creerebbe una
   // proprieta' "-1" ignorata dall'host.
+  // Un tasto "cartella" senza una pagina propria se la crea: una pagina
+  // nascosta (parent = questa) che si apre dal tasto e ha la scheda "indietro".
+  if (kind === 'folder') {
+    const profilo = findProfile(deck, state.profileId);
+    const dentro = next.action?.type === 'navigate' ? next.action.params?.page : null;
+    if (!dentro || !profilo.pages.some((p) => p.id === dentro)) {
+      const id = uniqueSlug(slugify(next.label || 'cartella', 'cartella'), profilo.pages.map((p) => p.id));
+      profilo.pages.push({ id, name: next.label || id, rows: page.rows, cols: page.cols, parent: page.id, buttons: [] });
+      next.action = { type: 'navigate', params: { profile: state.profileId, page: id } };
+    }
+  }
   if (existing && index !== -1) page.buttons[index] = next;
   else page.buttons.push(next);
   if (await persistDeck(deck, t('edit.saved', { label: next.label })) && page) warnSplitGroups(page);
@@ -2732,9 +2869,111 @@ async function testAction() {
 
 async function removeButton(buttonId) {
   const deck = cloneDeck();
-  const page = findPage(findProfile(deck, state.profileId), currentPage().id);
+  const profile = findProfile(deck, state.profileId);
+  const page = findPage(profile, currentPage().id);
+  const tolto = page.buttons.find((b) => b.id === buttonId);
   page.buttons = page.buttons.filter((b) => b.id !== buttonId);
+  // La pagina di una cartella vive solo per il suo tasto: via anche lei.
+  const dentro = tolto?.kind === 'folder' && tolto.action?.type === 'navigate' ? tolto.action.params?.page : null;
+  if (dentro) profile.pages = profile.pages.filter((p) => !(p.id === dentro && p.parent === page.id));
   await persistDeck(deck, t('edit.removed'));
+}
+
+/** Prima cella libera della pagina per un tasto largo `span` e alto `spanRows`. */
+function firstFreeCell(page, span = 1, spanRows = 1) {
+  const occupate = new Set();
+  for (const b of page.buttons) {
+    for (let r = 0; r < (Number(b.spanRows) || 1); r += 1) {
+      for (let c = 0; c < (Number(b.span) || 1); c += 1) occupate.add(`${b.row + r}:${b.col + c}`);
+    }
+  }
+  for (let row = 0; row + spanRows <= page.rows; row += 1) {
+    for (let col = 0; col + span <= page.cols; col += 1) {
+      let libera = true;
+      for (let r = 0; r < spanRows && libera; r += 1) {
+        for (let c = 0; c < span; c += 1) if (occupate.has(`${row + r}:${col + c}`)) { libera = false; break; }
+      }
+      if (libera) return { row, col };
+    }
+  }
+  return null;
+}
+
+/** Copia un tasto nella prima cella libera della pagina. */
+async function duplicateButton(buttonId) {
+  if (!buttonId) return;
+  const deck = cloneDeck();
+  const page = findPage(findProfile(deck, state.profileId), currentPage().id);
+  const originale = page.buttons.find((b) => b.id === buttonId);
+  if (!originale) return;
+  const cella = firstFreeCell(page, Number(originale.span) || 1, Number(originale.spanRows) || 1);
+  if (!cella) { toast(t('edit.noFreeCell'), 'err'); return; }
+  const copia = JSON.parse(JSON.stringify(originale));
+  copia.id = uniqueSlug(originale.id.replace(/-\d+$/, ''), allButtonIds(deck));
+  copia.row = cella.row;
+  copia.col = cella.col;
+  // una cartella copiata non deve puntare alla stessa pagina interna: la ricrea al salvataggio
+  if (copia.kind === 'folder') copia.action = { type: 'noop', params: {} };
+  page.buttons.push(copia);
+  await persistDeck(deck, t('edit.duplicated', { label: originale.label || originale.id }));
+}
+
+/** Copia una pagina (tasti compresi) subito dopo l'originale. */
+async function duplicatePage(pageId) {
+  const deck = cloneDeck();
+  const profile = findProfile(deck, state.profileId);
+  const index = profile.pages.findIndex((p) => p.id === pageId);
+  const originale = profile.pages[index];
+  if (!originale) return;
+  const copia = JSON.parse(JSON.stringify(originale));
+  copia.id = uniqueSlug(originale.id, profile.pages.map((p) => p.id));
+  copia.name = `${originale.name} (copia)`;
+  const presi = allButtonIds(deck);
+  for (const b of copia.buttons) {
+    b.id = uniqueSlug(b.id.replace(/-\d+$/, ''), presi);
+    presi.push(b.id);
+    if (b.kind === 'folder') b.action = { type: 'noop', params: {} };
+  }
+  profile.pages.splice(index + 1, 0, copia);
+  if (await persistDeck(deck, t('page.duplicated', { name: copia.name }))) goToPage(copia.id);
+}
+
+/** Scarica l'intero deck (senza segreti) come file JSON. */
+function exportDeck() {
+  if (!state.deck) return;
+  const testo = JSON.stringify(state.deck, null, 2);
+  const blob = new Blob([testo], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `wdeck-${slugify(state.deck.name || 'deck', 'deck')}-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+/** Legge un file JSON esportato e lo manda all'host (che lo valida). */
+async function importDeck(file) {
+  if (!file) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch {
+    toast(t('settings.importFailed', { message: 'JSON non leggibile' }), 'err');
+    return;
+  }
+  if (!parsed || !Array.isArray(parsed.profiles) || !parsed.profiles.length) {
+    toast(t('settings.importFailed', { message: 'manca "profiles"' }), 'err');
+    return;
+  }
+  // La sicurezza (token, PIN) non viaggia mai nel file e l'host comunque la scarta.
+  if (parsed.settings) delete parsed.settings.security;
+  const res = await api(ENDPOINTS.save, { method: 'POST', body: { deck: parsed } });
+  if (!res.ok) {
+    const detail = (res.data?.errors ?? []).slice(0, 3).map((e) => `${e.path}: ${e.message}`).join(' | ');
+    toast(t('settings.importFailed', { message: detail || res.data?.error?.message || '' }), 'err');
+    return;
+  }
+  toast(t('settings.imported'), 'ok');
 }
 
 /** Chiede conferma prima di eliminare un tile dalla "x" in modifica. */
@@ -2845,14 +3084,96 @@ async function shrinkImage(file) {
 /** Carica un'immagine fra quelle dell'host e ne restituisce il nome. */
 async function uploadPageImage(file) {
   const content = await shrinkImage(file);
+  // Il prefisso "sfondo-" le tiene fuori dalla griglia delle icone dei tasti.
   const name = uniqueSlug(
-    slugify(file.name.replace(/\.[^.]+$/, ''), 'sfondo'),
+    `sfondo-${slugify(file.name.replace(/\.[^.]+$/, ''), 'foto')}`.slice(0, 32),
     (await loadCustomIcons()).map((i) => i.name)
   );
   const res = await api(ENDPOINTS.icons, { method: 'POST', body: { name, content } });
   if (!res.ok) throw new Error(res.data?.error?.message ?? t('edit.rejected'));
   await loadCustomIcons({ force: true });
   return res.data.icon.name;
+}
+
+/** Nome, colore ed eliminazione di un gruppo, dalla legenda (pressione lunga). */
+function editGroup(groupId) {
+  const page = currentPage();
+  const group = page?.groups?.find((g) => g.id === groupId);
+  if (!group) return;
+  openSheet({
+    title: t('group.editTitle', { name: group.label }),
+    body: `
+      <div class="field-row">
+        <label class="field"><span>${t('group.name')}</span><input id="gr-label" type="text" maxlength="32" value="${escapeHtml(group.label)}" /></label>
+        <label class="field"><span>${t('edit.color')}</span><input id="gr-color" type="color" value="${cssColor(group.color) || '#4c8dff'}" /></label>
+      </div>
+      <p class="sheet-hint">${t('group.editHint')}</p>`,
+    actions: [
+      {
+        label: t('sheet.delete'),
+        kind: 'danger',
+        onClick: async () => {
+          const deck = cloneDeck();
+          const pg = findPage(findProfile(deck, state.profileId), page.id);
+          pg.groups = (pg.groups ?? []).filter((g) => g.id !== groupId);
+          for (const b of pg.buttons) if (b.group === groupId) b.group = null;
+          await persistDeck(deck, t('group.removed', { name: group.label }));
+        }
+      },
+      { label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() },
+      {
+        label: t('sheet.save'),
+        kind: 'primary',
+        onClick: async () => {
+          const deck = cloneDeck();
+          const pg = findPage(findProfile(deck, state.profileId), page.id);
+          const g = (pg.groups ?? []).find((x) => x.id === groupId);
+          if (!g) { closeSheet(); return; }
+          g.label = el('gr-label').value.trim() || g.label;
+          g.color = el('gr-color').value;
+          await persistDeck(deck, t('group.saved', { name: g.label }));
+        }
+      }
+    ]
+  });
+}
+
+/**
+ * Sposta TUTTI i tasti di un gruppo dello stesso scarto (dr, dc), in modifica,
+ * trascinando il nome del gruppo. Si muove solo se ogni tasto arriva in celle
+ * libere (o occupate da compagni di gruppo) dentro la griglia.
+ */
+async function moveGroup(groupId, dr, dc) {
+  if (!dr && !dc) return false;
+  const deck = cloneDeck();
+  const page = findPage(findProfile(deck, state.profileId), currentPage().id);
+  const membri = page.buttons.filter((b) => b.group === groupId);
+  if (!membri.length) return false;
+  const ids = new Set(membri.map((b) => b.id));
+  const occupate = new Map();
+  for (const b of page.buttons) {
+    if (ids.has(b.id)) continue;
+    for (let r = 0; r < (Number(b.spanRows) || 1); r += 1) {
+      for (let c = 0; c < (Number(b.span) || 1); c += 1) occupate.set(`${b.row + r}:${b.col + c}`, b.id);
+    }
+  }
+  for (const b of membri) {
+    const row = b.row + dr;
+    const col = b.col + dc;
+    const alto = Number(b.spanRows) || 1;
+    const largo = Number(b.span) || 1;
+    if (row < 0 || col < 0 || row + alto > page.rows || col + largo > page.cols) {
+      toast(t('edit.groupMoveBlocked'), 'err');
+      return false;
+    }
+    for (let r = 0; r < alto; r += 1) {
+      for (let c = 0; c < largo; c += 1) {
+        if (occupate.has(`${row + r}:${col + c}`)) { toast(t('edit.groupMoveBlocked'), 'err'); return false; }
+      }
+    }
+  }
+  for (const b of membri) { b.row += dr; b.col += dc; }
+  return persistDeck(deck, t('edit.groupMoved'), { quiet: true });
 }
 
 /** Pannello di gestione di una pagina. */
@@ -2887,6 +3208,11 @@ async function editPage(pageId) {
         <option value="widgets"${page.source === 'widgets' ? ' selected' : ''}>${t('page.typeWidgets')}</option>
       </select></label>
       <p class="sheet-hint">${t('page.typeHint')}</p>
+      <label class="field"><span>${t('page.style')}</span><select id="pg-style" class="select wide">
+        <option value=""${!page.style ? ' selected' : ''}>${t('page.styleTheme')}</option>
+        ${['keycap', 'ceramica', 'console', 'quaderno', 'strumento', 'oscura'].map((s) =>
+    `<option value="${s}"${page.style === s ? ' selected' : ''}>${t(`settings.style${s[0].toUpperCase()}${s.slice(1)}`)}</option>`).join('')}
+      </select></label>
       <div class="field-row">
         <label class="field"><span>${t('page.rows')}</span><input id="pg-rows" type="number" min="1" max="8" value="${page.rows}" /></label>
         <label class="field"><span>${t('page.cols')}</span><input id="pg-cols" type="number" min="1" max="12" value="${page.cols}" /></label>
@@ -2914,7 +3240,8 @@ async function editPage(pageId) {
       <label class="field checkbox"><input id="pg-bg-grad" type="checkbox"${bg0.gradient ? ' checked' : ''} /><span>${t('page.bgGradient')}</span></label>
       <label class="field"><span>${t('page.bgImage')}</span><select id="pg-bg-image" class="select wide">
         <option value="">${t('page.bgImageNone')}</option>
-        ${customIcons.map((i) => `<option value="${escapeHtml(i.name)}"${bg0.image === i.name ? ' selected' : ''}>${escapeHtml(i.name)}</option>`).join('')}
+        ${[...customIcons].sort((a, b) => Number(b.name.startsWith('sfondo-')) - Number(a.name.startsWith('sfondo-')))
+    .map((i) => `<option value="${escapeHtml(i.name)}"${bg0.image === i.name ? ' selected' : ''}>${escapeHtml(i.name.replace(/^sfondo-/, ''))}</option>`).join('')}
       </select></label>
       <div class="field-row bg-upload">
         <label class="btn ghost small file-btn">${t('page.bgUpload')}<input id="pg-bg-file" type="file" accept="image/*" hidden /></label>
@@ -2924,6 +3251,7 @@ async function editPage(pageId) {
     `,
     actions: [
       ...(isLast ? [] : [{ label: t('sheet.delete'), kind: 'danger', onClick: () => removePage(page.id) }]),
+      { label: t('page.duplicate'), kind: 'ghost', onClick: () => duplicatePage(page.id) },
       { label: t('sheet.cancel'), kind: 'ghost', onClick: () => closeSheet() },
       { label: t('sheet.save'), kind: 'primary', onClick: () => savePage(page.id) }
     ]
@@ -3019,6 +3347,8 @@ async function savePage(pageId) {
   page.cols = Math.max(1, Math.min(12, Number(el('pg-cols').value) || page.cols));
   const src = el('pg-source')?.value;
   if (src) page.source = src; else delete page.source;
+  const stile = el('pg-style')?.value;
+  if (stile) page.style = stile; else delete page.style;
   if (el('pg-default').checked) profile.defaultPage = page.id;
 
   // Gruppi: si leggono le righe della sezione; una riga senza label si scarta.
@@ -3153,7 +3483,9 @@ function renameProfile(profileId) {
   const profile = findProfile(state.deck, profileId);
   openSheet({
     title: t('profile.renameTitle', { name: profile.name }),
-    body: `<label class="field"><span>${t('page.name')}</span><input id="pr-rename" type="text" maxlength="64" value="${escapeHtml(profile.name)}" /></label>`,
+    body: `<label class="field"><span>${t('page.name')}</span><input id="pr-rename" type="text" maxlength="64" value="${escapeHtml(profile.name)}" /></label>
+      <label class="field"><span>${t('profile.apps')}</span><input id="pr-apps" type="text" placeholder="${escapeHtml(t('profile.appsPh'))}" value="${escapeHtml((profile.apps ?? []).join(', '))}" /></label>
+      <p class="sheet-hint">${t('profile.appsHint')}</p>`,
     actions: [
       { label: t('sheet.cancel'), kind: 'ghost', onClick: () => editProfiles() },
       {
@@ -3161,7 +3493,9 @@ function renameProfile(profileId) {
         kind: 'primary',
         onClick: async () => {
           const deck = cloneDeck();
-          findProfile(deck, profileId).name = el('pr-rename').value.trim() || profileId;
+          const p = findProfile(deck, profileId);
+          p.name = el('pr-rename').value.trim() || profileId;
+          p.apps = el('pr-apps').value.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 16);
           await persistDeck(deck, t('profile.renamed'));
         }
       }
@@ -3240,6 +3574,12 @@ function bindUpdateSection() {
     refreshUpdateSection();
   });
   el('set-apply-update')?.addEventListener('click', applyUpdate);
+  el('set-export')?.addEventListener('click', exportDeck);
+  el('set-import-file')?.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    importDeck(file);
+  });
 }
 
 async function openSettings() {
@@ -3291,6 +3631,20 @@ async function openSettings() {
       <p class="sheet-hint">${t('settings.styleHint')}</p>
       <label class="field checkbox"><input id="set-awake" type="checkbox"${state.deck?.ui?.keepAwake === false ? '' : ' checked'} /><span>${t('settings.keepAwake')}</span></label>
       <p class="sheet-hint">${t('settings.keepAwakeHint')}</p>
+      <label class="field"><span>${t('settings.dimAfter')}</span><input id="set-dim" type="number" min="0" max="240" value="${Number(state.deck?.ui?.dimAfterMin) || 0}" /></label>
+      <p class="sheet-hint">${t('settings.dimAfterHint')}</p>
+      <label class="field checkbox"><input id="set-autoprofile" type="checkbox"${state.deck?.ui?.autoProfile === false ? '' : ' checked'} /><span>${t('settings.autoProfile')}</span></label>
+      <p class="sheet-hint">${t('settings.autoProfileHint')}</p>
+      <label class="field checkbox"><input id="set-haptics" type="checkbox"${state.deck?.ui?.haptics === false ? '' : ' checked'} /><span>${t('settings.haptics')}</span></label>
+      <label class="field checkbox"><input id="set-click" type="checkbox"${state.deck?.ui?.clickSound ? ' checked' : ''} /><span>${t('settings.clickSound')}</span></label>
+      <label class="field checkbox"><input id="set-flash" type="checkbox"${state.deck?.ui?.flashOnDone === false ? '' : ' checked'} /><span>${t('settings.flashOnDone')}</span></label>
+
+      <h3 class="sheet-section">${t('settings.backup')}</h3>
+      <p class="sheet-hint">${t('settings.backupHint')}</p>
+      <div class="field-row">
+        <button class="btn ghost" type="button" id="set-export">${t('settings.exportDeck')}</button>
+        <label class="btn ghost file-btn">${t('settings.importDeck')}<input id="set-import-file" type="file" accept="application/json,.json" hidden /></label>
+      </div>
 
       <h3 class="sheet-section">${t('settings.computers')}</h3>
       <div class="host-list">${state.hosts.map((h) => `
@@ -3429,6 +3783,16 @@ async function saveSettings() {
   if (lingua !== (state.deck?.ui?.language ?? 'auto')) ui.language = lingua;
   const sveglio = el('set-awake')?.checked ?? true;
   if (sveglio !== (state.deck?.ui?.keepAwake !== false)) ui.keepAwake = sveglio;
+  const minutiVelo = Math.max(0, Math.min(240, Number(el('set-dim')?.value) || 0));
+  if (minutiVelo !== (Number(state.deck?.ui?.dimAfterMin) || 0)) ui.dimAfterMin = minutiVelo;
+  const autoProfilo = el('set-autoprofile')?.checked ?? true;
+  if (autoProfilo !== (state.deck?.ui?.autoProfile !== false)) ui.autoProfile = autoProfilo;
+  const vibra = el('set-haptics')?.checked ?? true;
+  if (vibra !== (state.deck?.ui?.haptics !== false)) ui.haptics = vibra;
+  const suono = el('set-click')?.checked ?? false;
+  if (suono !== Boolean(state.deck?.ui?.clickSound)) ui.clickSound = suono;
+  const lampo = el('set-flash')?.checked ?? true;
+  if (lampo !== (state.deck?.ui?.flashOnDone !== false)) ui.flashOnDone = lampo;
   if (Object.keys(ui).length > 0) patch.ui = ui;
 
   if (Object.keys(patch).length === 0) {
@@ -3955,6 +4319,10 @@ function bindEvents() {
   });
 
   ui.pages.addEventListener('click', (event) => {
+    if (event.target.closest('[data-undo]')) {
+      undoLastChange();
+      return;
+    }
     if (event.target.closest('[data-page-add]')) {
       addPage();
       return;
@@ -3970,8 +4338,21 @@ function bindEvents() {
     goToPage(tab.dataset.page);
   });
 
+  // Tocco sul chip = evidenzia; pressione lunga = modifica nome/colore/elimina.
+  let chipPress = null;
+  ui.groupLegend?.addEventListener('pointerdown', (event) => {
+    const chip = event.target.closest('.group-chip');
+    if (!chip?.dataset.group) return;
+    const id = chip.dataset.group;
+    chipPress = { id, fired: false, timer: setTimeout(() => { chipPress.fired = true; editGroup(id); }, 600) };
+  });
+  const chipRelease = () => { if (chipPress) clearTimeout(chipPress.timer); };
+  for (const evento of ['pointerup', 'pointercancel', 'pointerleave']) ui.groupLegend?.addEventListener(evento, chipRelease);
   ui.groupLegend?.addEventListener('click', (event) => {
     const chip = event.target.closest('.group-chip');
+    const fired = chipPress?.fired;
+    chipPress = null;
+    if (fired) return;
     if (chip?.dataset.group) toggleGroupFocus(chip.dataset.group);
   });
 
@@ -4024,8 +4405,17 @@ function stepPage(delta) {
   const profile = currentProfile();
   const page = currentPage();
   if (!profile || !page) return;
-  const index = profile.pages.findIndex((p) => p.id === page.id);
-  const next = profile.pages[index + delta];
+  // Dentro una cartella lo scorrimento verso destra torna alla pagina madre;
+  // le pagine di cartella non fanno parte dello sfoglio normale.
+  if (page.parent) {
+    if (delta < 0) { goToPage(page.parent, { animate: 'right' }); return; }
+    ui.grid.classList.add('bump');
+    setTimeout(() => ui.grid.classList.remove('bump'), 200);
+    return;
+  }
+  const visibili = profile.pages.filter((p) => !p.parent);
+  const index = visibili.findIndex((p) => p.id === page.id);
+  const next = visibili[index + delta];
   if (!next) {
     ui.grid.classList.add('bump');
     setTimeout(() => ui.grid.classList.remove('bump'), 200);
@@ -4091,6 +4481,14 @@ function bindGrid() {
     const empty = event.target.closest('.deck-btn.empty');
 
     if (state.editing) {
+      // Il nome del gruppo si trascina: sposta tutto l'insieme in un colpo.
+      const tag = event.target.closest('.group-tag');
+      if (tag?.dataset.group) {
+        event.preventDefault();
+        tag.setPointerCapture?.(event.pointerId);
+        gesture = { kind: 'group-move', group: tag.dataset.group, element: tag, startX: event.clientX, startY: event.clientY, moved: false };
+        return;
+      }
       const control = button ?? slider ?? ctl;
       // La "x" sul tile elimina il comando: gesto a parte, non apre l'editor
       // ne' fa partire un trascinamento.
@@ -4220,6 +4618,15 @@ function bindGrid() {
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
 
+    if (gesture.kind === 'group-move') {
+      if (!gesture.moved && Math.hypot(dx, dy) > 10) {
+        gesture.moved = true;
+        gesture.element.classList.add('dragging');
+      }
+      if (gesture.moved) highlightDropCell(event.clientX, event.clientY);
+      return;
+    }
+
     if (gesture.kind === 'edit-move') {
       if (!gesture.moved && Math.hypot(dx, dy) > 10) {
         gesture.moved = true;
@@ -4273,6 +4680,26 @@ function bindGrid() {
     clearHold();
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
+
+    if (gesture.kind === 'group-move') {
+      const g = gesture;
+      gesture = null;
+      g.element.classList.remove('dragging');
+      clearDropCell();
+      if (!g.moved) { editGroup(g.group); return; } // tocco sul nome = modifica il gruppo
+      // Lo scarto in celle si ricava dal MOVIMENTO del dito, non dalla cella
+      // di partenza: il nome sta a cavallo del bordo (sulla prima riga e'
+      // mezzo fuori dalla griglia) e "la cella sotto il dito" li' non esiste.
+      const page = currentPage();
+      const rect = ui.grid.getBoundingClientRect();
+      const gap = parseFloat(getComputedStyle(ui.grid).columnGap) || 0;
+      if (page && rect.width && rect.height) {
+        const cw = (rect.width - gap * (page.cols - 1)) / page.cols;
+        const rh = (rect.height - gap * (page.rows - 1)) / page.rows;
+        moveGroup(g.group, Math.round(dy / (rh + gap)), Math.round(dx / (cw + gap)));
+      }
+      return;
+    }
 
     if (gesture.kind === 'edit-move') {
       const element = gesture.element;
@@ -4424,7 +4851,8 @@ async function runPress(element, spec, options = {}) {
     if (!confirmed) return;
     element.classList.add('pending');
   }
-  if (navigator.vibrate) navigator.vibrate(options.hold ? 30 : 12);
+  if (navigator.vibrate && state.deck?.ui?.haptics !== false) navigator.vibrate(options.hold ? 30 : 12);
+  if (state.deck?.ui?.clickSound) clickBeep();
   pressButton(element, options);
 }
 

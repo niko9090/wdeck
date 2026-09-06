@@ -303,6 +303,34 @@ body {
   cursor: pointer;
 }
 .page-tab[aria-selected="true"] { color: #fff; background: var(--accent); border-color: transparent; }
+/* dentro una cartella: la scheda "indietro" e quella della cartella stessa */
+.page-tab.back { color: var(--text-dim); border-style: dashed; }
+.page-tab.child[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 75%, #000); }
+/* annulla l'ultima modifica (solo in modifica) */
+.page-tab.undo { font-weight: 700; font-size: 14px; line-height: 1; }
+
+/* il velo che abbassa lo schermo dopo N minuti senza tocchi */
+.dim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 700ms ease;
+}
+.dim.on { opacity: 0.93; pointer-events: auto; }
+
+/* il lampo dell'esecuzione confermata dall'host */
+@keyframes tile-done {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 80%, transparent); }
+  100% { box-shadow: 0 0 0 16px transparent; }
+}
+.deck-btn.done, .deck-ctl.done, .deck-slider.done { animation: tile-done 500ms ease-out; }
+
+/* in modifica il nome del gruppo si trascina (sposta tutto l'insieme) */
+.grid.editing .group-tag { pointer-events: auto; cursor: grab; touch-action: none; }
+.grid.editing .group-tag.dragging { cursor: grabbing; transform: translateY(-50%) scale(1.15); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45); }
 
 /* ---------------- griglia ---------------- */
 

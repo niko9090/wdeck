@@ -22,7 +22,7 @@ import { powershellPath, isWindows } from './platform/windows.mjs';
  * @param {{url: string, urls: string[], token: string, pid: number, version: string, deckName: string, scriptsDir?: string}} spec
  * @returns {string}
  */
-export function buildTrayScript({ url, urls = [], token, pid, version, deckName, scriptsDir = '' }) {
+export function buildTrayScript({ url, urls = [], token, pid, version, deckName, scriptsDir = '', logFile = '' }) {
   const b64 = (value) => Buffer.from(String(value), 'utf8').toString('base64');
   const decode = (name, value) => `$${name} = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64(value)}'))`;
 
@@ -46,6 +46,7 @@ ${decode('token', token)}
 ${decode('deckName', deckName)}
 ${decode('urlList', urls.join("\n"))}
 ${decode('scriptsDir', scriptsDir)}
+${decode('logFile', logFile)}
 $hostPid = ${Number(pid)}
 $version = '${String(version).replace(/'/g, "''")}'
 
@@ -170,6 +171,52 @@ Add-Item 'Controlla aggiornamenti' {
   }
 } | Out-Null
 
+# Avvio automatico = un collegamento nella cartella Esecuzione automatica
+# dell'utente (la stessa che crea l'installatore). Vale solo per l'eseguibile
+# installato: in sviluppo l'host e' node.exe e non avrebbe senso.
+$startupLnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'Wdeck.lnk'
+$hostExe = ''
+try { $hostExe = (Get-Process -Id $hostPid -ErrorAction Stop).Path } catch { }
+$autoItem = Add-Item 'Avvia Wdeck all''accesso a Windows' {
+  try {
+    if (Test-Path -LiteralPath $startupLnk) {
+      Remove-Item -LiteralPath $startupLnk -Force
+      $autoItem.Checked = $false
+    } elseif ($hostExe -and $hostExe.ToLower().EndsWith('wdeck.exe')) {
+      $sh = New-Object -ComObject WScript.Shell
+      $lnk = $sh.CreateShortcut($startupLnk)
+      $lnk.TargetPath = $hostExe
+      $lnk.WorkingDirectory = Split-Path $hostExe
+      $lnk.Description = 'Wdeck'
+      $lnk.Save()
+      $autoItem.Checked = $true
+    } else {
+      [System.Windows.Forms.MessageBox]::Show("L'avvio automatico si imposta solo con Wdeck installato (wdeck.exe).", 'Avvio automatico', 'OK', 'Information') | Out-Null
+    }
+  } catch {
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Avvio automatico non modificato', 'OK', 'Error') | Out-Null
+  }
+}
+$autoItem.CheckOnClick = $false
+$autoItem.Checked = (Test-Path -LiteralPath $startupLnk)
+
+Add-Item 'Riavvia Wdeck' {
+  # L'host chiude in ordine e rilancia se stesso; questa icona sparisce da
+  # sola quando l'host muore e quella nuova arriva col processo nuovo.
+  try {
+    Invoke-RestMethod -Method Post -Uri "$base/api/restart" -Headers @{ 'x-wdeck-token' = $token } | Out-Null
+  } catch {
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Riavvio non riuscito', 'OK', 'Error') | Out-Null
+  }
+} | Out-Null
+
+Add-Item 'Apri il log' {
+  if ($logFile -and (Test-Path -LiteralPath $logFile)) { Start-Process notepad.exe -ArgumentList ('"' + $logFile + '"') }
+  else { [System.Windows.Forms.MessageBox]::Show('Nessun log ancora scritto.', 'Log', 'OK', 'Information') | Out-Null }
+} | Out-Null
+
+[void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+
 Add-Item 'Scarica e installa aggiornamento' {
   # Apre il deck nel browser sull'aggiornamento: li' c'e' la finestra con la
   # barra di avanzamento (download, verifica, installazione, riavvio), cosi' si
@@ -226,7 +273,7 @@ $icon.Dispose()
  * @param {{url: string, urls?: string[], token: string, version: string, deckName: string, scriptsDir?: string, logger?: object}} spec
  * @returns {{stop: () => Promise<void>, pid: number|null, scriptFile: string|null}}
  */
-export function startTray({ url, urls = [], token, version, deckName, scriptsDir = '', logger = console }) {
+export function startTray({ url, urls = [], token, version, deckName, scriptsDir = '', logFile = '', logger = console }) {
   const inactive = { async stop() {}, pid: null, scriptFile: null };
   if (!isWindows()) {
     logger.debug?.('[wdeck] icona nella barra disponibile solo su Windows');
@@ -237,7 +284,7 @@ export function startTray({ url, urls = [], token, version, deckName, scriptsDir
   try {
     fs.writeFileSync(
       scriptFile,
-      buildTrayScript({ url, urls, token, pid: process.pid, version, deckName, scriptsDir }),
+      buildTrayScript({ url, urls, token, pid: process.pid, version, deckName, scriptsDir, logFile }),
       'utf8'
     );
   } catch (err) {

@@ -5,6 +5,52 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.11.0] - 2026-09-06
+
+### Aggiunto
+
+- **Profili per applicazione.** Da "Gestisci profili" si collegano a un
+  profilo dei programmi (nome del processo o pezzo del titolo della
+  finestra): quando uno di questi e' in primo piano sul PC, il deck passa da
+  solo a quel profilo. Si agisce solo al cambio di finestra, cosi' una scelta
+  fatta a mano non viene annullata. Interruttore nelle impostazioni.
+- **Cartelle vere.** Un tasto di tipo "Cartella" si crea la sua pagina
+  nascosta: si apre dal tasto, ha la scheda "indietro", lo scorrimento verso
+  destra torna alla pagina madre. Eliminando il tasto sparisce anche la
+  pagina.
+- **Tasti alti due o tre righe** ("Altezza" nell'editor), per fader e
+  manopole grandi. Vale anche per i contorni dei gruppi.
+- **Duplica tasto, duplica pagina, esporta e importa il deck** (Impostazioni
+  -> Copia di sicurezza; il file non contiene token e PIN).
+- **Schermo che si abbassa da solo** dopo N minuti senza tocchi
+  (Impostazioni): un velo scuro copre il deck, il primo tocco lo toglie senza
+  premere niente.
+- **Stile per pagina** (pannello della pagina): keycap sulla pagina musica,
+  quaderno su quella lavoro.
+- **Gruppi dalla legenda**: pressione lunga su un chip per rinominarlo,
+  ricolorarlo o eliminarlo. In modifica, **trascinando il nome del gruppo si
+  sposta tutto l'insieme** in un colpo.
+- **Vibrazione e suono al tocco** configurabili, e un **lampo del tasto**
+  quando il PC ha eseguito davvero (non solo ricevuto il tocco).
+- **Dalla tray**: "Avvia Wdeck all'accesso a Windows" (spunta), "Riavvia
+  Wdeck", "Apri il log".
+- **Icone**: cinquanta glifi in piu' (casa, luci, media, sistema, lavoro,
+  gioco) e, per un tasto "Avvia", il bottone "Icona del programma" che prende
+  l'icona vera dall'eseguibile.
+- **Annulla l'ultima modifica** (in modifica, la freccia accanto al "+"):
+  l'host rimette la copia precedente di deck.json, fino a dieci passi.
+
+### Corretto
+
+- **Pulizia di cio' che si accumulava**: le versioni vecchie estratte in
+  `Wdeck\runtime` (39 cartelle, 39 MB) e gli script della tray abbandonati in
+  Temp vengono tolti da soli all'avvio.
+- **L'host scrive un log** (`wdeck.log` accanto a deck.json, con rotazione):
+  prima, quando non partiva o moriva, non c'era niente da leggere.
+- **Notifica sul PC moderna** (centro notifiche di Windows 10/11), con il
+  vecchio fumetto come ripiego.
+- **Le foto usate come sfondo non compaiono piu' fra le icone dei tasti.**
+
 ## [0.10.8] - 2026-09-05
 
 ### Cambiato
