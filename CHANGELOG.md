@@ -5,6 +5,25 @@ Il progetto segue il [versionamento semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.11.1] - 2026-09-06
+
+### Corretto
+
+- **Quadrante, livello, grafico e display non mostravano niente** ("--" per
+  sempre): erano nati senza una fonte di dati. Ora c'e' l'azione **"Stato del
+  PC"** (`sysinfo`): CPU, memoria, disco, rete in ricezione e invio, acceso
+  da, ora, nome del PC. Si aggiorna da sola; il grafico tiene gli ultimi 40
+  valori.
+- **La tavoletta (puntatore) e i cursori si bloccavano dopo pochi secondi di
+  trascinamento** con "troppi comandi": il limite era 60 pressioni ogni 10
+  secondi e un dito ne manda 8-16 al secondo. Ora 600. La tavoletta manda
+  una posizione ogni 60 ms invece di 120: il puntatore segue il dito invece
+  di saltare.
+- **La pagina "Novita'" si aggiorna da sola a ogni versione.** Non e' piu'
+  scritta nel deck.json: vive nell'host con il numero di versione nel nome;
+  all'avvio, se il deck ne ha una vecchia, viene sostituita (con la sua
+  cartella di prova). Tutto il resto del deck resta com'e'.
+
 ## [0.11.0] - 2026-09-06
 
 ### Aggiunto

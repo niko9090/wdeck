@@ -7,6 +7,7 @@ import { createRegistry } from '../registry.mjs';
 import basic from './basic.mjs';
 import input from './input.mjs';
 import system from './system.mjs';
+import sysinfo from './sysinfo.mjs';
 import net from './net.mjs';
 import flow from './flow.mjs';
 import levels from './levels.mjs';
@@ -22,6 +23,7 @@ export const builtinHandlers = [
   ...basic,
   ...input,
   ...system,
+  ...sysinfo,
   ...net,
   ...flow,
   ...levels,

@@ -18,6 +18,7 @@ import { createUpdateChecker } from './updates.mjs';
 import { applyUpdate, cleanupOldExe, restart as restartExe, selfUpdateSupport } from './update-apply.mjs';
 import { startTray } from './tray.mjs';
 import { createAutoProfile } from './autoprofile.mjs';
+import { ensureNovitaPage } from './novita.mjs';
 import { pruneRuntimeDirs, pruneTrayScripts, runtimeLayout } from './cleanup.mjs';
 import { buildAppIconScript, isWindows, runPowerShell } from './platform/windows.mjs';
 import { createDefaultRegistry } from './actions/handlers/index.mjs';
@@ -114,6 +115,21 @@ export function createHost(options = {}) {
     overrides,
     logger
   });
+
+  // La pagina "Novita'" del deck segue la versione: se il file ne ha una
+  // vecchia, viene sostituita PRIMA di caricare (validata come un salvataggio
+  // dell'editor: se non passa, si lascia stare e si avvisa).
+  try {
+    const raw = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    const esito = ensureNovitaPage(raw);
+    if (esito.changed) {
+      const salvato = saveDeck({ configPath: configFile, current: raw, incoming: esito.deck, actionTypes: registry.types() });
+      if (salvato.ok) logger.info?.(`[wdeck] pagina Novita' aggiornata alla ${esito.version}`);
+      else logger.warn?.(`[wdeck] pagina Novita' non aggiornata: ${salvato.message}`);
+    }
+  } catch (err) {
+    logger.debug?.(`[wdeck] pagina Novita' non controllata: ${err.message}`);
+  }
 
   const deck = configStore.load();
 

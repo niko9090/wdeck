@@ -26,7 +26,7 @@
 import { PowerShellWorker, workerLoop } from './psworker.mjs';
 import {
   AUDIO_PREAMBLE, DDC_PREAMBLE, LEVEL_FUNCTIONS,
-  buildReadBrightnessScript, buildReadVolumeScript, flowOf, parseLevelOutput, runLevelScript
+  buildReadBrightnessScript, buildReadNetScript, buildReadVolumeScript, flowOf, parseLevelOutput, runLevelScript
 } from './levels.mjs';
 import { isWindows } from './windows.mjs';
 
@@ -40,6 +40,7 @@ const HANDLER = [
   `      "VA" { $r = Wdeck-VolAdjust ([int]$p[2]) ([double]::Parse($p[3], ${INV})) }`,
   '      "VM" { $r = Wdeck-VolMute ([int]$p[2]) ([int]$p[3]) }',
   '      "BR" { $r = Wdeck-BriRead }',
+  '      "NET" { $r = Wdeck-Net }',
   '      "BS" { $r = Wdeck-BriSet ([int]$p[2]) }',
   `      "BA" { $r = Wdeck-BriAdjust ([double]::Parse($p[2], ${INV})) }`,
   '      default { throw "comando sconosciuto: " + $p[1] }',
@@ -117,6 +118,12 @@ export function readVolumeFast(target = 'speaker') {
 export function readBrightnessFast() {
   return withLevelServer('BR',
     () => runLevelScript(buildReadBrightnessScript(), { what: 'luminosita\'', timeoutMs: 30000 }));
+}
+
+/** Contatori di rete rx/tx in byte (veloce, con ripiego). */
+export function readNetFast() {
+  return withLevelServer('NET',
+    () => runLevelScript(buildReadNetScript(), { what: 'rete' }));
 }
 
 /**

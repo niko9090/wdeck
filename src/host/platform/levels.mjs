@@ -78,6 +78,13 @@ export function flowOf(target) {
  * Volume: `flow` 0 = altoparlanti, 1 = microfono. Muto: 0 off, 1 on, 2 inverti.
  */
 export const LEVEL_FUNCTIONS = [
+  // Contatori di rete (byte totali ricevuti/inviati su tutte le schede): la
+  // velocita' la ricava chi legge, dalla differenza fra due campioni.
+  'function Wdeck-Net {',
+  '  $rx = [double]0; $tx = [double]0',
+  '  foreach ($a in (Get-NetAdapterStatistics -ErrorAction Stop)) { $rx += $a.ReceivedBytes; $tx += $a.SentBytes }',
+  '  "rx=$rx;tx=$tx"',
+  '}',
   'function Wdeck-VolOut($flow) {',
   '  $v = [WdeckAudio]::GetVolume($flow); $m = [WdeckAudio]::GetMute($flow)',
   '  return "volume=$([Math]::Round($v * 100));muted=$($m.ToString().ToLower())"',
@@ -389,12 +396,18 @@ export function parseLevelOutput(stdout) {
     if (raw === undefined) continue;
     if (key === 'muted') out.muted = raw === 'true';
     else if (key === 'mode') out.mode = raw;
-    else if (key === 'volume' || key === 'brightness') {
-      const n = Number(raw);
+    else if (['volume', 'brightness', 'rx', 'tx'].includes(key)) {
+      // "1,5E+09": PowerShell scrive i double con la cultura locale
+      const n = Number(raw.replace(',', '.'));
       if (Number.isFinite(n)) out[key] = n;
     }
   }
   return out;
+}
+
+/** Script a colpo singolo per i contatori di rete. */
+export function buildReadNetScript() {
+  return oneShot([], 'Wdeck-Net');
 }
 
 /**

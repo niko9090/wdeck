@@ -8,6 +8,11 @@
  */
 
 export const WHATSNEW = {
+  '0.11.1': [
+    "Corretto: quadrante, livello, grafico e display ora mostrano dati veri del PC (azione \"Stato del PC\": CPU, memoria, disco, rete, acceso da, ora).",
+    "Corretto: la tavoletta del puntatore e i cursori non si bloccano piu' dopo qualche secondo di trascinamento, e il puntatore segue il dito.",
+    "Nuovo: la pagina Novita' si aggiorna da sola a ogni versione, con un esempio di ogni funzione."
+  ],
   '0.11.0': [
     "Nuovo: profili per applicazione. Collega dei programmi a un profilo (Gestisci profili) e il deck cambia da solo quando quel programma e' in primo piano sul PC.",
     "Nuovo: cartelle vere. Un tasto \"Cartella\" apre la sua pagina, con la scheda indietro.",

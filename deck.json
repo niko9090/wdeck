@@ -545,21 +545,35 @@
         },
         {
           "id": "novita",
-          "name": "Novita 0.10.0",
-          "rows": 5,
+          "name": "Novita' 0.11",
+          "rows": 6,
           "cols": 5,
+          "groups": [
+            {
+              "id": "audio",
+              "label": "Audio",
+              "color": "#1f6feb"
+            },
+            {
+              "id": "sistema",
+              "label": "Sistema",
+              "color": "#3fb950"
+            }
+          ],
           "buttons": [
             {
               "id": "nv-vol-h",
               "label": "Volume",
-              "kind": "slider",
               "row": 0,
               "col": 0,
+              "kind": "slider",
               "span": 2,
+              "color": "#1f6feb",
               "min": 0,
               "max": 100,
               "step": 1,
-              "color": "#1f6feb",
+              "orientation": "h",
+              "group": "audio",
               "action": {
                 "type": "volume",
                 "params": {
@@ -570,14 +584,15 @@
             {
               "id": "nv-vol-v",
               "label": "Fader",
-              "kind": "slider",
-              "orientation": "v",
               "row": 0,
               "col": 2,
+              "kind": "slider",
+              "color": "#1f6feb",
               "min": 0,
               "max": 100,
               "step": 1,
-              "color": "#1f6feb",
+              "orientation": "v",
+              "group": "audio",
               "action": {
                 "type": "volume",
                 "params": {
@@ -588,14 +603,14 @@
             {
               "id": "nv-luce",
               "label": "Luce",
-              "kind": "slider",
-              "orientation": "v",
               "row": 0,
               "col": 3,
+              "kind": "slider",
+              "color": "#c9a227",
               "min": 0,
               "max": 100,
               "step": 5,
-              "color": "#c9a227",
+              "orientation": "v",
               "action": {
                 "type": "brightness",
                 "params": {
@@ -606,15 +621,15 @@
             {
               "id": "nv-centrato",
               "label": "Centrato",
-              "kind": "slider",
-              "orientation": "v",
-              "center": true,
               "row": 0,
               "col": 4,
+              "kind": "slider",
+              "color": "#7c5cff",
               "min": -50,
               "max": 50,
               "step": 5,
-              "color": "#7c5cff",
+              "orientation": "v",
+              "center": true,
               "action": {
                 "type": "noop",
                 "params": {}
@@ -623,13 +638,14 @@
             {
               "id": "nv-manopola",
               "label": "Volume",
-              "kind": "encoder",
               "row": 1,
               "col": 0,
+              "kind": "encoder",
+              "color": "#1f6feb",
               "min": 0,
               "max": 100,
               "step": 2,
-              "color": "#1f6feb",
+              "group": "audio",
               "action": {
                 "type": "volume",
                 "params": {
@@ -640,9 +656,9 @@
             {
               "id": "nv-jog",
               "label": "Scorri",
-              "kind": "jog",
               "row": 1,
               "col": 1,
+              "kind": "jog",
               "color": "#2d3b55",
               "action": {
                 "type": "mouse",
@@ -654,11 +670,13 @@
             {
               "id": "nv-zoom",
               "label": "Zoom",
-              "kind": "stepper",
               "row": 1,
               "col": 2,
-              "step": 1,
+              "kind": "stepper",
               "color": "#3fb950",
+              "min": 0,
+              "max": 100,
+              "step": 1,
               "action": {
                 "type": "hotkey",
                 "params": {
@@ -670,15 +688,15 @@
             {
               "id": "nv-selettore",
               "label": "Scena",
-              "kind": "selector",
               "row": 1,
               "col": 3,
+              "kind": "selector",
+              "color": "#7c5cff",
               "options": [
                 "Lavoro",
                 "Gioco",
                 "Film"
               ],
-              "color": "#7c5cff",
               "action": {
                 "type": "noop",
                 "params": {}
@@ -687,11 +705,11 @@
             {
               "id": "nv-timer",
               "label": "Pausa 5m",
-              "kind": "timer",
               "row": 1,
               "col": 4,
-              "seconds": 300,
+              "kind": "timer",
               "color": "#c9a227",
+              "seconds": 300,
               "action": {
                 "type": "notify",
                 "params": {
@@ -703,9 +721,10 @@
             {
               "id": "nv-tavoletta",
               "label": "Puntatore",
-              "kind": "xy",
               "row": 2,
               "col": 0,
+              "kind": "xy",
+              "span": 2,
               "color": "#e0603a",
               "action": {
                 "type": "mouse",
@@ -717,12 +736,13 @@
             {
               "id": "nv-matrice",
               "label": "Matrice",
-              "kind": "pad",
               "row": 2,
               "col": 2,
+              "kind": "pad",
+              "span": 2,
+              "color": "#2d3b55",
               "rows": 3,
               "cols": 3,
-              "color": "#2d3b55",
               "action": {
                 "type": "noop",
                 "params": {}
@@ -731,10 +751,11 @@
             {
               "id": "nv-colore",
               "label": "Colore",
-              "kind": "color",
               "row": 2,
               "col": 4,
+              "kind": "color",
               "color": "#7c5cff",
+              "mode": "kelvin",
               "action": {
                 "type": "noop",
                 "params": {}
@@ -743,61 +764,72 @@
             {
               "id": "nv-quadrante",
               "label": "CPU",
-              "kind": "gauge",
               "row": 3,
               "col": 0,
-              "min": 0,
-              "max": 100,
+              "kind": "gauge",
               "color": "#3fb950",
+              "group": "sistema",
               "action": {
-                "type": "noop",
-                "params": {}
+                "type": "sysinfo",
+                "params": {
+                  "metric": "cpu"
+                }
               }
             },
             {
               "id": "nv-livello",
-              "label": "Livello",
-              "kind": "meter",
+              "label": "Memoria",
               "row": 3,
               "col": 1,
-              "min": 0,
-              "max": 100,
+              "kind": "meter",
               "color": "#3fb950",
+              "group": "sistema",
               "action": {
-                "type": "noop",
-                "params": {}
+                "type": "sysinfo",
+                "params": {
+                  "metric": "ram"
+                }
               }
             },
             {
               "id": "nv-grafico",
               "label": "Rete",
-              "kind": "chart",
               "row": 3,
               "col": 2,
+              "kind": "chart",
+              "span": 2,
               "color": "#1f6feb",
+              "group": "sistema",
+              "min": 0,
+              "max": 100,
               "action": {
-                "type": "noop",
-                "params": {}
+                "type": "sysinfo",
+                "params": {
+                  "metric": "netDown"
+                }
               }
             },
             {
               "id": "nv-display",
-              "label": "Stato",
-              "kind": "display",
+              "label": "Ora",
               "row": 3,
               "col": 4,
+              "kind": "display",
               "color": "#2d3b55",
+              "group": "sistema",
               "action": {
-                "type": "noop",
-                "params": {}
+                "type": "sysinfo",
+                "params": {
+                  "metric": "clock"
+                }
               }
             },
             {
               "id": "nv-macro",
               "label": "Copia-incolla",
-              "kind": "macro",
               "row": 4,
               "col": 0,
+              "kind": "macro",
               "color": "#e0603a",
               "action": {
                 "type": "sequence",
@@ -828,7 +860,6 @@
             {
               "id": "nv-ptt",
               "label": "Parla",
-              "kind": "button",
               "row": 4,
               "col": 1,
               "icon": "mic",
@@ -849,7 +880,6 @@
             {
               "id": "nv-punteggiatura",
               "label": "Ctrl +",
-              "kind": "button",
               "row": 4,
               "col": 2,
               "color": "#2d3b55",
@@ -863,7 +893,6 @@
             {
               "id": "nv-hold",
               "label": "Tocca/Tieni",
-              "kind": "button",
               "row": 4,
               "col": 3,
               "color": "#7c5cff",
@@ -879,6 +908,162 @@
                 "params": {
                   "title": "Wdeck",
                   "message": "Tenuto premuto"
+                }
+              }
+            },
+            {
+              "id": "nv-cartella",
+              "label": "Cartella",
+              "row": 4,
+              "col": 4,
+              "kind": "folder",
+              "color": "#c9a227",
+              "action": {
+                "type": "navigate",
+                "params": {
+                  "page": "novita-cartella"
+                }
+              }
+            },
+            {
+              "id": "nv-notifica",
+              "label": "Notifica",
+              "row": 5,
+              "col": 0,
+              "icon": "bell",
+              "color": "#7c5cff",
+              "action": {
+                "type": "notify",
+                "params": {
+                  "title": "Wdeck",
+                  "message": "Questa e' una notifica di Windows, dal centro notifiche."
+                }
+              }
+            },
+            {
+              "id": "nv-disco",
+              "label": "Disco",
+              "row": 5,
+              "col": 1,
+              "kind": "gauge",
+              "color": "#3fb950",
+              "action": {
+                "type": "sysinfo",
+                "params": {
+                  "metric": "disk"
+                }
+              }
+            },
+            {
+              "id": "nv-acceso",
+              "label": "Acceso da",
+              "row": 5,
+              "col": 2,
+              "kind": "display",
+              "color": "#2d3b55",
+              "action": {
+                "type": "sysinfo",
+                "params": {
+                  "metric": "uptime"
+                }
+              }
+            },
+            {
+              "id": "nv-blocco-note",
+              "label": "Blocco note",
+              "row": 5,
+              "col": 3,
+              "icon": "text",
+              "color": "#2d3b55",
+              "action": {
+                "type": "launch",
+                "params": {
+                  "path": "C:\\Windows\\System32\\notepad.exe"
+                }
+              }
+            },
+            {
+              "id": "nv-desktop",
+              "label": "Desktop",
+              "row": 5,
+              "col": 4,
+              "icon": "window",
+              "color": "#2d3b55",
+              "action": {
+                "type": "hotkey",
+                "params": {
+                  "keys": "win+d"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "novita-cartella",
+          "name": "Cartella",
+          "parent": "novita",
+          "rows": 2,
+          "cols": 3,
+          "buttons": [
+            {
+              "id": "nvc-wdeck",
+              "label": "Sito Wdeck",
+              "row": 0,
+              "col": 1,
+              "icon": "globe",
+              "color": "#1f6feb",
+              "action": {
+                "type": "url",
+                "params": {
+                  "url": "https://github.com/niko9090/wdeck"
+                }
+              }
+            },
+            {
+              "id": "nvc-ora",
+              "label": "Ora",
+              "row": 0,
+              "col": 2,
+              "kind": "display",
+              "color": "#2d3b55",
+              "action": {
+                "type": "sysinfo",
+                "params": {
+                  "metric": "clock"
+                }
+              }
+            },
+            {
+              "id": "nvc-alto",
+              "label": "Alto 2 righe",
+              "row": 0,
+              "col": 0,
+              "kind": "slider",
+              "orientation": "v",
+              "color": "#c9a227",
+              "min": 0,
+              "max": 100,
+              "step": 5,
+              "action": {
+                "type": "brightness",
+                "params": {
+                  "mode": "set"
+                }
+              },
+              "spanRows": 2
+            },
+            {
+              "id": "nvc-ciao",
+              "label": "Ciao",
+              "row": 1,
+              "col": 1,
+              "icon": "heart",
+              "color": "#7c5cff",
+              "action": {
+                "type": "notify",
+                "params": {
+                  "title": "Wdeck",
+                  "message": "Ciao dalla cartella"
                 }
               }
             }

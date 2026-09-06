@@ -283,6 +283,7 @@ errore oscuro a ogni pressione.
 | `folder` | win32 | apre una cartella in Esplora file |
 | `screenshot` | win32 | cattura lo schermo in PNG o apre la cattura d'area |
 | `notify` | win32 | mostra una notifica di Windows sull'host |
+| `sysinfo` | tutte | stato del PC (CPU, memoria, disco, rete, acceso da, ora, nome) per quadranti, livelli, grafici e display: si aggiorna da solo |
 
 ### Integrazioni
 

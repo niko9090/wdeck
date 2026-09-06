@@ -23,7 +23,10 @@ export const MAX_KEYS = 2048;
 
 /** Tarature predefinite. */
 export const DEFAULT_LIMITS = Object.freeze({
-  press: { windowMs: 10000, max: 60 },
+  // 600 ogni 10 s: una tavoletta o un cursore trascinato manda 8-16 messaggi
+  // al secondo, e con 60 si bloccava dopo pochi secondi ("troppi comandi").
+  // Il freno serve contro un client impazzito, non contro un dito.
+  press: { windowMs: 10000, max: 600 },
   auth: { windowMs: 300000, max: 10 },
   // Tetto complessivo dei tentativi di accesso, sommati su tutti gli indirizzi.
   // Il limite per-indirizzo da solo non basta: chi ruota gli indirizzi IPv6 (un

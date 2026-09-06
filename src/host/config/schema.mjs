@@ -47,7 +47,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     audit: { enabled: true, maxBytes: 1048576, keep: 3 },
     rateLimit: {
       enabled: true,
-      press: { windowMs: 10000, max: 60 },
+      press: { windowMs: 10000, max: 600 },
       auth: { windowMs: 300000, max: 10 }
     }
   },

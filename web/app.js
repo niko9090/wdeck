@@ -77,6 +77,8 @@ const state = {
   actionGroups: null,
   /** icone caricate dall'utente su questo host, lette all'apertura dell'editor */
   customIcons: null,
+  /** storia dei livelli per i grafici: id -> ultimi valori */
+  series: new Map(),
   /** script aggiunti dall'utente (cartella scripts), per i suggerimenti nell'editor */
   scripts: null,
   /** ultimo livello noto di ogni slider, per non farlo saltare al re-render */
@@ -1650,7 +1652,8 @@ function ctlBody(button, kind, label) {
     }
 
     case 'chart':
-      return `<span class="sk">${sparkSvg(stato?.series)}</span>` + label;
+      return `<span class="sk">${sparkSvg(stato?.series ?? state.series.get(button.id))}</span>` + label
+        + (stato?.text ? `<span class="ctl-value">${escapeHtml(stato.text)}</span>` : '');
 
     case 'display':
       return `<span class="rd-big">${escapeHtml(stato?.text ?? '--')}</span>`
@@ -1738,6 +1741,14 @@ function applyStatusTo(element, entry) {
   // Un quadrante, un livello, un grafico o un display SONO lo stato: quando
   // arriva un dato nuovo il loro contenuto va rifatto, non solo decorato.
   if (READONLY_KINDS.includes(element.dataset.kind)) {
+    // Il grafico ha bisogno di una STORIA: l'host manda un livello alla volta,
+    // qui si accumulano gli ultimi 40.
+    if (element.dataset.kind === 'chart' && typeof entry?.level === 'number') {
+      const serie = state.series.get(element.dataset.id) ?? [];
+      if (serie.at(-1) !== entry.level || serie.length < 2) serie.push(entry.level);
+      if (serie.length > 40) serie.shift();
+      state.series.set(element.dataset.id, serie);
+    }
     refreshCtl(element);
     return;
   }
@@ -4935,9 +4946,11 @@ function applyCtlDrag(gesture, event) {
     gesture.pending = { value: Math.round(min + f * (max - min)) };
   }
 
-  // Stessa regola dello slider: al piu' un messaggio ogni 120 ms mentre il dito
+  // Piu' fitta dello slider (60 ms): il puntatore deve seguire il dito, non
+  // saltare. L'host la regge (un messaggio costa 0-1 ms) e il limite di
+  // pressioni e' stato alzato apposta.
   // si muove, e uno definitivo al rilascio.
-  if (now - (gesture.lastSent ?? 0) < 120) return;
+  if (now - (gesture.lastSent ?? 0) < 60) return;
   gesture.lastSent = now;
   pressButton(element, gesture.pending);
 }
